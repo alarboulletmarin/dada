@@ -6,6 +6,8 @@
  * de style sait honorer dans les deux sens.
  */
 
+import type { IconName } from './icons.ts'
+
 const KEY = 'dada.theme'
 
 export type Theme = 'auto' | 'light' | 'dark'
@@ -21,7 +23,8 @@ export const THEME_LABEL: Record<Theme, string> = {
   dark: 'Sombre',
 }
 
-export const THEME_ICON: Record<Theme, string> = { auto: '◐', light: '☀', dark: '☾' }
+/** L'icône de chaque thème, prise dans le jeu d'icônes maison. */
+export const THEME_ICON: Record<Theme, IconName> = { auto: 'auto', light: 'sun', dark: 'moon' }
 
 export function readTheme(): Theme {
   const saved = localStorage.getItem(KEY)

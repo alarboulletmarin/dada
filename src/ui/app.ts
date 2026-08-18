@@ -15,6 +15,7 @@ import { Session } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
 import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
+import { icon } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
 import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
 
@@ -198,24 +199,23 @@ export class App {
       {
         class: 'pill',
         attrs: {
-          'aria-label': `Code de partie ${code.split('').join(' ')} — copier le lien`,
-          title: 'Copier le lien de la partie',
+          'aria-label': t('lobby.code.aria', { code: code.split('').join(' ') }),
+          title: t('lobby.code.copy'),
         },
         on: { click: () => void this.share(code) },
       },
-      h('small', { text: 'code' }),
+      h('small', { text: t('lobby.code.pill') }),
       code,
-      h('span', { text: '⧉', attrs: { 'aria-hidden': 'true' } }),
+      icon('copy', 18),
     )
   }
 
-  private backButton(onClick: () => void, label = 'Retour'): HTMLElement {
-    return h('button', {
-      class: 'icon-btn',
-      text: '←',
-      attrs: { 'aria-label': label },
-      on: { click: onClick },
-    })
+  private backButton(onClick: () => void, label = t('common.back')): HTMLElement {
+    return h(
+      'button',
+      { class: 'icon-btn', attrs: { 'aria-label': label }, on: { click: onClick } },
+      icon('back'),
+    )
   }
 
   // ─────────────────────────── 01 · accueil ───────────────────────────
@@ -275,38 +275,50 @@ export class App {
         h(
           'div',
           { class: 'settings' },
-          h('button', {
-            text: `${THEME_ICON[readTheme()]} ${t(`theme.${readTheme()}`)}`,
-            attrs: { 'aria-label': t('theme.change', { theme: t(`theme.${readTheme()}`) }) },
-            on: {
-              click: () => {
-                applyTheme(nextTheme())
-                this.renderHome()
+          h(
+            'button',
+            {
+              attrs: { 'aria-label': t('theme.change', { theme: t(`theme.${readTheme()}`) }) },
+              on: {
+                click: () => {
+                  applyTheme(nextTheme())
+                  this.renderHome()
+                },
               },
             },
-          }),
-          h('button', {
-            text: `🌐 ${LANG_LABEL[lang()]}`,
-            attrs: { 'aria-label': t('lang.change', { lang: LANG_LABEL[lang()] }) },
-            on: {
-              click: () => {
-                setLang(nextLang())
-                this.renderHome()
+            icon(THEME_ICON[readTheme()], 19),
+            t(`theme.${readTheme()}`),
+          ),
+          h(
+            'button',
+            {
+              attrs: { 'aria-label': t('lang.change', { lang: LANG_LABEL[lang()] }) },
+              on: {
+                click: () => {
+                  setLang(nextLang())
+                  this.renderHome()
+                },
               },
             },
-          }),
+            icon('globe', 19),
+            LANG_LABEL[lang()],
+          ),
           // Confidentialité, conditions, mentions, licences et lien vers la
           // source — ce dernier est ce que l'AGPL demande à l'app d'offrir.
-          h('button', {
-            text: `ℹ️ ${aboutLabel()}`,
-            attrs: { 'aria-label': aboutLabel() },
-            on: {
-              click: () => {
-                this.screen = 'about'
-                renderAbout(this.root, () => this.renderHome())
+          h(
+            'button',
+            {
+              attrs: { 'aria-label': aboutLabel() },
+              on: {
+                click: () => {
+                  this.screen = 'about'
+                  renderAbout(this.root, () => this.renderHome())
+                },
               },
             },
-          }),
+            icon('info', 19),
+            aboutLabel(),
+          ),
         ),
         h('p', {
           class: 'hint center',
@@ -376,7 +388,7 @@ export class App {
         const kind = BADGES[v.id] ?? 'die'
         if (kind === 'die') badge.append(this.face(5))
         else if (kind === 'pawn') badge.append(this.token(null))
-        else badge.textContent = '⚡'
+        else badge.append(icon('bolt', 30))
 
         return h(
           'button',
@@ -513,6 +525,14 @@ export class App {
 
   private renderLobby(): void {
     const session = this.session!
+    // Le salon se redessine en entier à chaque changement — un joueur qui
+    // rejoint, un siège ajouté par un clic à soi. Sans ceci, chacun de ces
+    // instants ramènerait le défilement en haut, l'écran étant reconstruit
+    // et non mis à jour en place. `.screen` défile rarement (voir la marge
+    // élastique de la feuille de style) mais reste le filet de sécurité des
+    // très petits écrans, et il doit rester où on l'avait laissé.
+    const wasLobby = this.screen === 'lobby'
+    const scrollTop = wasLobby ? this.root.querySelector('.screen')?.scrollTop : 0
     this.screen = 'lobby'
     const { lobby } = session
     const online = session.mode === 'online'
@@ -547,12 +567,15 @@ export class App {
             text: tag || (isHostSeat ? t('lobby.host') : p.clientId === session.self ? t('common.you') : ''),
           }),
           session.isHost && !isHostSeat
-            ? h('button', {
-                class: 'icon-btn danger',
-                text: '✕',
-                attrs: { 'aria-label': t('lobby.remove', { name: p.name }) },
-                on: { click: () => session.removeSeat(p.seat) },
-              })
+            ? h(
+                'button',
+                {
+                  class: 'icon-btn danger',
+                  attrs: { 'aria-label': t('lobby.remove', { name: p.name }) },
+                  on: { click: () => session.removeSeat(p.seat) },
+                },
+                icon('close', 20),
+              )
             : null,
         )
       }),
@@ -645,6 +668,7 @@ export class App {
         ),
       ),
     )
+    if (scrollTop) this.root.querySelector('.screen')!.scrollTop = scrollTop
   }
 
   /**
@@ -739,7 +763,7 @@ export class App {
       'div',
       { class: 'chips' },
       ...chips.map(([text, on]) =>
-        h('span', { class: `chip${on ? ' on' : ''}`, text: on ? `${text} ✓` : text }),
+        h('span', { class: `chip${on ? ' on' : ''}` }, text, on ? icon('check', 15) : null),
       ),
     )
   }
@@ -839,15 +863,18 @@ export class App {
         h(
           'div',
           { class: 'topbar' },
-          this.backButton(() => this.quit(), 'Quitter la partie'),
+          this.backButton(() => this.quit(), t('lobby.quit')),
           h('span', { style: { flex: '1' } }),
           this.session!.mode === 'online' ? this.codePill(this.session!.lobby.code) : null,
-          h('button', {
-            class: 'icon-btn',
-            text: '?',
-            attrs: { 'aria-label': 'Comment on joue' },
-            on: { click: () => this.renderRules(() => this.update()) },
-          }),
+          h(
+            'button',
+            {
+              class: 'icon-btn',
+              attrs: { 'aria-label': t('rules.title') },
+              on: { click: () => this.renderRules(() => this.update()) },
+            },
+            icon('help'),
+          ),
         ),
         top,
         // Le plateau ne se dimensionne pas sur la largeur mais sur la place qui
@@ -1048,19 +1075,27 @@ export class App {
    * Le lancer : le dé roule en changeant de face, puis retombe sur le résultat.
    * Les faces intermédiaires sont purement décoratives — le tirage, lui, a déjà
    * eu lieu dans le moteur.
+   *
+   * « Mouvement réduit » ralentit le lancer, il ne le supprime pas. Le dé est le
+   * seul endroit où l'on voit qu'un tour vient d'être joué : sans rien, un
+   * chiffre change tout seul dans un coin et personne ne sait de qui il vient.
+   * Ce n'est pas théorique — Firefox sur Android relaie ce réglage dès que le
+   * système coupe ses animations (économiseur de batterie, échelle d'animation
+   * à zéro dans les options de développeur), et le dé y restait inerte alors que
+   * le même téléphone l'animait sous Chrome. La sobriété est déléguée à la
+   * feuille de style, qui remplace la culbute par un simple battement.
    */
   private tumble(result: number): void {
     const die = this.mounts?.dieBtn
     if (!die) return
 
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.paintDie(result, true)
-      return
-    }
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const period = calm ? 150 : 70
+    const duration = calm ? 450 : 620
 
     this.tumbling = true
     die.classList.add('tumbling')
-    const spin = setInterval(() => this.paintDie(1 + Math.floor(Math.random() * 6), true), 70)
+    const spin = setInterval(() => this.paintDie(1 + Math.floor(Math.random() * 6), true), period)
 
     setTimeout(() => {
       clearInterval(spin)
@@ -1071,7 +1106,7 @@ export class App {
       setTimeout(() => die.classList.remove('landed'), 340)
       // Le résultat est posé : le reste de l'écran peut enfin le refléter.
       this.update()
-    }, 620)
+    }, duration)
   }
 
   // ─────────────────────────── 08 · victoire ───────────────────────────

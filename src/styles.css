@@ -51,8 +51,17 @@
 
   --radius: 24px;
   --radius-sm: 18px;
-  --gap: 14px;
-  --tap: 56px;
+
+  /* Rythme vertical élastique. Aucun écran ne défile : quand le téléphone
+     raccourcit, ce qui cède ce sont les espaces et la taille des blocs, jamais
+     la ligne de flottaison. `svh` — la hauteur barre d'adresse déployée — pour
+     que la mesure ne saute pas au premier geste de défilement du système.
+     `clamp` plutôt qu'une cascade de `@media` : la compression est continue,
+     il n'y a pas de palier où l'écran se réorganise d'un coup. */
+  --gap: clamp(6px, 1.2svh, 14px);
+  --screen-gap: clamp(7px, 1.6svh, 20px);
+  --screen-pad: clamp(10px, 1.8svh, 22px);
+  --tap: clamp(44px, 6.6svh, 56px);
 
   --title: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;
   --body: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -87,6 +96,16 @@
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  /* Aucune barre de défilement à l'écran. Les rares zones qui défilent encore
+     — un document légal, un podium sur un écran minuscule — le font au doigt,
+     sans gouttière : elles ne sont pas des pages, et une barre le long d'une
+     carte de jeu ne ressemble à rien. */
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 html,
@@ -178,7 +197,7 @@ button {
   justify-content: center;
   gap: 10px;
   width: 100%;
-  min-height: 66px;
+  min-height: clamp(52px, 7.9svh, 66px);
   padding: 10px 20px;
   border: var(--bw-thick) solid var(--ink);
   border-radius: var(--radius);
@@ -186,7 +205,7 @@ button {
   box-shadow: 0 6px 0 var(--shade);
   font-family: var(--title);
   font-weight: 700;
-  font-size: 23px;
+  font-size: clamp(19px, 2.8svh, 23px);
   transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 
@@ -211,11 +230,11 @@ button {
 }
 
 .btn.small {
-  min-height: 56px;
+  min-height: var(--tap);
   border-width: var(--bw);
   border-radius: 20px;
   box-shadow: 0 5px 0 var(--shade);
-  font-size: 19px;
+  font-size: clamp(17px, 2.4svh, 19px);
 }
 
 .btn:active:not(:disabled) {
@@ -231,13 +250,21 @@ button {
   border-color: rgba(var(--ink-rgb), 0.45);
 }
 
+/* Les icônes du jeu (voir `icons.ts`) : jamais d'emoji, dont le dessin
+   appartient au système et change d'un téléphone à l'autre. Elles prennent la
+   couleur de leur bloc et ne se laissent pas écraser par un conteneur souple. */
+.ico {
+  display: block;
+  flex: none;
+}
+
 /* Petit carré d'encre : retour arrière, fermeture, actions secondaires. */
 .icon-btn {
   display: grid;
   place-items: center;
   flex: none;
-  width: 46px;
-  height: 46px;
+  width: clamp(36px, 5svh, 46px);
+  height: clamp(36px, 5svh, 46px);
   border: var(--bw) solid var(--ink);
   border-radius: 14px;
   background: var(--card);
@@ -278,7 +305,7 @@ textarea {
 
 input {
   width: 100%;
-  min-height: 60px;
+  min-height: clamp(48px, 7.2svh, 60px);
   padding: 0 18px;
   border: var(--bw) solid var(--ink);
   border-radius: 20px;
@@ -286,7 +313,8 @@ input {
   color: var(--ink);
   font-family: var(--title);
   font-weight: 700;
-  font-size: 21px;
+  /* Le plancher de 16 px ci-dessus reste tenu : 18 px est au-dessus. */
+  font-size: clamp(18px, 2.7svh, 21px);
 }
 
 input::placeholder {
@@ -308,7 +336,7 @@ input:disabled {
 .label {
   font-family: var(--title);
   font-weight: 700;
-  font-size: 16px;
+  font-size: clamp(14px, 2svh, 16px);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -316,12 +344,18 @@ input:disabled {
 
 /* ─────────────────────────── blocs ─────────────────────────── */
 
-/* Les écrans de lecture — accueil, salon, règles, à propos — défilent chez eux
-   et non dans la page : la coque garde ainsi ses marges d'encoche en place, et
-   les bandeaux flottants ne glissent pas avec le texte.
+/* Un écran tient dans l'écran — accueil, choix du jeu, salon, règles, partie.
+   Les jetons `--screen-*` et les `clamp` des blocs le resserrent pour que ça
+   tienne sans défiler sur l'immense majorité des téléphones ; `overflow-y`
+   reste `auto` en filet de sécurité pour les cas extrêmes (texte système
+   agrandi, très vieux petit écran) plutôt que de couper du contenu.
+   Pas de barre : elle est masquée globalement (voir `*` plus haut), et
+   `App.update` restaure la position de défilement après chaque reconstruction
+   — sans quoi rouvrir un salon qu'on avait fait défiler y remonterait en haut
+   à la moindre mise à jour (un joueur qui rejoint, un siège ajouté...).
    `min-height: 0` est la ligne sans laquelle rien de tout cela ne marche : un
-   élément flexible refuse par défaut de descendre sous la taille de son contenu,
-   et `overflow` n'a alors jamais rien à faire. */
+   élément flexible refuse par défaut de descendre sous la taille de son
+   contenu, et la coque déborderait malgré son `overflow-y`. */
 .screen {
   flex: 1;
   min-height: 0;
@@ -329,17 +363,17 @@ input:disabled {
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--screen-gap);
   width: min(100%, 480px);
   margin: 0 auto;
-  padding: 22px 20px 28px;
+  padding: var(--screen-pad) 20px calc(var(--screen-pad) + 4px);
 }
 
 .card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 22px 20px;
+  gap: clamp(10px, 2svh, 16px);
+  padding: clamp(14px, 2.6svh, 22px) 20px;
   border: var(--bw-thick) solid var(--ink);
   border-radius: 28px;
   background: var(--card);
@@ -366,9 +400,9 @@ input:disabled {
 }
 
 .hint {
-  font-size: 16px;
+  font-size: clamp(14px, 2svh, 16px);
   font-weight: 600;
-  line-height: 1.45;
+  line-height: 1.4;
   color: var(--muted);
 }
 
@@ -386,7 +420,7 @@ input:disabled {
 .topbar h2 {
   flex: 1;
   min-width: 0;
-  font-size: 26px;
+  font-size: clamp(22px, 3.2svh, 26px);
   font-weight: 700;
 }
 
@@ -428,22 +462,22 @@ input:disabled {
 .logo {
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: clamp(5px, 1svh, 8px);
   flex: none;
 }
 
 .logo span {
   display: grid;
   place-items: center;
-  width: 62px;
-  height: 72px;
+  width: clamp(46px, 7.3svh, 62px);
+  height: clamp(54px, 8.5svh, 72px);
   border: var(--bw-thick) solid var(--ink);
   border-radius: 20px;
   box-shadow: 0 5px 0 var(--shade);
   color: var(--cream);
   font-family: var(--title);
   font-weight: 800;
-  font-size: 42px;
+  font-size: clamp(30px, 5svh, 42px);
   line-height: 1;
 }
 
@@ -472,7 +506,8 @@ input:disabled {
   text-align: center;
   font-family: var(--title);
   font-weight: 600;
-  font-size: 20px;
+  font-size: clamp(16px, 2.4svh, 20px);
+  line-height: 1.25;
   color: var(--muted-strong);
 }
 
@@ -480,14 +515,14 @@ input:disabled {
 .dice-pair {
   display: flex;
   justify-content: center;
-  gap: 18px;
+  gap: clamp(11px, 2.1svh, 18px);
   flex: none;
 }
 
 .dice-pair .face {
-  width: 82px;
-  height: 82px;
-  padding: 13px;
+  width: clamp(52px, 9.7svh, 82px);
+  height: clamp(52px, 9.7svh, 82px);
+  padding: clamp(8px, 1.6svh, 13px);
   border: var(--bw-thick) solid var(--ink);
   border-radius: 20px;
   box-shadow: 0 6px 0 var(--shade);
@@ -566,15 +601,15 @@ input:disabled {
 .settings button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 46px;
-  padding: 0 16px;
+  gap: 7px;
+  min-height: clamp(38px, 5.5svh, 46px);
+  padding: 0 clamp(11px, 2svh, 16px);
   border: 2.5px solid var(--line);
   border-radius: 999px;
   background: none;
   font-family: var(--title);
   font-weight: 700;
-  font-size: 16px;
+  font-size: clamp(14px, 2svh, 16px);
   color: var(--muted-strong);
 }
 
@@ -589,7 +624,7 @@ input:disabled {
   display: flex;
   gap: 14px;
   width: 100%;
-  padding: 15px 16px;
+  padding: clamp(9px, 1.9svh, 15px) 16px;
   border: var(--bw-thick) solid var(--ink);
   border-radius: var(--radius);
   background: var(--card);
@@ -613,8 +648,8 @@ input:disabled {
   display: grid;
   place-items: center;
   flex: none;
-  width: 54px;
-  height: 54px;
+  width: clamp(42px, 6.4svh, 54px);
+  height: clamp(42px, 6.4svh, 54px);
   border: var(--bw) solid var(--ink);
   border-radius: 16px;
   background: var(--card);
@@ -655,7 +690,7 @@ input:disabled {
 .game-card .head strong {
   font-family: var(--title);
   font-weight: 800;
-  font-size: 23px;
+  font-size: clamp(19px, 2.8svh, 23px);
   line-height: 1.1;
 }
 
@@ -673,9 +708,9 @@ input:disabled {
 }
 
 .game-card .desc {
-  font-size: 15.5px;
+  font-size: clamp(13.5px, 1.9svh, 15.5px);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.35;
   color: var(--muted-strong);
 }
 
@@ -748,14 +783,14 @@ input:disabled {
 .seats {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: clamp(4px, 1svh, 12px);
 }
 
 .seat {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 11px 14px;
+  padding: clamp(2px, 0.9svh, 11px) 14px;
   border: var(--bw) solid var(--ink);
   border-radius: 20px;
   background: var(--card);
@@ -777,16 +812,22 @@ input:disabled {
 .seat input {
   flex: 1;
   min-width: 0;
-  min-height: 44px;
+  min-height: clamp(30px, 4.4svh, 44px);
   padding: 0 10px;
   border: none;
   border-radius: 12px;
   background: none;
-  font-size: 20px;
+  font-size: clamp(17px, 2.6svh, 20px);
 }
 
 .seat input:disabled {
   color: var(--ink);
+}
+
+/* Les sièges libres ne portent qu'un repère : sur un écran court, ils cèdent
+   la place avant les joueurs, qui eux ont un nom à afficher. */
+.seat.empty {
+  padding-block: clamp(2px, 0.9svh, 11px);
 }
 
 .seat .who {
@@ -794,7 +835,8 @@ input:disabled {
   min-width: 0;
   font-family: var(--title);
   font-weight: 700;
-  font-size: 20px;
+  font-size: clamp(16px, 2.6svh, 20px);
+  line-height: clamp(30px, 4.4svh, 44px);
 }
 
 .seat .tag {
@@ -833,17 +875,18 @@ input:disabled {
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 9px;
+  gap: clamp(4px, 0.8svh, 9px);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  min-height: 42px;
-  padding: 0 14px;
+  gap: 5px;
+  min-height: clamp(26px, 4svh, 42px);
+  padding: 0 clamp(8px, 1.4svh, 14px);
   border: var(--bw) solid rgba(var(--ink-rgb), 0.35);
   border-radius: 999px;
-  font-size: 15px;
+  font-size: clamp(12px, 1.7svh, 15px);
   font-weight: 800;
   color: rgba(var(--ink-rgb), 0.45);
 }
@@ -1078,14 +1121,26 @@ input:disabled {
   border: 2.5px solid var(--ink);
   background: color-mix(in srgb, var(--seat, var(--ink)) 24%, var(--card));
   color: var(--seat, var(--ink));
-  font-size: min(3.4vw, 17px);
-  font-weight: 800;
-  line-height: 1;
-  text-shadow: 0 1px 0 rgba(var(--ink-rgb), 0.25);
 }
 
+/* L'étoile de la case sûre — découpée dans un carré plein plutôt qu'écrite :
+   le glyphe ★ n'a pas le même dessin d'une police à l'autre, et sur certains
+   systèmes il arrive même colorié en emoji. */
 .cell.safe::after {
-  content: '★';
+  content: '';
+  width: 58%;
+  aspect-ratio: 1;
+  background: currentColor;
+  clip-path: polygon(
+    50% 0%,
+    61% 39%,
+    100% 50%,
+    61% 61%,
+    50% 100%,
+    39% 61%,
+    0% 50%,
+    39% 39%
+  );
 }
 
 .cell.start {
@@ -1439,9 +1494,41 @@ input:disabled {
   }
 }
 
+/* Mouvement réduit : le dé roule quand même, mais sur place. Ni bascule ni
+   saut — un simple battement, assez pour dire « ça tourne » sans rien projeter
+   à travers l'écran. Le supprimer laissait le dé figé pendant que le chiffre
+   changeait tout seul : illisible, et c'est ce que voyaient les téléphones dont
+   le système coupe les animations (Firefox sur Android relaie ce réglage). */
 @media (prefers-reduced-motion: reduce) {
   .dice.ready {
     animation: none;
+  }
+
+  .dice.tumbling {
+    animation: tumble-calm 0.45s ease-in-out infinite;
+  }
+
+  .dice.landed {
+    animation: land-calm 0.2s ease-out;
+  }
+}
+
+@keyframes tumble-calm {
+  0%,
+  100% {
+    transform: rotate(6deg) scale(1);
+  }
+  50% {
+    transform: rotate(6deg) scale(1.07);
+  }
+}
+
+@keyframes land-calm {
+  from {
+    transform: rotate(6deg) scale(1.12);
+  }
+  to {
+    transform: rotate(6deg) scale(1);
   }
 }
 
@@ -1450,13 +1537,13 @@ input:disabled {
 .steps {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: clamp(6px, 1.4svh, 12px);
 }
 
 .step {
   display: flex;
   gap: 14px;
-  padding: 15px 16px;
+  padding: clamp(8px, 1.8svh, 15px) 16px;
   border: var(--bw) solid var(--ink);
   border-radius: 22px;
   background: var(--card);
@@ -1476,15 +1563,15 @@ input:disabled {
   display: grid;
   place-items: center;
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: clamp(30px, 5svh, 40px);
+  height: clamp(30px, 5svh, 40px);
   border: var(--bw) solid var(--ink);
   border-radius: 50%;
   background: var(--seat, var(--card));
   color: var(--on, var(--ink));
   font-family: var(--title);
   font-weight: 800;
-  font-size: 21px;
+  font-size: clamp(16px, 2.7svh, 21px);
 }
 
 .step .body {
@@ -1496,14 +1583,14 @@ input:disabled {
 .step .body strong {
   font-family: var(--title);
   font-weight: 700;
-  font-size: 19px;
+  font-size: clamp(16px, 2.5svh, 19px);
   color: var(--seat, var(--ink));
 }
 
 .step .body span {
-  font-size: 15.5px;
+  font-size: clamp(13.5px, 1.9svh, 15.5px);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 /* ─────────────────────────── fin de partie ─────────────────────────── */

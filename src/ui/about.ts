@@ -15,6 +15,7 @@
 
 import { ABOUT_TEXT, UPDATED, type Section } from './about-text.ts'
 import { fill, h } from './dom.ts'
+import { icon } from './icons.ts'
 import { lang } from './i18n.ts'
 import { LICENCE_URL, REPO, THIRD_PARTY_URL } from './links.ts'
 import { canClearAppCaches, clearAppCaches } from './update.ts'
@@ -54,12 +55,11 @@ export function renderAbout(root: HTMLElement, back: () => void): void {
       h(
         'div',
         { class: 'topbar' },
-        h('button', {
-          class: 'icon-btn',
-          text: '←',
-          attrs: { 'aria-label': text.back },
-          on: { click: back },
-        }),
+        h(
+          'button',
+          { class: 'icon-btn', attrs: { 'aria-label': text.back }, on: { click: back } },
+          icon('back'),
+        ),
         h('h2', { text: text.title }),
       ),
       h('p', {
