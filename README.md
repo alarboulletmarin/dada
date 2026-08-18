@@ -75,6 +75,39 @@ BASE_PATH=/jeu-dada/ npm run build
 HTTPS est requis en production : le service worker et WebRTC ne fonctionnent pas
 en HTTP sur un domaine distant.
 
+### Les en-têtes qui décident si la mise à jour arrive
+
+Une seule règle, et c'est la plus facile à oublier : **`sw.js`, `index.html` et
+`manifest.webmanifest` ne doivent pas être mis en cache par le navigateur.**
+Le navigateur ne compare le service worker qu'en le retéléchargeant ; si
+l'hébergeur lui répond « tu l'as déjà », la nouvelle version n'existe pas, et
+recharger la page n'y change rien — c'est exactement le symptôme d'une PWA qui
+« ne se rafraîchit jamais ». Les fichiers de `assets/`, eux, portent un hachage
+dans leur nom : ils peuvent être immuables pour un an.
+
+```
+/sw.js                 Cache-Control: public, max-age=0, must-revalidate
+/index.html            Cache-Control: public, max-age=0, must-revalidate
+/manifest.webmanifest  Cache-Control: public, max-age=0, must-revalidate
+/assets/*              Cache-Control: public, max-age=31536000, immutable
+```
+
+Sur Vercel ou Netlify, cela se déclare dans `vercel.json` / `_headers`. **GitHub
+Pages ne permet pas de fixer ces en-têtes** et sert tout avec un `max-age` de
+dix minutes : la mise à jour arrive, avec dix minutes de retard. C'est vivable,
+mais Cloudflare Pages ou Netlify sont préférables si le jeu est mis à jour
+souvent.
+
+### Regarder le service worker en développement
+
+Il est éteint en dev — sinon il resservirait du code figé à chaque
+rechargement, et `main.ts` va jusqu'à désenregistrer ceux qu'un build précédent
+aurait laissés sur le même hôte.
+
+```bash
+PWA_DEV=1 npm run dev   # allume le worker et le bandeau de mise à jour
+```
+
 ## La limite à connaître
 
 WebRTC a besoin d'un « signaling » pour que deux navigateurs se trouvent.
@@ -88,3 +121,16 @@ en mobile, remplacez-le par vos propres identifiants — Cloudflare Calls offre 
 quota gratuit largement suffisant pour des parties entre amis.
 
 En attendant, le mode « sur cet appareil » fonctionne toujours, hors ligne inclus.
+
+## Licence
+
+**GNU AGPL-3.0-or-later** — voir [LICENSE](LICENSE).
+
+Copyleft : une variante ajoutée pour votre famille reste libre, et un site qui
+sert ce code doit en offrir la source. Le bundle produit porte lui-même sa
+notice, parce que la minification efface tous les commentaires du source et
+qu'un JavaScript servi sans notice est un JavaScript anonyme.
+
+Les composants tiers redistribués — Trystero (MIT), Baloo 2 et Nunito
+(SIL OFL 1.1) — sont détaillés dans [THIRD-PARTY.md](THIRD-PARTY.md) ; leurs
+textes complets voyagent avec l'app, dans `public/licences-tierces.txt`.

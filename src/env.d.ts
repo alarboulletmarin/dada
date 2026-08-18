@@ -11,3 +11,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+/** Version du paquet, injectée au build depuis `package.json` (source unique). */
+declare const __APP_VERSION__: string
+
+/** Vrai quand `PWA_DEV=1` : le service worker tourne en développement. */
+declare const __PWA_DEV__: boolean
