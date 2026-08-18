@@ -10,7 +10,7 @@ import { geometryFor } from '../game/board.ts'
 import { pawnsOf } from '../game/engine.ts'
 import { STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
-import { makeCode } from '../net/room.ts'
+import { makeCode, type ChatMessage } from '../net/room.ts'
 import { clearSave, readSave } from '../net/save.ts'
 import { Session } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
@@ -39,6 +39,14 @@ const BADGES: Record<string, 'die' | 'pawn' | 'bolt'> = {
   ludo: 'pawn',
   rapide: 'bolt',
 }
+
+/** Le picker du chat : une poignée d'expressions, pas une bibliothèque entière. */
+const EMOJI = ['😀', '😂', '😍', '😮', '😢', '😡', '👍', '👎', '🙌', '🎉', '🔥', '❤️', '🐴', '🎲', '⭐', '💀']
+/** Durée d'affichage de la bulle sur la carte du joueur. */
+const CHAT_BUBBLE_MS = 4000
+/** Au-delà, la bulle coupe : `-webkit-line-clamp` s'en charge visuellement,
+ *  ceci n'est qu'un filet contre un pavé de texte collé sans espaces. */
+const CHAT_BUBBLE_MAX = 200
 
 const variantName = (id: string) => t(`variant.${id}.name` as Key)
 
@@ -83,6 +91,14 @@ export class App {
   /** Coup évident déjà programmé, repéré par le numéro d'état du moteur. */
   private autoAt = -1
   private autoTimer: ReturnType<typeof setTimeout> | null = null
+  /** Le panneau de chat est ouvert : les messages qui arrivent s'y affichent
+   *  directement plutôt que de compter dans le badge du bouton. */
+  private chatOpen = false
+  private chatUnread = 0
+  private chatList: HTMLElement | null = null
+  private chatDot: HTMLElement | null = null
+  /** Bulles actives par siège, avec leur minuterie d'effacement. */
+  private chatBubbles = new Map<Seat, { text: string; timer: ReturnType<typeof setTimeout> }>()
 
   constructor(private root: HTMLElement) {}
 
@@ -94,6 +110,7 @@ export class App {
     addEventListener('hashchange', () => {
       const code = location.hash.replace('#', '').toUpperCase()
       if (!code || code === this.session?.lobby.code) return
+      this.closeChat()
       this.session?.destroy()
       this.session = null
       this.renderJoin(code)
@@ -110,6 +127,7 @@ export class App {
     return {
       onChange: () => this.update(),
       onError: (message: string) => this.toast(message),
+      onChat: (message: ChatMessage) => this.onChat(message),
     }
   }
 
@@ -143,6 +161,10 @@ export class App {
     if (this.autoTimer) clearTimeout(this.autoTimer)
     this.autoTimer = null
     this.autoAt = -1
+    this.closeChat()
+    this.chatUnread = 0
+    this.chatBubbles.forEach((b) => clearTimeout(b.timer))
+    this.chatBubbles.clear()
     this.session?.destroy()
     this.session = null
     this.board = null
@@ -606,6 +628,7 @@ export class App {
           this.backButton(() => this.quit(), t('lobby.quit')),
           h('h2', { text: t('lobby.title') }),
           online && !session.isHost ? this.codePill(lobby.code) : null,
+          online ? this.chatButton() : null,
         ),
 
         online && session.isHost ? this.codeCard(lobby.code) : null,
@@ -810,7 +833,7 @@ export class App {
         h(
           'div',
           { class: 'steps' },
-          ...[1, 2, 3, 4, 5].map((n) =>
+          ...[1, 2, 3, 4, 5, 6].map((n) =>
             h(
               'div',
               { class: 'step', style: this.seatVars(((n - 1) % 4) as Seat) },
@@ -892,6 +915,7 @@ export class App {
           this.backButton(() => this.quit(), t('lobby.quit')),
           h('span', { style: { flex: '1' } }),
           this.session!.mode === 'online' ? this.codePill(this.session!.lobby.code) : null,
+          this.session!.mode === 'online' ? this.chatButton() : null,
           h(
             'button',
             {
@@ -1005,6 +1029,8 @@ export class App {
         lobbyPlayer.clientId !== session.self &&
         !lobbyPlayer.connected
 
+      const bubble = this.chatBubbles.get(seat)
+
       return h(
         'div',
         {
@@ -1025,6 +1051,7 @@ export class App {
                 : meta,
           }),
         ),
+        bubble ? h('div', { class: 'pcard__bubble', text: bubble.text }) : null,
       )
     }
 
@@ -1249,6 +1276,184 @@ export class App {
       ),
     )
     document.body.append(overlay)
+  }
+
+  // ─────────────────────────── chat ───────────────────────────
+
+  /** Le bouton qui ouvre le chat, avec son point rouge de message non lu. */
+  private chatButton(): HTMLElement {
+    const dot = h('span', { class: 'chat-dot' })
+    this.chatDot = dot
+    this.updateChatBadge()
+    return h(
+      'button',
+      {
+        class: 'icon-btn chat-btn',
+        attrs: { 'aria-label': t('chat.title') },
+        on: { click: () => this.renderChat() },
+      },
+      icon('chat'),
+      dot,
+    )
+  }
+
+  private updateChatBadge(): void {
+    this.chatDot?.classList.toggle('show', this.chatUnread > 0)
+  }
+
+  /** Reçu par la session, que le panneau soit ouvert ou non. */
+  private onChat(message: ChatMessage): void {
+    if (this.chatOpen) {
+      this.appendChatMessage(message)
+    } else if (message.clientId !== this.session?.self) {
+      this.chatUnread++
+      this.updateChatBadge()
+    }
+
+    const seat = this.session?.lobby.players.find((p) => p.clientId === message.clientId)?.seat
+    if (seat !== undefined) this.showChatBubble(seat, message.text)
+  }
+
+  /** Fait apparaître le message sur la carte de son auteur, en jeu — pas
+   *  besoin d'ouvrir le chat pour le voir passer. Un envoi qui se répète
+   *  relance simplement la minuterie plutôt que d'empiler les bulles. */
+  private showChatBubble(seat: Seat, text: string): void {
+    const previous = this.chatBubbles.get(seat)
+    if (previous) clearTimeout(previous.timer)
+
+    const shown = text.length > CHAT_BUBBLE_MAX ? `${text.slice(0, CHAT_BUBBLE_MAX - 1)}…` : text
+    const timer = setTimeout(() => {
+      this.chatBubbles.delete(seat)
+      this.refreshPlayerCards()
+    }, CHAT_BUBBLE_MS)
+    this.chatBubbles.set(seat, { text: shown, timer })
+    this.refreshPlayerCards()
+  }
+
+  /** Redessine les cartes joueurs seules, sans passer par tout `refreshPlay` —
+   *  une bulle qui expire ne doit pas perturber le dé ou le plateau. */
+  private refreshPlayerCards(): void {
+    if (this.screen !== 'play' || !this.mounts || !this.session?.game) return
+    this.renderPlayers(this.mounts.players, this.session.game)
+  }
+
+  private closeChat(): void {
+    this.chatOpen = false
+    this.chatList = null
+    document.querySelector('.overlay.chat')?.remove()
+  }
+
+  private renderChat(): void {
+    if (document.querySelector('.overlay.chat')) return
+    const session = this.session!
+    this.chatOpen = true
+    this.chatUnread = 0
+    this.updateChatBadge()
+
+    const list = h(
+      'div',
+      { class: 'chat__list', attrs: { 'aria-live': 'polite' } },
+      ...(session.chatLog.length
+        ? session.chatLog.map((m) => this.chatBubble(m))
+        : [h('p', { class: 'hint center', text: t('chat.empty') })]),
+    )
+    this.chatList = list
+
+    const input = h('input', {
+      attrs: { type: 'text', placeholder: t('chat.placeholder'), maxlength: '240', autocomplete: 'off' },
+    }) as HTMLInputElement
+
+    const send = () => {
+      if (!input.value.trim()) return
+      session.sendChat(input.value)
+      input.value = ''
+      input.focus()
+    }
+
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay chat',
+        on: {
+          click: (ev) => {
+            if (ev.target === overlay) this.closeChat()
+          },
+        },
+      },
+      h(
+        'div',
+        { class: 'sheet chat__sheet' },
+        h(
+          'div',
+          { class: 'topbar' },
+          h('h2', { text: t('chat.title') }),
+          h('span', { style: { flex: '1' } }),
+          h(
+            'button',
+            { class: 'icon-btn', attrs: { 'aria-label': t('common.close') }, on: { click: () => this.closeChat() } },
+            icon('close', 20),
+          ),
+        ),
+        list,
+        h(
+          'div',
+          { class: 'chat__emoji' },
+          ...EMOJI.map((e) =>
+            h('button', {
+              class: 'chat__emoji-btn',
+              text: e,
+              attrs: { type: 'button', 'aria-label': e },
+              on: { click: () => (input.value += e) },
+            }),
+          ),
+        ),
+        h(
+          'form',
+          {
+            class: 'row chat__row',
+            on: {
+              submit: (ev) => {
+                ev.preventDefault()
+                send()
+              },
+            },
+          },
+          input,
+          h('button', { class: 'btn small', text: t('chat.send'), attrs: { type: 'submit' } }),
+        ),
+      ),
+    )
+    document.body.append(overlay)
+    // Pas de focus automatique sur le champ : sur mobile ça ouvrirait le
+    // clavier tout de suite, rétrécissant l'écran juste après l'affichage —
+    // le panneau se retrouverait décalé sous les yeux de qui vient de l'ouvrir.
+    list.scrollTop = list.scrollHeight
+  }
+
+  private chatBubble(message: ChatMessage): HTMLElement {
+    const mine = message.clientId === this.session?.self
+    return h(
+      'div',
+      { class: `chat__msg${mine ? ' mine' : ''}` },
+      h(
+        'div',
+        { class: 'chat__meta' },
+        h('span', { class: 'chat__author', text: message.name }),
+        h('span', { class: 'chat__time', text: this.formatChatTime(message.at) }),
+      ),
+      h('div', { class: 'chat__text', text: message.text }),
+    )
+  }
+
+  private formatChatTime(at: number): string {
+    return new Intl.DateTimeFormat(lang(), { hour: '2-digit', minute: '2-digit' }).format(new Date(at))
+  }
+
+  private appendChatMessage(message: ChatMessage): void {
+    if (!this.chatList) return
+    if (!this.chatList.querySelector('.chat__msg')) this.chatList.replaceChildren()
+    this.chatList.append(this.chatBubble(message))
+    this.chatList.scrollTop = this.chatList.scrollHeight
   }
 
   // ─────────────────────────── divers ───────────────────────────

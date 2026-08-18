@@ -26,7 +26,7 @@ const { version } = JSON.parse(
  */
 function noticeAGPL(): Plugin {
   const notice = [
-    `/*! Jeu du Dada v${version} — Copyright (C) 2026 Andréa Larboullet Marin`,
+    `/*! Dada v${version} — Copyright (C) 2026 Andréa Larboullet Marin`,
     ' * Licence : GNU AGPL-3.0-or-later <https://www.gnu.org/licenses/agpl-3.0.html>',
     ' * Source complète : https://github.com/alarboulletmarin/jeu-dada',
     ' * Fourni SANS AUCUNE GARANTIE, dans les limites permises par la loi. */',
@@ -117,7 +117,7 @@ export default defineConfig({
         // `start_url` : sans elle, changer un jour la page d'arrivée ferait de
         // l'app une seconde app, à installer à côté de la première.
         id: base,
-        name: 'Jeu du Dada',
+        name: 'Dada',
         short_name: 'Dada',
         description: 'Petits chevaux entre amis. Pas de compte, pas de pub, pas de serveur.',
         lang: 'fr',

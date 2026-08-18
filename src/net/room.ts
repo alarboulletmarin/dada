@@ -35,12 +35,16 @@ export type Lobby = {
 
 export type Hello = { clientId: string; name: string }
 export type Intent = { clientId: string; action: Action }
+/** Le nom voyage avec chaque message : un renommage en cours de partie ne
+ *  doit pas réécrire l'historique déjà affiché chez les autres. */
+export type ChatMessage = { clientId: string; name: string; text: string; at: number }
 
 type Messages = {
   hello: Hello
   lobby: Lobby
   state: GameState
   intent: Intent
+  chat: ChatMessage
 }
 
 export type Room = {
@@ -119,6 +123,7 @@ export function joinGameRoom(code: string, onError?: (message: string) => void):
     lobby: room.makeAction<Lobby>('lobby') as unknown as AnyChannel,
     state: room.makeAction<GameState>('state') as unknown as AnyChannel,
     intent: room.makeAction<Intent>('intent') as unknown as AnyChannel,
+    chat: room.makeAction<ChatMessage>('chat') as unknown as AnyChannel,
   }
 
   return {

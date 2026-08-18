@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Jeu du Dada / Petits Chevaux — PWA peer-to-peer, sans compte ni serveur",
+  "description": "Dada / Petits Chevaux — PWA peer-to-peer, sans compte ni serveur",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

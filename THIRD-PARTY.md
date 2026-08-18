@@ -1,6 +1,6 @@
 # Composants tiers
 
-Le code du Jeu du Dada est publié sous licence **GNU AGPL-3.0-or-later** — voir
+Le code de Dada est publié sous licence **GNU AGPL-3.0-or-later** — voir
 [LICENSE](LICENSE).
 
 Ce fichier couvre ce que le site servi **redistribue** et qui porte ses propres

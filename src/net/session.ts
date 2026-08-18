@@ -15,7 +15,7 @@ import { apply, createGame, forceSkipTurn, legalMoves } from '../game/engine.ts'
 import { seedFrom } from '../game/rng.ts'
 import { variantById } from '../game/variants.ts'
 import type { Action, GameError, GameState, Seat } from '../game/types.ts'
-import { clientId, joinGameRoom, type Lobby, type LobbyPlayer, type Room } from './room.ts'
+import { clientId, joinGameRoom, type ChatMessage, type Lobby, type LobbyPlayer, type Room } from './room.ts'
 import { clearSave, writeSave, type Save } from './save.ts'
 
 const MAX_SEATS = 4
@@ -51,6 +51,7 @@ export type Notice =
 export type SessionListeners = {
   onChange: () => void
   onError: (notice: Notice) => void
+  onChat: (message: ChatMessage) => void
 }
 
 export class Session {
@@ -59,6 +60,9 @@ export class Session {
   lobby: Lobby
   game: GameState | null = null
   link: Link = 'linked'
+  /** En mémoire seulement : rien n'est stocké ni relayé par un hôte pour les
+   *  pairs qui n'étaient pas encore là. */
+  chatLog: ChatMessage[] = []
 
   private room: Room | null = null
   private listeners: SessionListeners
@@ -203,6 +207,11 @@ export class Session {
       const seat = this.seatOfClient(intent.clientId)
       if (seat === null) return
       this.applyAsHost(intent.action, seat)
+    })
+
+    room.on('chat', (message) => {
+      this.chatLog.push(message)
+      this.listeners.onChat(message)
     })
 
     room.onPeerJoin((peer) => {
@@ -416,6 +425,21 @@ export class Session {
 
     if (this.isHost) this.applyAsHost(action, seat)
     else this.room?.send('intent', { clientId: this.self, action })
+  }
+
+  /**
+   * Diffuse un message à tous les pairs présents. Trystero ne renvoie pas
+   * l'émetteur à lui-même : on s'ajoute donc son propre message en local.
+   */
+  sendChat(text: string): void {
+    const trimmed = text.trim()
+    if (!trimmed || !this.room) return
+
+    const name = this.lobby.players.find((p) => p.clientId === this.self)?.name ?? this.myName
+    const message: ChatMessage = { clientId: this.self, name, text: trimmed, at: Date.now() }
+    this.chatLog.push(message)
+    this.room.send('chat', message)
+    this.listeners.onChat(message)
   }
 
   private applyAsHost(action: Action, seat: Seat): void {

@@ -1,5 +1,5 @@
 /* ============================================================
-   Jeu du Dada — feuille de style unique.
+   Dada — feuille de style unique.
    Direction artistique « plateau de jeu illustré » : papier crème,
    contours d'encre épais, ombres franches, couleurs pleines.
    Conçue pour le téléphone tenu à une main : cibles tactiles
@@ -242,12 +242,15 @@ button {
   box-shadow: 0 2px 0 var(--shade);
 }
 
+/* Pas cassé, juste pas encore là : l'ombre s'aplatit et le trait s'éclaircit
+   plutôt que de garder le relief plein d'un bouton actif, pour lire « pas
+   maintenant » et non « indisponible ». */
 .btn:disabled {
   cursor: default;
   background: var(--card);
   color: rgba(var(--ink-rgb), 0.4);
-  box-shadow: 0 6px 0 rgba(var(--ink-rgb), 0.35);
-  border-color: rgba(var(--ink-rgb), 0.45);
+  box-shadow: 0 3px 0 rgba(var(--ink-rgb), 0.2);
+  border-color: rgba(var(--ink-rgb), 0.3);
 }
 
 /* Les icônes du jeu (voir `icons.ts`) : jamais d'emoji, dont le dessin
@@ -950,10 +953,10 @@ input:disabled {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   width: min(100%, 480px);
   margin: 0 auto;
-  padding: 14px 16px 18px;
+  padding: 10px 16px 12px;
   overflow: hidden;
 }
 
@@ -968,16 +971,54 @@ input:disabled {
 }
 
 .pcard {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   flex: 1;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 7px 12px;
   border: var(--bw) solid var(--ink);
   border-radius: 20px;
   background: var(--card);
   box-shadow: 0 4px 0 var(--shade);
+}
+
+/* Un message envoyé s'affiche brièvement à même la carte de son auteur — pas
+   besoin d'ouvrir le chat pour le voir passer. Recouvre la carte plutôt que
+   de flotter au-dessus ou en dessous : les cartes du haut n'ont pas de place
+   pour déborder sans se faire couper par `.play { overflow: hidden }`. */
+.pcard__bubble {
+  position: absolute;
+  inset: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-box-pack: center;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  padding: 6px 10px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 4px 0 var(--shade);
+  color: var(--ink);
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1.25;
+  animation: bubble-pop 0.15s ease-out;
+}
+
+@keyframes bubble-pop {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* Le joueur dont c'est le tour : liseré à sa couleur et carte soulevée. On ne
@@ -1017,16 +1058,19 @@ input:disabled {
   overflow: hidden;
   font-family: var(--title);
   font-weight: 700;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Discret : le joueur actif se lit d'abord au liseré de la carte (`.pcard.active`),
+   pas à ce texte — qui reste là pour l'info, pas pour l'emphase. */
 .pcard .meta {
-  font-size: 12.5px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--muted);
+  opacity: 0.85;
 }
 
 /* Une rangée sans joueur ne doit pas voler d'espace au plateau. */
@@ -1410,15 +1454,15 @@ input:disabled {
 .dice {
   display: grid;
   place-items: center;
-  width: 104px;
-  height: 104px;
+  width: 88px;
+  height: 88px;
   margin: 0 auto;
   flex: none;
   padding: 0;
   border: var(--bw-thick) solid var(--ink);
-  border-radius: 26px;
+  border-radius: 22px;
   background: var(--card);
-  box-shadow: 0 7px 0 var(--shade);
+  box-shadow: 0 6px 0 var(--shade);
   transform: rotate(-7deg);
   transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
@@ -1426,7 +1470,7 @@ input:disabled {
 .dice .face {
   width: 100%;
   height: 100%;
-  padding: 17px;
+  padding: 14px;
 }
 
 /* Dé au repos : un point d'interrogation plutôt qu'une face, pour ne pas faire
@@ -1439,7 +1483,7 @@ input:disabled {
 .dice .face.waiting span {
   font-family: var(--title);
   font-weight: 800;
-  font-size: 44px;
+  font-size: 38px;
   line-height: 1;
   color: rgba(var(--ink-rgb), 0.45);
 }
@@ -1461,7 +1505,7 @@ input:disabled {
 }
 
 .dice.ready:active {
-  transform: rotate(-7deg) translateY(5px);
+  transform: rotate(-7deg) translateY(4px);
   box-shadow: 0 2px 0 var(--shade);
   animation: none;
 }
@@ -1624,15 +1668,34 @@ input:disabled {
 
 /* ─────────────────────────── fin de partie ─────────────────────────── */
 
+/* Flex, pas grid : une grille implicite sans `grid-template-columns` mesure sa
+   colonne unique sur le contenu, pas sur la boîte du conteneur — un `.sheet`
+   large de 420px déborde alors tel quel sur un téléphone étroit au lieu
+   d'être ramené à `100%`. Flex n'a pas ce piège : la boîte flexible se cale
+   sur la largeur réelle du conteneur, et `min(100%, …)` s'y calcule contre
+   une taille enfin définie. */
 .overlay {
   position: fixed;
   inset: 0;
   z-index: 20;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 22px;
   background: rgba(var(--ink-rgb), 0.55);
   overflow: auto;
+}
+
+/* Un sheet plus grand que l'écran (petit téléphone, clavier ouvert, contenu
+   qui refuse de rétrécir) : le centrage strict le coupe sans moyen d'y
+   remonter au doigt — défiler ne rattrape que le débord du côté opposé.
+   `safe` bascule sur un alignement au départ dès que ça déborde, pour que le
+   coin haut-gauche (le bouton de fermeture) reste toujours atteignable.
+   Ignoré par les navigateurs qui ne le connaissent pas : ils gardent le
+   `center` ci-dessus. */
+.overlay {
+  align-items: safe center;
+  justify-content: safe center;
 }
 
 .overlay .sheet {
@@ -1645,6 +1708,127 @@ input:disabled {
   border-radius: 34px;
   background: var(--paper);
   box-shadow: 0 12px 0 var(--shade);
+}
+
+/* ─────────────────────────────── chat ─────────────────────────────── */
+
+/* Le point rouge du bouton : discret tant qu'aucun message n'est arrivé. */
+.chat-btn {
+  position: relative;
+}
+
+.chat-dot {
+  display: none;
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.chat-dot.show {
+  display: block;
+}
+
+/* Le panneau garde une hauteur fixe : la liste défile, le reste ne bouge pas. */
+/* `max-height`, pas `height` : le panneau prend la place qu'il faut jusqu'à
+   ce plafond plutôt que de l'imposer — sur un petit écran ou un clavier
+   ouvert, il se resserre au lieu de déborder. */
+.chat__sheet {
+  max-height: min(80svh, 620px);
+}
+
+.chat__list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 2px 4px;
+}
+
+.chat__msg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 82%;
+  padding: 8px 12px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 18px 18px 18px 4px;
+  background: var(--card);
+  box-shadow: 0 3px 0 var(--shade);
+  align-self: flex-start;
+}
+
+.chat__msg.mine {
+  border-radius: 18px 18px 4px 18px;
+  background: var(--green);
+  color: var(--on-0);
+  align-self: flex-end;
+}
+
+.chat__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.chat__author {
+  font-family: var(--title);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.chat__time {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.65;
+}
+
+.chat__text {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.chat__emoji {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.chat__emoji-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: var(--bw) solid transparent;
+  border-radius: 12px;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  transition: background 0.08s ease;
+}
+
+.chat__emoji-btn:active {
+  background: var(--paper-deep);
+  border-color: var(--line);
+}
+
+.chat__row {
+  flex: none;
+}
+
+.chat__row button {
+  flex: none;
+  width: auto;
+  padding-inline: 22px;
 }
 
 /* Confettis figés : cinq formes de guingois, comme jetées sur la page. */

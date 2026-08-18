@@ -19,7 +19,7 @@ export const LANGS: Lang[] = ['fr', 'en']
 export const LANG_LABEL: Record<Lang, string> = { fr: 'Français', en: 'English' }
 
 const fr = {
-  'app.title': 'Jeu du Dada',
+  'app.title': 'Dada',
   'app.tagline': 'le jeu des petits chevaux, entre amis',
 
   'common.back': 'Retour',
@@ -29,6 +29,7 @@ const fr = {
   'common.you': 'vous',
   'common.player': 'Joueur {n}',
   'common.bot': 'Bot {n}',
+  'common.close': 'Fermer',
 
   'home.create': 'Créer une partie',
   'home.join': 'Rejoindre avec un code',
@@ -96,6 +97,11 @@ const fr = {
   'link.failed': 'La connexion a échoué.',
   'link.blocked': 'Vos deux réseaux refusent la connexion directe.',
 
+  'chat.title': 'Chat',
+  'chat.placeholder': 'Écrire un message…',
+  'chat.send': 'Envoyer',
+  'chat.empty': "Personne n'a encore rien dit.",
+
   'play.roll': 'Lancer le dé',
   'play.rolling': 'Le dé roule…',
   'play.boost.low': 'Petit nombre',
@@ -142,6 +148,9 @@ const fr = {
   'rules.4.body': 'Après le tour complet, le cheval prend son escalier. Compte exact pour arriver.',
   'rules.5.title': 'Gagner',
   'rules.5.body': 'Le premier à rentrer ses 4 chevaux remporte la partie.',
+  'rules.6.title': 'Bonus de dé',
+  'rules.6.body':
+    'Trois fois par partie, avant de lancer, on peut favoriser un petit nombre (1 à 3) ou un grand nombre (4 à 6). Les bonus sont communs à toute la table.',
 
   'variant.petits-chevaux.name': 'Petits chevaux',
   'variant.petits-chevaux.desc': 'La règle française classique. Un 6 pour sortir, on rejoue sur un 6.',
@@ -204,6 +213,7 @@ const en: Partial<Record<Key, string>> = {
   'common.you': 'you',
   'common.player': 'Player {n}',
   'common.bot': 'Bot {n}',
+  'common.close': 'Close',
 
   'home.create': 'Create a game',
   'home.join': 'Join with a code',
@@ -269,6 +279,11 @@ const en: Partial<Record<Key, string>> = {
   'link.failed': 'The connection failed.',
   'link.blocked': 'Both networks refuse a direct connection.',
 
+  'chat.title': 'Chat',
+  'chat.placeholder': 'Type a message…',
+  'chat.send': 'Send',
+  'chat.empty': 'Nobody has said anything yet.',
+
   'play.roll': 'Roll the die',
   'play.rolling': 'The die is rolling…',
   'play.boost.low': 'Low number',
@@ -315,6 +330,9 @@ const en: Partial<Record<Key, string>> = {
   'rules.4.body': 'After a full lap, the horse takes its stairway. Exact count to arrive.',
   'rules.5.title': 'Win',
   'rules.5.body': 'First to bring all 4 horses home wins.',
+  'rules.6.title': 'Dice bonus',
+  'rules.6.body':
+    'Three times a game, before rolling, you can favour a low number (1 to 3) or a high one (4 to 6). The bonuses are shared by the whole table.',
 
   'variant.petits-chevaux.name': 'Little horses',
   'variant.petits-chevaux.desc': 'The classic French rules. A 6 to come out, roll again on a 6.',

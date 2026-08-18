@@ -1,5 +1,5 @@
 /*
- * Jeu du Dada — les petits chevaux entre amis, en pair-à-pair.
+ * Dada — les petits chevaux entre amis, en pair-à-pair.
  * Copyright (C) 2026  Andréa Larboullet Marin
  *
  * This program is free software: you can redistribute it and/or modify

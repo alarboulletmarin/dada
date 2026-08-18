@@ -1,4 +1,4 @@
-# Jeu du Dada
+# Dada
 
 Les petits chevaux entre amis. Pas de compte, pas de pub, pas de quête quotidienne —
 et pas de serveur à payer : les téléphones se parlent directement.

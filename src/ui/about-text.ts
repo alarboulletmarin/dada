@@ -58,7 +58,7 @@ const fr: AboutText = {
     {
       title: 'En une phrase',
       body: [
-        "Le Jeu du Dada n'a ni compte, ni traceur, ni mesure d'audience, ni publicité. Personne ne sait que vous jouez, et aucune partie n'est enregistrée ailleurs que sur les téléphones qui y participent.",
+        "Dada n'a ni compte, ni traceur, ni mesure d'audience, ni publicité. Personne ne sait que vous jouez, et aucune partie n'est enregistrée ailleurs que sur les téléphones qui y participent.",
       ],
     },
     {
@@ -98,7 +98,7 @@ const fr: AboutText = {
     {
       title: 'Le service',
       body: [
-        "Le Jeu du Dada est une application web qui s'exécute entièrement dans votre navigateur. Il n'y a ni compte, ni inscription, ni abonnement, ni paiement. L'usage est libre et gratuit.",
+        "Dada est une application web qui s'exécute entièrement dans votre navigateur. Il n'y a ni compte, ni inscription, ni abonnement, ni paiement. L'usage est libre et gratuit.",
       ],
     },
     {
@@ -124,7 +124,7 @@ const fr: AboutText = {
     {
       title: 'Éditeur',
       body: [
-        "Le Jeu du Dada est un projet personnel de logiciel libre, sans structure commerciale, publié par Andréa Larboullet Marin.",
+        'Dada est un projet personnel de logiciel libre, sans structure commerciale, publié par Andréa Larboullet Marin.',
       ],
     },
     {
@@ -162,7 +162,7 @@ const en: AboutText = {
     {
       title: 'In one sentence',
       body: [
-        'Jeu du Dada has no account, no tracker, no analytics and no advertising. Nobody knows you are playing, and no game is stored anywhere but on the phones taking part in it.',
+        'Dada has no account, no tracker, no analytics and no advertising. Nobody knows you are playing, and no game is stored anywhere but on the phones taking part in it.',
       ],
     },
     {
@@ -202,7 +202,7 @@ const en: AboutText = {
     {
       title: 'The service',
       body: [
-        'Jeu du Dada is a web app that runs entirely in your browser. There is no account, no sign-up, no subscription and no payment. Use is free and unrestricted.',
+        'Dada is a web app that runs entirely in your browser. There is no account, no sign-up, no subscription and no payment. Use is free and unrestricted.',
       ],
     },
     {
@@ -228,7 +228,7 @@ const en: AboutText = {
     {
       title: 'Publisher',
       body: [
-        'Jeu du Dada is a personal free-software project, with no commercial entity behind it, published by Andréa Larboullet Marin.',
+        'Dada is a personal free-software project, with no commercial entity behind it, published by Andréa Larboullet Marin.',
       ],
     },
     {
