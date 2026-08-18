@@ -668,7 +668,7 @@ export class App {
             : !waiting
               ? h('p', { class: 'hint center', text: t('lobby.waitHost') })
               : null,
-          h('p', { class: 'hint center', text: t('lobby.footer') }),
+          h('p', { class: 'hint center', text: t('lobby.footer', { n: variant.pawnsPerPlayer }) }),
         ),
       ),
     )

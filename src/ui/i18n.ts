@@ -81,7 +81,7 @@ const fr = {
   'lobby.start': 'Lancer la partie',
   'lobby.needTwo': 'Il faut au moins 2 joueurs',
   'lobby.waitHost': "En attente du lancement par l'hôte…",
-  'lobby.footer': 'Ordre tiré au sort · 4 chevaux chacun',
+  'lobby.footer': 'Ordre tiré au sort · {n} chevaux chacun',
   'lobby.quit': 'Quitter la partie',
 
   'link.connecting': 'Connexion à la partie…',
@@ -256,7 +256,7 @@ const en: Partial<Record<Key, string>> = {
   'lobby.start': 'Start the game',
   'lobby.needTwo': 'At least 2 players needed',
   'lobby.waitHost': 'Waiting for the host to start…',
-  'lobby.footer': 'Random order · 4 horses each',
+  'lobby.footer': 'Random order · {n} horses each',
   'lobby.quit': 'Leave the game',
 
   'link.connecting': 'Connecting to the game…',
