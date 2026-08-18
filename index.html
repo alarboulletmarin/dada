@@ -2,7 +2,24 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!--
+      `interactive-widget=resizes-content` : ce qui se passe quand le clavier
+      s'ouvre. Par défaut le navigateur laisse la mise en page où elle est et
+      déplace la fenêtre visible par-dessus — un déplacement vertical que l'œil
+      lit comme un zoom, et qui laisse la page décalée après coup. Avec cette
+      valeur, c'est la mise en page qui rétrécit : `100svh` suit, l'écran se
+      réagence sous le clavier, et rien ne bouge sous le doigt.
+
+      Ni `user-scalable=no` ni `maximum-scale` : le pincement reste un réglage
+      d'accessibilité. Le zoom qu'on veut supprimer est celui que le navigateur
+      décide seul — il se traite par le plancher de 16 px sur les champs
+      (`styles.css`) et par `touch-action: manipulation`, pas en retirant à
+      l'utilisateur le droit d'agrandir.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <meta name="theme-color" content="#FBF2DF" />
     <meta name="description" content="Petits chevaux entre amis. Pas de compte, pas de pub, pas de serveur." />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -15,6 +32,38 @@
   </head>
   <body>
     <div id="app"></div>
+    <!--
+      Sans JavaScript, `#app` reste vide et la page est blanche — y compris pour
+      un robot d'indexation qui n'en exécute pas. Aucune promesse de repli : le
+      jeu est un moteur de règles et un lien pair-à-pair, il n'y a pas de version
+      dégradée à proposer. Il dit ce qu'il est, ce qu'il manque, et où lire le
+      reste. Style en ligne : la feuille est chargée par le module ci-dessous,
+      c'est-à-dire par ce qui justement ne tourne pas ici.
+    -->
+    <noscript>
+      <div
+        style="
+          max-width: 32rem;
+          margin: 0 auto;
+          padding: 3rem 1.5rem;
+          font-family: system-ui, sans-serif;
+          line-height: 1.6;
+        "
+      >
+        <h1 style="font-size: 1.5rem; margin: 0 0 1rem">Jeu du Dada</h1>
+        <p style="margin: 0 0 1rem">
+          Les petits chevaux entre amis. Pas de compte, pas de pub, pas de serveur : les téléphones
+          se parlent directement.
+        </p>
+        <p style="margin: 0">
+          Le jeu se calcule entièrement sur votre appareil : il a besoin de JavaScript pour
+          s’afficher. Le code est lisible sur
+          <a href="https://github.com/alarboulletmarin/jeu-dada"
+            >github.com/alarboulletmarin/jeu-dada</a
+          >.
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

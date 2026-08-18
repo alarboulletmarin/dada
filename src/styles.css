@@ -95,6 +95,14 @@ body {
   height: 100%;
 }
 
+html {
+  /* Safari gonfle le texte de son propre chef au passage en paysage. Sur des
+     écrans dessinés au pixel — le plateau, les cases du code — c'est un zoom
+     qu'on n'a pas demandé. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   background-color: var(--paper);
   background-image: radial-gradient(var(--dot) 1.5px, transparent 1.5px);
@@ -102,10 +110,20 @@ body {
   color: var(--ink);
   font: 600 16px/1.5 var(--body);
   overscroll-behavior: none;
+  /* Supprime le zoom au double-appui — et avec lui les 300 ms d'attente que le
+     navigateur s'accorde pour savoir si un appui en cachait un second. Le
+     pincement, lui, reste possible : c'est un réglage d'accessibilité, pas une
+     coquetterie, et `user-scalable=no` n'a pas sa place ici. */
+  touch-action: manipulation;
 }
 
 #app {
   min-height: 100%;
+  /* `svh` et non `dvh` : la plus petite hauteur visible, celle qu'on a quand la
+     barre d'adresse est déployée. L'écran tient donc sans défilement dans le
+     pire cas, et ne saute pas quand la barre se rétracte — ce que `dvh` ferait
+     à chaque geste. */
+  min-height: 100svh;
   display: flex;
   flex-direction: column;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
@@ -241,6 +259,17 @@ button {
 }
 
 /* ─────────────────────────── formulaire ─────────────────────────── */
+
+/* Plancher de 16 px sur tout ce qui reçoit le clavier. En dessous, iOS zoome
+   sur le champ au moment de la mise au point, puis laisse la page agrandie :
+   l'utilisateur doit dézoomer à la main pour retrouver son écran. Aucune
+   déclaration ne peut descendre sous ce plancher sans le dire explicitement —
+   c'est le seul endroit où l'invariant est écrit. */
+input,
+select,
+textarea {
+  font-size: max(16px, 1em);
+}
 
 input {
   width: 100%;
@@ -1588,6 +1617,160 @@ input:disabled {
   from {
     opacity: 0;
     transform: translate(-50%, 14px);
+  }
+}
+
+/* ─────────────────────────── à propos ─────────────────────────── */
+
+/* Écran de lecture : les blocs se touchent presque, l'écart de 20 px des autres
+   écrans ferait flotter une liste de sections. */
+.about {
+  gap: 12px;
+}
+
+.about__block {
+  border: var(--bw) solid var(--ink);
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: 0 5px 0 var(--shade);
+  overflow: hidden;
+}
+
+.about__block > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 18px;
+  font-family: var(--title);
+  font-weight: 700;
+  font-size: 19px;
+  cursor: pointer;
+  /* Les deux lignes qui retirent le triangle du navigateur : `list-style` pour
+     les moteurs modernes, le pseudo-élément pour WebKit qui l'ignore encore. */
+  list-style: none;
+}
+
+.about__block > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Le chevron dessiné plutôt que celui du moteur : le sien change de forme d'un
+   navigateur à l'autre, celui-ci suit la DA et pivote. */
+.about__block > summary::after {
+  content: '▾';
+  flex: none;
+  font-size: 16px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.about__block[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.about__section {
+  padding: 0 18px 16px;
+}
+
+.about__section h3 {
+  margin-bottom: 6px;
+  font-size: 17px;
+}
+
+.about__section p {
+  margin: 0 0 10px;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.about__section p:last-child {
+  margin-bottom: 0;
+}
+
+.about__links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border: var(--bw) solid var(--line);
+  border-radius: 22px;
+}
+
+.about__links a {
+  display: inline-flex;
+  align-items: center;
+  /* La cible tactile minimale, sur des liens posés les uns sous les autres. */
+  min-height: 44px;
+  font-family: var(--title);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.about__reinstall {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ─────────────────────────── mise à jour ─────────────────────────── */
+
+/* En haut, et non en bas : le bas de l'écran appartient au dé et au journal
+   pendant une partie, et au message flottant partout ailleurs. Un bandeau qui
+   reste affiché tant qu'on ne lui a pas répondu n'a pas le droit de couvrir un
+   bouton de jeu. */
+.update-bar {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(calc(100vw - 24px), 460px);
+  padding: 14px 16px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: 0 6px 0 var(--shade);
+  transform: translateX(-50%);
+  animation: drop 0.22s ease-out;
+}
+
+.update-bar__message {
+  flex: 1 1 160px;
+  margin: 0;
+  font-family: var(--title);
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.update-bar__actions {
+  display: flex;
+  flex: none;
+  gap: 10px;
+}
+
+/* Les boutons de la famille occupent toute la largeur ; dans un bandeau ils
+   tiennent sur une ligne, à leur mesure. */
+.update-bar .btn {
+  width: auto;
+  min-height: 46px;
+  padding: 0 16px;
+  font-size: 17px;
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -14px);
   }
 }
 
