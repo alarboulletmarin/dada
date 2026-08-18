@@ -14,7 +14,7 @@ import { chooseMove } from '../game/bot.ts'
 import { apply, createGame, legalMoves } from '../game/engine.ts'
 import { seedFrom } from '../game/rng.ts'
 import { variantById } from '../game/variants.ts'
-import type { Action, GameState, Seat } from '../game/types.ts'
+import type { Action, GameError, GameState, Seat } from '../game/types.ts'
 import { clientId, joinGameRoom, type Lobby, type LobbyPlayer, type Room } from './room.ts'
 import { clearSave, writeSave, type Save } from './save.ts'
 
@@ -32,9 +32,19 @@ export type SessionMode = 'local' | 'online'
 /** Où en est la mise en relation, pour que l'écran d'attente puisse le dire. */
 export type Link = 'searching' | 'linked' | 'lost'
 
+/**
+ * Ce que la session a besoin de faire dire à l'écran. Elle transmet un motif,
+ * pas une phrase : la couche réseau n'a pas à connaître la langue du joueur.
+ */
+export type Notice =
+  | GameError
+  | 'linkFailed'
+  | 'linkBlocked'
+  | 'hostTaken'
+
 export type SessionListeners = {
   onChange: () => void
-  onError: (message: string) => void
+  onError: (notice: Notice) => void
 }
 
 export class Session {
@@ -238,11 +248,7 @@ export class Session {
     this.link = 'lost'
     if (this.linkTimer) clearTimeout(this.linkTimer)
     this.linkTimer = null
-    this.listeners.onError(
-      /turn/i.test(error)
-        ? 'Vos deux réseaux refusent la connexion directe.'
-        : 'La connexion a échoué.',
-    )
+    this.listeners.onError(/turn/i.test(error) ? 'linkBlocked' : 'linkFailed')
     this.listeners.onChange()
   }
 
@@ -282,7 +288,7 @@ export class Session {
 
     this.lobby.hostClientId = next
     if (next === this.self) {
-      this.listeners.onError('Vous reprenez la main : la partie continue.')
+      this.listeners.onError('hostTaken')
       this.publishLobby()
       if (this.game) this.room?.send('state', this.game)
       this.scheduleBot()
@@ -347,7 +353,7 @@ export class Session {
   addSeat(kind: 'human' | 'bot'): void {
     if (!this.isHost || this.lobby.started || this.lobby.players.length >= MAX_SEATS) return
     const seat = this.freeSeat()
-    const name = kind === 'bot' ? `Bot ` : `Joueur ${seat + 1}`
+    const name = kind === 'bot' ? `Bot ${seat + 1}` : `Joueur ${seat + 1}`
     // En local, un siège « humain » est simplement un joueur de plus sur cet appareil.
     this.lobby.players.push(seatFor(seat, name, this.self, kind))
     this.publishLobby()
@@ -393,7 +399,7 @@ export class Session {
     if (!this.game) return
     const seat = this.game.turn
     if (!this.controls(seat)) {
-      this.listeners.onError("Ce n'est pas à vous de jouer.")
+      this.listeners.onError('notYourTurn')
       return
     }
 

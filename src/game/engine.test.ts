@@ -241,14 +241,17 @@ describe('fin de partie', () => {
 describe('journal', () => {
   // L'affichage compose « <acteur> <texte> » : si le texte répétait le nom,
   // le journal afficherait « Alice Alice gagne la partie ! ».
-  it('ne répète jamais le nom du joueur dans le texte', () => {
+  it("ne met jamais le nom de l'acteur dans l'événement", () => {
     const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), LAST_STEP]))
     at[pawnId(0, 3)] = LAST_STEP - 1
     const { state } = apply(setup({ at, dice: 1 }), { type: 'move', pawnId: pawnId(0, 3) }, 0)
 
+    // Le nom du joueur est porté une fois, par `actor`. Si l'événement le
+    // portait aussi, l'écran afficherait « Alice Alice gagne la partie ! ».
     for (const entry of state.log) {
       if (!entry.actor) continue
-      expect(entry.text.startsWith(entry.actor), `« ${entry.actor} | ${entry.text} »`).toBe(false)
+      const payload = JSON.stringify(entry.event)
+      expect(payload.includes(entry.actor), `« ${entry.actor} | ${payload} »`).toBe(false)
     }
   })
 

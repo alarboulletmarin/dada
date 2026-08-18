@@ -10,11 +10,13 @@ import { pawnsOf } from '../game/engine.ts'
 import { LAST_STEP, STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { makeCode } from '../net/room.ts'
-import { clearSave, readSave, since } from '../net/save.ts'
+import { clearSave, readSave } from '../net/save.ts'
 import { Session } from '../net/session.ts'
+import { aboutLabel, renderAbout } from './about.ts'
 import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
-import { applyTheme, nextTheme, readTheme, THEME_ICON, THEME_LABEL } from './theme.ts'
+import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
+import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
 
 const NAME_KEY = 'dada.name'
 /** Temps laissé au dé pour retomber avant qu'un coup évident ne se joue seul. */
@@ -29,26 +31,30 @@ const PIPS: Record<number, number[]> = {
   6: [1, 3, 4, 6, 7, 9],
 }
 
-/** Habillage des variantes : de la présentation, pas des règles. */
-const LOOKS: Record<string, { tag: string; badge: string; meta: string }> = {
-  'petits-chevaux': { tag: 'FR', badge: 'die', meta: '4 chevaux · 20–30 min' },
-  ludo: { tag: 'INT', badge: 'pawn', meta: '4 pions · 15–25 min' },
-  rapide: { tag: 'EXPRESS', badge: 'bolt', meta: 'sortie facile · 10 min' },
+/** Pastille de chaque variante : de la présentation, pas des règles. */
+const BADGES: Record<string, 'die' | 'pawn' | 'bolt'> = {
+  'petits-chevaux': 'die',
+  ludo: 'pawn',
+  rapide: 'bolt',
 }
 
-/** « de Sami », mais « d'Ines » : l'élision, sinon la phrase accroche. */
-const nameOf = (name: string): string =>
-  /^[aeiouyàâäéèêëîïôöûüh]/i.test(name) ? `d'${name}` : `de ${name}`
+const variantName = (id: string) => t(`variant.${id}.name` as Key)
 
-const HOW_TO = [
-  ['Sortir de l’écurie', 'Il faut un 6 pour poser un cheval sur sa case de départ.'],
-  ['Tourner', 'On avance du nombre de points, dans le sens des aiguilles.'],
-  ['Manger', 'Tomber pile sur un cheval adverse le renvoie chez lui. Les cases ✦ protègent.'],
-  ['Rentrer', 'Après le tour complet, le cheval prend son escalier. Compte exact pour arriver.'],
-  ['Gagner', 'Le premier à rentrer ses 4 chevaux remporte la partie.'],
-]
+/**
+ * « de Sami », mais « d'Ines » : l'élision, sinon la phrase accroche. L'anglais
+ * n'en a pas besoin — sa tournure possessive est portée par la traduction.
+ */
+const turnOf = (name: string): string =>
+  t('play.turnOf', {
+    name:
+      lang() === 'fr'
+        ? /^[aeiouyàâäéèêëîïôöûüh]/i.test(name)
+          ? `d’${name}`
+          : `de ${name}`
+        : name,
+  })
 
-type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules'
+type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'about'
 
 export class App {
   private session: Session | null = null
@@ -218,7 +224,11 @@ export class App {
     this.screen = 'home'
     const nameInput = h('input', {
       value: this.name,
-      attrs: { placeholder: 'Votre prénom', maxlength: '16', 'aria-label': 'Votre prénom' },
+      attrs: {
+        placeholder: t('home.name.placeholder'),
+        maxlength: '16',
+        'aria-label': t('home.name.placeholder'),
+      },
     })
 
     const go = (mode: 'online' | 'local') => {
@@ -237,17 +247,17 @@ export class App {
           { class: 'logo' },
           ...['D', 'A', 'D', 'A'].map((c) => h('span', { text: c })),
         ),
-        h('p', { class: 'tagline', text: 'le jeu des petits chevaux, entre amis' }),
+        h('p', { class: 'tagline', text: t('app.tagline') }),
         h('div', { class: 'dice-pair' }, this.face(5), this.face(6)),
-        h('div', { class: 'field' }, h('span', { class: 'label', text: 'Vous êtes' }), nameInput),
+        h('div', { class: 'field' }, h('span', { class: 'label', text: t('home.name') }), nameInput),
         h(
           'div',
           { class: 'stack push' },
           ...this.resumeCard(),
-          h('button', { class: 'btn red', text: 'Créer une partie', on: { click: () => go('online') } }),
+          h('button', { class: 'btn red', text: t('home.create'), on: { click: () => go('online') } }),
           h('button', {
             class: 'btn blue',
-            text: 'Rejoindre avec un code',
+            text: t('home.join'),
             on: {
               click: () => {
                 this.saveName(nameInput.value)
@@ -255,19 +265,19 @@ export class App {
               },
             },
           }),
-          h('button', { class: 'btn', text: 'Un seul téléphone', on: { click: () => go('local') } }),
+          h('button', { class: 'btn', text: t('home.local'), on: { click: () => go('local') } }),
         ),
         h('button', {
           class: 'btn small',
-          text: 'Comment on joue',
+          text: t('home.rules'),
           on: { click: () => this.renderRules(() => this.renderHome()) },
         }),
         h(
           'div',
           { class: 'settings' },
           h('button', {
-            text: `${THEME_ICON[readTheme()]} ${THEME_LABEL[readTheme()]}`,
-            attrs: { 'aria-label': `Thème : ${THEME_LABEL[readTheme()]}. Changer.` },
+            text: `${THEME_ICON[readTheme()]} ${t(`theme.${readTheme()}`)}`,
+            attrs: { 'aria-label': t('theme.change', { theme: t(`theme.${readTheme()}`) }) },
             on: {
               click: () => {
                 applyTheme(nextTheme())
@@ -275,10 +285,32 @@ export class App {
               },
             },
           }),
+          h('button', {
+            text: `🌐 ${LANG_LABEL[lang()]}`,
+            attrs: { 'aria-label': t('lang.change', { lang: LANG_LABEL[lang()] }) },
+            on: {
+              click: () => {
+                setLang(nextLang())
+                this.renderHome()
+              },
+            },
+          }),
+          // Confidentialité, conditions, mentions, licences et lien vers la
+          // source — ce dernier est ce que l'AGPL demande à l'app d'offrir.
+          h('button', {
+            text: `ℹ️ ${aboutLabel()}`,
+            attrs: { 'aria-label': aboutLabel() },
+            on: {
+              click: () => {
+                this.screen = 'about'
+                renderAbout(this.root, () => this.renderHome())
+              },
+            },
+          }),
         ),
         h('p', {
           class: 'hint center',
-          html: 'Sans compte · sans pub · sans serveur.<br>Trois secondes et le dé roule.',
+          html: t('home.footer'),
         }),
       ),
     )
@@ -292,7 +324,6 @@ export class App {
     const save = readSave()
     if (!save) return []
 
-    const variant = VARIANTS.find((v) => v.id === save.lobby.variantId)
     const players = save.lobby.players.length
 
     return [
@@ -301,7 +332,7 @@ export class App {
         { class: 'resume' },
         h('button', {
           class: 'btn green',
-          text: 'Reprendre la partie',
+          text: t('save.resume'),
           on: { click: () => this.resumeSaved() },
         }),
         h(
@@ -309,12 +340,16 @@ export class App {
           { class: 'resume-foot' },
           h('span', {
             class: 'hint',
-            text: `${variant?.name ?? 'Partie'} · ${players} joueurs · ${since(save.at)}`,
+            text: t('save.detail', {
+              variant: variantName(save.lobby.variantId),
+              players,
+              when: since(save.at),
+            }),
           }),
           h('button', {
             class: 'link',
-            text: 'oublier',
-            attrs: { 'aria-label': 'Oublier la partie sauvegardée' },
+            text: t('common.forget'),
+            attrs: { 'aria-label': t('save.forget.label') },
             on: {
               click: () => {
                 clearSave()
@@ -337,10 +372,10 @@ export class App {
       'div',
       { class: 'stack' },
       ...VARIANTS.map((v) => {
-        const look = LOOKS[v.id] ?? { tag: '', badge: 'die', meta: '' }
         const badge = h('span', { class: `badge b${VARIANTS.indexOf(v) + 1}` })
-        if (look.badge === 'die') badge.append(this.face(5))
-        else if (look.badge === 'pawn') badge.append(this.token(null))
+        const kind = BADGES[v.id] ?? 'die'
+        if (kind === 'die') badge.append(this.face(5))
+        else if (kind === 'pawn') badge.append(this.token(null))
         else badge.textContent = '⚡'
 
         return h(
@@ -362,11 +397,11 @@ export class App {
             h(
               'div',
               { class: 'head' },
-              h('strong', { text: v.name }),
-              look.tag ? h('span', { class: 'tag', text: look.tag }) : null,
+              h('strong', { text: variantName(v.id) }),
+              h('span', { class: 'tag', text: t(`variant.${v.id}.tag` as Key) }),
             ),
-            h('p', { class: 'desc', text: v.description }),
-            h('span', { class: 'desc', text: look.meta }),
+            h('p', { class: 'desc', text: t(`variant.${v.id}.desc` as Key) }),
+            h('span', { class: 'desc', text: t(`variant.${v.id}.meta` as Key) }),
           ),
         )
       }),
@@ -388,13 +423,10 @@ export class App {
       h(
         'div',
         { class: 'screen' },
-        h('div', { class: 'topbar' }, this.backButton(back), h('h2', { text: 'On joue à quoi ?' })),
+        h('div', { class: 'topbar' }, this.backButton(back), h('h2', { text: t('pick.title') })),
         cards,
-        h('p', {
-          class: 'hint center',
-          text: 'Les règles maison se règlent juste après, dans le salon.',
-        }),
-        h('button', { class: 'btn red push', text: 'Continuer', on: { click: confirm } }),
+        h('p', { class: 'hint center', text: t('pick.hint') }),
+        h('button', { class: 'btn red push', text: t('common.continue'), on: { click: confirm } }),
       ),
     )
   }
@@ -413,11 +445,11 @@ export class App {
         autocapitalize: 'characters',
         autocomplete: 'off',
         spellcheck: 'false',
-        'aria-label': 'Code de partie',
+        'aria-label': t('join.code.label'),
         inputmode: 'text',
       },
     })
-    const submit = h('button', { class: 'btn blue', text: 'Rejoindre' })
+    const submit = h('button', { class: 'btn blue', text: t('join.action') })
 
     const paint = () => {
       value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH)
@@ -436,7 +468,7 @@ export class App {
     input.addEventListener('input', paint)
 
     const join = () => {
-      if (value.length < 4) return this.toast('Entrez le code que vos amis vous ont donné.')
+      if (value.length < 4) return this.notify('join.tooShort')
       this.openOnline(value, false)
     }
     submit.addEventListener('click', join)
@@ -453,22 +485,28 @@ export class App {
           'div',
           { class: 'topbar' },
           this.backButton(() => this.renderHome()),
-          h('h2', { text: 'Rejoindre une partie' }),
+          h('h2', { text: t('join.title') }),
         ),
-        h('p', {
-          class: 'hint',
-          text: `Tapez les ${CODE_LENGTH} caractères que votre ami vous a envoyés.`,
-        }),
-        h('div', { class: 'code-input', on: { click: () => input.focus() } }, boxes, input),
+        h('p', { class: 'hint', text: t('join.hint', { n: CODE_LENGTH }) }),
+        h(
+          'div',
+          // `preventScroll` : le champ réel est un calque invisible posé sur les
+          // cases dessinées. Sans cela le navigateur fait défiler la page pour
+          // « montrer » un élément déjà entièrement visible, et l'écran saute au
+          // moment précis où le clavier s'ouvre.
+          { class: 'code-input', on: { click: () => input.focus({ preventScroll: true }) } },
+          boxes,
+          input,
+        ),
         submit,
         h('p', {
           class: 'hint center push',
-          text: "Le code ouvre un lien direct entre vos téléphones. Rien n'est stocké nulle part.",
+          text: t('join.footer'),
         }),
       ),
     )
     paint()
-    if (!prefill) setTimeout(() => input.focus(), 60)
+    if (!prefill) setTimeout(() => input.focus({ preventScroll: true }), 60)
   }
 
   // ─────────────────────────── 03 + 05 · salon ───────────────────────────
@@ -488,12 +526,15 @@ export class App {
         const editable = session.isHost || p.clientId === session.self
         const nameField = h('input', {
           value: p.name,
-          attrs: { maxlength: '16', 'aria-label': `Nom du joueur ${p.seat + 1}` },
-          on: { change: () => session.rename(p.seat, nameField.value.trim() || `Joueur ${p.seat + 1}`) },
+          attrs: { maxlength: '16', 'aria-label': t('lobby.rename', { n: p.seat + 1 }) },
+          on: {
+            change: () =>
+              session.rename(p.seat, nameField.value.trim() || t('common.player', { n: p.seat + 1 })),
+          },
         })
         if (!editable) nameField.disabled = true
 
-        const tag = p.kind === 'bot' ? 'bot' : !p.connected ? 'hors ligne' : ''
+        const tag = p.kind === 'bot' ? t('lobby.bot') : !p.connected ? t('lobby.offline') : ''
         const isHostSeat = p.seat === session.hostSeat
 
         return h(
@@ -503,13 +544,13 @@ export class App {
           nameField,
           h('span', {
             class: 'tag',
-            text: tag || (isHostSeat ? 'hôte' : p.clientId === session.self ? 'vous' : ''),
+            text: tag || (isHostSeat ? t('lobby.host') : p.clientId === session.self ? t('common.you') : ''),
           }),
           session.isHost && !isHostSeat
             ? h('button', {
                 class: 'icon-btn danger',
                 text: '✕',
-                attrs: { 'aria-label': `Retirer ${p.name}` },
+                attrs: { 'aria-label': t('lobby.remove', { name: p.name }) },
                 on: { click: () => session.removeSeat(p.seat) },
               })
             : null,
@@ -520,7 +561,7 @@ export class App {
           'div',
           { class: 'seat empty' },
           this.token(null, 'ghost'),
-          h('span', { class: 'who', text: 'place libre' }),
+          h('span', { class: 'who', text: t('lobby.free') }),
         ),
       ),
     )
@@ -535,8 +576,8 @@ export class App {
         h(
           'div',
           { class: 'topbar' },
-          this.backButton(() => this.quit(), 'Quitter la partie'),
-          h('h2', { text: 'Salon' }),
+          this.backButton(() => this.quit(), t('lobby.quit')),
+          h('h2', { text: t('lobby.title') }),
           online && !session.isHost ? this.codePill(lobby.code) : null,
         ),
 
@@ -547,7 +588,7 @@ export class App {
           : h(
               'div',
               { class: 'stack' },
-              h('span', { class: 'label', text: `Joueurs · ${lobby.players.length}/4` }),
+              h('span', { class: 'label', text: t('lobby.players', { n: lobby.players.length }) }),
               seats,
               canAdd
                 ? h(
@@ -555,12 +596,12 @@ export class App {
                     { class: 'row' },
                     h('button', {
                       class: 'btn small',
-                      text: '+ Joueur',
+                      text: t('lobby.addPlayer'),
                       on: { click: () => session.addSeat('human') },
                     }),
                     h('button', {
                       class: 'btn small',
-                      text: '+ Bot',
+                      text: t('lobby.addBot'),
                       on: { click: () => session.addSeat('bot') },
                     }),
                   )
@@ -570,12 +611,12 @@ export class App {
         h(
           'div',
           { class: 'stack' },
-          h('span', { class: 'label', text: `Règles maison · ${variant.name}` }),
+          h('span', { class: 'label', text: t('lobby.rules', { variant: variantName(variant.id) }) }),
           this.ruleChips(variant),
           session.isHost
             ? h('button', {
                 class: 'btn small',
-                text: 'Changer de jeu',
+                text: t('lobby.change'),
                 on: {
                   click: () => {
                     this.picking = 'change'
@@ -593,14 +634,14 @@ export class App {
           session.isHost
             ? h('button', {
                 class: 'btn red',
-                text: lobby.players.length < 2 ? 'Il faut au moins 2 joueurs' : 'Lancer la partie',
+                text: lobby.players.length < 2 ? t('lobby.needTwo') : t('lobby.start'),
                 disabled: lobby.players.length < 2,
                 on: { click: () => session.start() },
               })
             : !waiting
-              ? h('p', { class: 'hint center', text: "En attente du lancement par l'hôte…" })
+              ? h('p', { class: 'hint center', text: t('lobby.waitHost') })
               : null,
-          h('p', { class: 'hint center', text: 'Ordre tiré au sort · 4 chevaux chacun' }),
+          h('p', { class: 'hint center', text: t('lobby.footer') }),
         ),
       ),
     )
@@ -615,11 +656,8 @@ export class App {
       return h(
         'div',
         { class: 'card' },
-        h('h3', { text: 'Connexion à la partie…' }),
-        h('p', {
-          class: 'hint',
-          text: "Votre ami doit avoir la partie ouverte de son côté. Cela prend deux à trois secondes.",
-        }),
+        h('h3', { text: t('link.connecting') }),
+        h('p', { class: 'hint', text: t('link.connecting.hint') }),
         h('div', { class: 'link-dots' }, h('i'), h('i'), h('i')),
       )
     }
@@ -628,20 +666,14 @@ export class App {
     return h(
       'div',
       { class: 'card' },
-      h('h3', { text: 'Personne ne répond' }),
-      h('p', {
-        class: 'hint',
-        text:
-          relays === 0
-            ? "Aucun relais de mise en relation n'est joignable : vérifiez votre connexion internet."
-            : `Trois causes possibles : le code n'est pas le bon, votre ami n'a pas encore ouvert la partie, ou vos deux réseaux bloquent la connexion directe (fréquent en 4G).`,
-      }),
+      h('h3', { text: t('link.lost') }),
+      h('p', { class: 'hint', text: t(relays === 0 ? 'link.lost.offline' : 'link.lost.hint') }),
       h(
         'div',
         { class: 'row' },
         h('button', {
           class: 'btn small green',
-          text: 'Réessayer',
+          text: t('common.retry'),
           on: {
             click: () => {
               session.retry()
@@ -651,7 +683,7 @@ export class App {
         }),
         h('button', {
           class: 'btn small',
-          text: 'Autre code',
+          text: t('link.otherCode'),
           on: {
             click: () => {
               this.quit()
@@ -668,7 +700,7 @@ export class App {
     return h(
       'div',
       { class: 'card' },
-      h('span', { class: 'label', text: 'Code à partager' }),
+      h('span', { class: 'label', text: t('lobby.code') }),
       h(
         'div',
         { class: 'code-boxes' },
@@ -679,29 +711,29 @@ export class App {
         { class: 'row' },
         h('button', {
           class: 'btn small green',
-          text: 'Partager',
+          text: t('lobby.share'),
           on: { click: () => void this.share(code) },
         }),
         h('button', {
           class: 'btn small',
-          text: 'Copier',
+          text: t('lobby.copy'),
           on: { click: () => void this.copy(code) },
         }),
       ),
-      h('p', { class: 'hint', text: 'Vos amis tapent ce code, ou ouvrent le lien. Rien à installer.' }),
+      h('p', { class: 'hint', text: t('lobby.code.hint') }),
     )
   }
 
   /** Les réglages de la variante, lisibles d'un coup d'œil. */
   private ruleChips(v: Variant): HTMLElement {
     const chips: [string, boolean][] = [
-      [`${v.exitRolls.join(' ou ')} pour sortir`, true],
-      ['6 rejoue', v.extraTurnOnSix],
-      ['manger renvoie', true],
-      ['cases étoile', v.starSquaresAreSafe],
-      ['compte exact', v.exactFinish],
-      ['barrages', v.blockades],
-      ['prime de capture', v.extraTurnOnCapture],
+      [t('chip.exit', { rolls: v.exitRolls.join(t('chip.or')) }), true],
+      [t('chip.six'), v.extraTurnOnSix],
+      [t('chip.capture'), true],
+      [t('chip.star'), v.starSquaresAreSafe],
+      [t('chip.exact'), v.exactFinish],
+      [t('chip.blockade'), v.blockades],
+      [t('chip.bonus'), v.extraTurnOnCapture],
     ]
     return h(
       'div',
@@ -718,9 +750,9 @@ export class App {
 
   private async share(code: string): Promise<void> {
     const url = this.linkFor(code)
-    const text = `Rejoins ma partie de petits chevaux — code ${code}`
+    const text = t('lobby.invite', { code })
     try {
-      if (navigator.share) await navigator.share({ title: 'Jeu du Dada', text, url })
+      if (navigator.share) await navigator.share({ title: t('app.title'), text, url })
       else await this.copy(code)
     } catch {
       // Partage annulé : rien à signaler.
@@ -731,7 +763,7 @@ export class App {
     const url = this.linkFor(code)
     try {
       await navigator.clipboard.writeText(url)
-      this.toast('Lien copié.')
+      this.notify('lobby.copied')
     } catch {
       this.toast(url)
     }
@@ -746,23 +778,25 @@ export class App {
       h(
         'div',
         { class: 'screen' },
-        h('div', { class: 'topbar' }, this.backButton(back), h('h2', { text: 'Comment on joue' })),
+        h('div', { class: 'topbar' }, this.backButton(back), h('h2', { text: t('rules.title') })),
         h(
           'div',
           { class: 'steps' },
-          ...HOW_TO.map(([title, body], i) =>
+          ...[1, 2, 3, 4, 5].map((n) =>
             h(
               'div',
-              {
-                class: 'step',
-                style: this.seatVars((i % 4) as Seat),
-              },
-              h('span', { class: 'num', text: String(i + 1) }),
-              h('div', { class: 'body' }, h('strong', { text: title! }), h('span', { text: body! })),
+              { class: 'step', style: this.seatVars(((n - 1) % 4) as Seat) },
+              h('span', { class: 'num', text: String(n) }),
+              h(
+                'div',
+                { class: 'body' },
+                h('strong', { text: t(`rules.${n}.title` as Key) }),
+                h('span', { text: t(`rules.${n}.body` as Key) }),
+              ),
             ),
           ),
         ),
-        h('p', { class: 'hint center push', text: 'Trois 6 de suite · tour perdu' }),
+        h('p', { class: 'hint center push', text: t('rules.footer') }),
       ),
     )
   }
@@ -782,7 +816,7 @@ export class App {
       'button',
       {
         class: 'dice',
-        attrs: { 'aria-label': 'Lancer le dé' },
+        attrs: { 'aria-label': t('play.roll') },
         on: {
           click: () => {
             const game = this.session?.game
@@ -924,28 +958,30 @@ export class App {
     let detail = ''
 
     if (this.tumbling) {
-      title = 'Le dé roule…'
+      title = t('play.rolling')
     } else if (finished) {
-      title = 'Partie terminée'
+      title = t('play.over')
     } else if (mine && state.voided) {
-      title = 'Tour perdu'
-      detail = `${state.variant.maxConsecutiveSixes} six d'affilée`
+      title = t('play.voided')
+      detail = t('play.voided.hint', { n: state.variant.maxConsecutiveSixes })
     } else if (mine && state.phase === 'rolling') {
-      title = 'À vous'
-      detail = 'touchez le dé'
+      title = t('play.yourTurn')
+      detail = t('play.touchDie')
     } else if (mine && moveCount === 0) {
-      title = 'Rien à jouer'
-      detail = 'on passe la main'
+      title = t('play.nothing')
+      detail = t('play.nothing.hint')
     } else if (mine && moveCount === 1) {
-      title = `Vous avez fait ${state.dice}`
-      detail = 'un seul coup : il se joue'
+      title = t('play.youRolled', { dice: state.dice ?? '' })
+      detail = t('play.pickOne')
     } else if (mine) {
-      title = `Vous avez fait ${state.dice}`
-      detail = 'choisissez un cheval cerclé'
+      title = t('play.youRolled', { dice: state.dice ?? '' })
+      detail = t('play.pickMany')
     } else if (state.phase === 'rolling') {
-      title = current ? `Tour ${nameOf(current.name)}` : 'Tour suivant'
+      // `turnOf` porte déjà la phrase entière — « Tour de Sami », « Sami's turn » :
+      // la préposition et l'élision sont des affaires de langue, pas de gabarit.
+      title = turnOf(current?.name ?? '…')
     } else {
-      title = `${current?.name ?? '…'} a fait ${state.dice}`
+      title = t('play.rolled', { name: current?.name ?? '…', dice: state.dice ?? '' })
     }
 
     fill(
@@ -1057,10 +1093,18 @@ export class App {
           'div',
           { class: 'card' },
           h('div', { class: 'trophy' }, h('span'), h('span'), h('span')),
-          h('h2', { style: { textAlign: 'center' }, text: `${winner?.name ?? 'Personne'} gagne\u202f!` }),
+          h('h2', {
+            style: { textAlign: 'center' },
+            text: t('win.title', { name: winner?.name ?? t('win.nobody') }),
+          }),
           h('p', {
             class: 'hint center',
-            text: `${done(state.ranking[0] ?? 0)}/4 chevaux rentrés · règles « ${state.variant.name} »`,
+            // Le nom de la variante n'est plus dans l'état — il ne pouvait pas y
+            // être et rester traduisible : `id` sert de clé, `variantName` la lit.
+            text: t('win.detail', {
+              n: done(state.ranking[0] ?? 0),
+              variant: variantName(state.variant.id),
+            }),
           }),
         ),
         h(
@@ -1083,7 +1127,7 @@ export class App {
         session.isHost
           ? h('button', {
               class: 'btn red',
-              text: 'Revanche',
+              text: t('win.rematch'),
               on: {
                 click: () => {
                   overlay.remove()
@@ -1093,10 +1137,10 @@ export class App {
                 },
               },
             })
-          : h('p', { class: 'hint center', text: "L'hôte peut relancer une manche." }),
+          : h('p', { class: 'hint center', text: t('win.hostRematch') }),
         h('button', {
           class: 'btn',
-          text: 'Accueil',
+          text: t('win.home'),
           on: {
             click: () => {
               overlay.remove()
@@ -1112,6 +1156,17 @@ export class App {
   // ─────────────────────────── divers ───────────────────────────
 
   private toastTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Un message flottant écrit dans la langue courante.
+   *
+   * Le pendant de `toast`, qui reçoit lui du texte déjà fait : ce que rapporte
+   * le moteur ou un pair est déjà une phrase, ce que l'interface signale est une
+   * clé. Les deux passent par le même bandeau.
+   */
+  private notify(key: Key, params?: Record<string, string | number>): void {
+    this.toast(t(key, params))
+  }
 
   private toast(message: string): void {
     document.querySelector('.toast')?.remove()

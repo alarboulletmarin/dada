@@ -8,8 +8,6 @@ import type { Variant } from './types.ts'
 export const VARIANTS: Variant[] = [
   {
     id: 'petits-chevaux',
-    name: 'Petits chevaux',
-    description: 'La règle française classique. Un 6 pour sortir, on rejoue sur un 6.',
     exitRolls: [6],
     extraTurnOnSix: true,
     maxConsecutiveSixes: 3,
@@ -22,8 +20,6 @@ export const VARIANTS: Variant[] = [
   },
   {
     id: 'ludo',
-    name: 'Ludo',
-    description: 'La règle internationale. Cases étoilées protégées, barrages, primes de capture.',
     exitRolls: [6],
     extraTurnOnSix: true,
     maxConsecutiveSixes: 3,
@@ -36,8 +32,6 @@ export const VARIANTS: Variant[] = [
   },
   {
     id: 'rapide',
-    name: 'Rapide',
-    description: 'Sortie sur 1 ou 6, arrivée sans compte exact. Pour une partie courte.',
     exitRolls: [1, 6],
     extraTurnOnSix: true,
     maxConsecutiveSixes: 0,

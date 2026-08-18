@@ -37,9 +37,8 @@ export type Player = {
 }
 
 export type Variant = {
+  /** Sert aussi de clé de traduction : le nom affiché n'est pas dans l'état. */
   id: string
-  name: string
-  description: string
   /** Valeurs du dé permettant de sortir un pion de l'écurie. */
   exitRolls: number[]
   /** Relancer le dé après un 6. */
@@ -62,13 +61,42 @@ export type Variant = {
 
 export type Phase = 'rolling' | 'moving' | 'finished'
 
+/**
+ * Un événement du journal, sous forme structurée et non de phrase.
+ *
+ * L'état de la partie circule d'un appareil à l'autre : s'il contenait du texte
+ * traduit, deux amis ne pourraient pas jouer chacun dans sa langue. Le moteur
+ * décrit donc ce qui s'est passé, et chaque écran le formule à sa façon.
+ */
+export type LogEvent =
+  | { kind: 'start'; variant: string }
+  | { kind: 'roll'; dice: number }
+  | { kind: 'voided'; sixes: number }
+  | { kind: 'exit'; pawn: number }
+  | { kind: 'finish'; pawn: number }
+  | { kind: 'advance'; pawn: number; dice: number }
+  | { kind: 'capture'; pawn: number; victim: string }
+  | { kind: 'pass' }
+  | { kind: 'win' }
+  | { kind: 'rank'; place: number }
+
 export type LogEntry = {
   seq: number
   seat: Seat
   /** Nom du joueur concerné, vide pour un message système. */
   actor: string
-  text: string
+  event: LogEvent
 }
+
+/** Refus opposé par le moteur, à traduire au moment de l'afficher. */
+export type GameError =
+  | 'finished'
+  | 'notYourTurn'
+  | 'alreadyRolled'
+  | 'rollFirst'
+  | 'illegal'
+  | 'nothingToPass'
+  | 'moveExists'
 
 export type GameState = {
   variant: Variant

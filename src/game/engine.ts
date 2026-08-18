@@ -19,7 +19,9 @@ import {
   PAWNS_PER_PLAYER,
   STABLE,
   type Action,
+  type GameError,
   type GameState,
+  type LogEvent,
   type Move,
   type Pawn,
   type Player,
@@ -60,7 +62,7 @@ export function createGame(opts: {
     ranking: [],
     rng: opts.seed,
     log: [
-      { seq: 0, seat: players[0]!.seat, actor: '', text: `Partie lancée — règles « ${opts.variant.name} ».` },
+      { seq: 0, seat: players[0]!.seat, actor: '', event: { kind: 'start', variant: opts.variant.id } },
     ],
     seq: 0,
   }
@@ -155,15 +157,15 @@ export function legalMoves(state: GameState): Move[] {
 
 // ─────────────────────────────── écritures ───────────────────────────────
 
-export type ApplyResult = { state: GameState; error?: string }
+export type ApplyResult = { state: GameState; error?: GameError }
 
 /**
  * Applique une action au nom de `actor`. Le siège est vérifié ici : c'est le
  * seul rempart contre un pair qui jouerait à la place d'un autre.
  */
 export function apply(state: GameState, action: Action, actor: Seat): ApplyResult {
-  if (state.phase === 'finished') return { state, error: 'La partie est terminée.' }
-  if (actor !== state.turn) return { state, error: "Ce n'est pas votre tour." }
+  if (state.phase === 'finished') return { state, error: 'finished' }
+  if (actor !== state.turn) return { state, error: 'notYourTurn' }
 
   switch (action.type) {
     case 'roll':
@@ -176,7 +178,7 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
 }
 
 function applyRoll(state: GameState): ApplyResult {
-  if (state.phase !== 'rolling') return { state, error: 'Le dé a déjà été lancé.' }
+  if (state.phase !== 'rolling') return { state, error: 'alreadyRolled' }
 
   const [rng, dice] = rollDie(state.rng)
   const consecutiveSixes = dice === 6 ? state.consecutiveSixes + 1 : 0
@@ -192,17 +194,17 @@ function applyRoll(state: GameState): ApplyResult {
     phase: 'moving',
     seq: state.seq + 1,
   }
-  next = addLog(next, state.turn, `lance le dé : ${dice}.`)
-  if (voided) next = addLog(next, state.turn, `${max} six d'affilée — tour perdu.`)
+  next = addLog(next, state.turn, { kind: 'roll', dice })
+  if (voided) next = addLog(next, state.turn, { kind: 'voided', sixes: max })
 
   return { state: next }
 }
 
 function applyMove(state: GameState, id: string): ApplyResult {
-  if (state.phase !== 'moving') return { state, error: "Lancez le dé d'abord." }
+  if (state.phase !== 'moving') return { state, error: 'rollFirst' }
 
   const move = legalMoves(state).find((m) => m.pawnId === id)
-  if (!move) return { state, error: 'Ce coup est interdit.' }
+  if (!move) return { state, error: 'illegal' }
 
   const pawns = state.pawns.map((p) => {
     if (p.id === move.pawnId) return { ...p, steps: move.to }
@@ -212,25 +214,28 @@ function applyMove(state: GameState, id: string): ApplyResult {
 
   let next: GameState = { ...state, pawns, seq: state.seq + 1 }
 
-  const label = `cheval ${pawnSlot(move.pawnId) + 1}`
-  if (move.exits) next = addLog(next, state.turn, `sort son ${label}.`)
-  else if (move.finishes) next = addLog(next, state.turn, `amène son ${label} à l'arrivée !`)
-  else next = addLog(next, state.turn, `avance son ${label} de ${state.dice}.`)
+  const pawn = pawnSlot(move.pawnId) + 1
+  if (move.exits) next = addLog(next, state.turn, { kind: 'exit', pawn })
+  else if (move.finishes) next = addLog(next, state.turn, { kind: 'finish', pawn })
+  else next = addLog(next, state.turn, { kind: 'advance', pawn, dice: state.dice ?? 0 })
 
   for (const captured of move.captures) {
     const owner = state.pawns.find((p) => p.id === captured)!.owner
-    const name = playerAt(state, owner)?.name ?? `Joueur ${owner + 1}`
-    next = addLog(next, state.turn, `mange le cheval ${pawnSlot(captured) + 1} de ${name} !`)
+    next = addLog(next, state.turn, {
+      kind: 'capture',
+      pawn: pawnSlot(captured) + 1,
+      victim: playerAt(state, owner)?.name ?? '',
+    })
   }
 
   return { state: endTurn(next, move) }
 }
 
 function applyPass(state: GameState): ApplyResult {
-  if (state.phase !== 'moving') return { state, error: 'Rien à passer.' }
-  if (legalMoves(state).length > 0) return { state, error: 'Un coup est possible.' }
+  if (state.phase !== 'moving') return { state, error: 'nothingToPass' }
+  if (legalMoves(state).length > 0) return { state, error: 'moveExists' }
 
-  const next = addLog({ ...state, seq: state.seq + 1 }, state.turn, 'ne peut rien jouer.')
+  const next = addLog({ ...state, seq: state.seq + 1 }, state.turn, { kind: 'pass' })
   return { state: endTurn(next, null) }
 }
 
@@ -241,9 +246,9 @@ function endTurn(state: GameState, move: Move | null): GameState {
   // Un joueur qui vient de rentrer son dernier cheval prend place au classement.
   if (move?.finishes && hasWon(next, next.turn) && !next.ranking.includes(next.turn)) {
     next = { ...next, ranking: [...next.ranking, next.turn] }
-    // `addLog` préfixe déjà le nom du joueur : ne pas le répéter ici.
+    // Le nom du joueur est déjà porté par `actor` : l'événement ne le répète pas.
     const place = next.ranking.length
-    next = addLog(next, next.turn, place === 1 ? 'gagne la partie !' : `termine ${place}e.`)
+    next = addLog(next, next.turn, place === 1 ? { kind: 'win' } : { kind: 'rank', place })
   }
 
   const stillPlaying = next.players.filter((p) => !next.ranking.includes(p.seat))
@@ -295,9 +300,9 @@ function nextActiveSeat(state: GameState, from: Seat): Seat {
   return from
 }
 
-function addLog(state: GameState, seat: Seat, text: string): GameState {
-  const actor = playerAt(state, seat)?.name ?? `Joueur ${seat + 1}`
-  const entry = { seq: state.log.length, seat, actor, text }
+function addLog(state: GameState, seat: Seat, event: LogEvent): GameState {
+  const actor = playerAt(state, seat)?.name ?? ''
+  const entry = { seq: state.log.length, seat, actor, event }
   return { ...state, log: [...state.log, entry].slice(-LOG_LIMIT) }
 }
 
