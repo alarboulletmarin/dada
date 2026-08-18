@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { geometryFor } from './board.ts'
-import { apply, createGame, hasWon, legalMoves, pawnId } from './engine.ts'
+import { apply, createGame, forceSkipTurn, hasWon, legalMoves, pawnId } from './engine.ts'
 import { rollDie } from './rng.ts'
 import { variantById } from './variants.ts'
 import { DICE_BOOSTS_PER_GAME, STABLE, type GameState, type Player, type Seat } from './types.ts'
@@ -303,5 +303,34 @@ describe('bonus de dé', () => {
     const rolled = apply(state, { type: 'roll', boost: 'high' }, 0).state
     expect(rolled.diceBoosts).toBe(0)
     expect(rolled.dice).not.toBeNull()
+  })
+})
+
+describe('forceSkipTurn', () => {
+  it('passe la main au siège suivant même si des coups légaux existaient', () => {
+    const state = setup({ at: { [pawnId(0, 0)]: 2 }, dice: 3 })
+    expect(legalMoves(state).length).toBeGreaterThan(0)
+
+    const after = forceSkipTurn(state, 0)
+    expect(after.turn).toBe(1)
+    expect(after.phase).toBe('rolling')
+  })
+
+  it('fonctionne aussi en phase de lancer, avant même d’avoir joué le dé', () => {
+    const state = setup({})
+    expect(state.phase).toBe('rolling')
+
+    const after = forceSkipTurn(state, 0)
+    expect(after.turn).toBe(1)
+  })
+
+  it('ne fait rien si le siège appelé n’a pas la main', () => {
+    const state = setup({ dice: 3 })
+    expect(forceSkipTurn(state, 1)).toBe(state)
+  })
+
+  it('ne fait rien si la partie est déjà terminée', () => {
+    const state: GameState = { ...setup({}), phase: 'finished' }
+    expect(forceSkipTurn(state, 0)).toBe(state)
   })
 })

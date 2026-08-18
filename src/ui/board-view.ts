@@ -13,6 +13,7 @@
 import { cellOf, geometryFor, type BoardGeometry, type Cell } from '../game/board.ts'
 import { pawnSlot } from '../game/engine.ts'
 import type { GameState, Move, Seat, Variant } from '../game/types.ts'
+import { t } from './i18n.ts'
 
 const SEATS: Seat[] = [0, 1, 2, 3]
 /** Une forme par siège : le plateau reste lisible sans distinguer les couleurs. */
@@ -236,10 +237,10 @@ export class BoardView {
       // Un cheval jouable devient un vrai bouton : atteignable au clavier et
       // annoncé par un lecteur d'écran. Les autres sortent de l'ordre de tabulation.
       if (move) {
-        const what = move.exits ? 'Sortir' : move.finishes ? 'Rentrer' : 'Avancer'
+        const labelKey = move.exits ? 'play.pawn.exit' : move.finishes ? 'play.pawn.finish' : 'play.pawn.move'
         el.setAttribute('role', 'button')
         el.setAttribute('tabindex', '0')
-        el.setAttribute('aria-label', `${what} le cheval ${pawnSlot(p.id) + 1}`)
+        el.setAttribute('aria-label', t(labelKey, { n: pawnSlot(p.id) + 1 }))
         el.onkeydown = (ev) => {
           if (ev.key !== 'Enter' && ev.key !== ' ') return
           ev.preventDefault()

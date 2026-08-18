@@ -84,6 +84,7 @@ export type LogEvent =
   | { kind: 'advance'; pawn: number; dice: number }
   | { kind: 'capture'; pawn: number; victim: string }
   | { kind: 'pass' }
+  | { kind: 'timeout' }
   | { kind: 'win' }
   | { kind: 'rank'; place: number }
 

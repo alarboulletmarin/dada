@@ -124,7 +124,7 @@ const fr = {
   'play.pawn.finish': 'Rentrer le cheval {n}',
 
   'win.title': '{name} gagne !',
-  'win.detail': '{n}/4 chevaux rentrés · règles « {variant} »',
+  'win.detail': '{n}/{total} chevaux rentrés · règles « {variant} »',
   'win.rematch': 'Revanche',
   'win.home': 'Accueil',
   'win.hostRematch': "L'hôte peut relancer une manche.",
@@ -297,7 +297,7 @@ const en: Partial<Record<Key, string>> = {
   'play.pawn.finish': 'Bring horse {n} home',
 
   'win.title': '{name} wins!',
-  'win.detail': '{n}/4 horses home · « {variant} » rules',
+  'win.detail': '{n}/{total} horses home · « {variant} » rules',
   'win.rematch': 'Rematch',
   'win.home': 'Home',
   'win.hostRematch': 'The host can start another round.',

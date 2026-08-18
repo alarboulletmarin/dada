@@ -11,7 +11,7 @@
  */
 
 import { chooseMove } from '../game/bot.ts'
-import { apply, createGame, legalMoves } from '../game/engine.ts'
+import { apply, createGame, forceSkipTurn, legalMoves } from '../game/engine.ts'
 import { seedFrom } from '../game/rng.ts'
 import { variantById } from '../game/variants.ts'
 import type { Action, GameError, GameState, Seat } from '../game/types.ts'
@@ -20,6 +20,12 @@ import { clearSave, writeSave, type Save } from './save.ts'
 
 const MAX_SEATS = 4
 const BOT_DELAY = 700
+/**
+ * Au-delà, on considère qu'un pair distant déconnecté ne reviendra pas dans
+ * un délai raisonnable : mieux vaut passer son tour que figer la partie pour
+ * tout le monde.
+ */
+const DISCONNECT_TIMEOUT = 25000
 /**
  * Au-delà, on considère que l'invité ne trouvera personne. Mieux vaut le dire
  * que de le laisser devant un écran qui tourne : la mise en relation aboutit en
@@ -58,6 +64,7 @@ export class Session {
   private listeners: SessionListeners
   private botTimer: ReturnType<typeof setTimeout> | null = null
   private linkTimer: ReturnType<typeof setTimeout> | null = null
+  private disconnectTimer: ReturnType<typeof setTimeout> | null = null
   /** Retenu pour pouvoir refaire une tentative sans repasser par l'accueil. */
   private myName = ''
 
@@ -223,6 +230,7 @@ export class Session {
       }
       if (player?.clientId === this.lobby.hostClientId) this.electHost()
       else if (this.isHost) this.publishLobby()
+      this.scheduleDisconnectSkip()
       this.listeners.onChange()
     })
 
@@ -269,6 +277,7 @@ export class Session {
 
     this.publishLobby()
     if (this.game) this.room?.send('state', this.game)
+    this.scheduleDisconnectSkip()
     this.listeners.onChange()
   }
 
@@ -292,6 +301,7 @@ export class Session {
       this.publishLobby()
       if (this.game) this.room?.send('state', this.game)
       this.scheduleBot()
+      this.scheduleDisconnectSkip()
     }
   }
 
@@ -392,6 +402,7 @@ export class Session {
     this.room?.send('state', this.game)
     this.listeners.onChange()
     this.scheduleBot()
+    this.scheduleDisconnectSkip()
   }
 
   /** Point d'entrée unique de l'UI pour jouer un coup. */
@@ -420,6 +431,7 @@ export class Session {
     this.room?.send('state', state)
     this.listeners.onChange()
     this.scheduleBot()
+    this.scheduleDisconnectSkip()
   }
 
   /** L'hôte joue pour les sièges tenus par un bot. */
@@ -442,6 +454,29 @@ export class Session {
     }, BOT_DELAY)
   }
 
+  /** L'hôte passe le tour d'un pair distant resté déconnecté trop longtemps. */
+  private scheduleDisconnectSkip(): void {
+    if (this.disconnectTimer) clearTimeout(this.disconnectTimer)
+    if (!this.isHost || !this.game || this.game.phase === 'finished') return
+
+    const seat = this.game.turn
+    const player = this.lobby.players.find((p) => p.seat === seat)
+    // Ni un bot (déjà couvert par scheduleBot), ni un siège de cet appareil
+    // (mode local, ou l'hôte lui-même), ni un pair déjà connecté.
+    if (!player || player.kind === 'bot' || player.clientId === this.self || player.connected) return
+
+    this.disconnectTimer = setTimeout(() => {
+      if (!this.game || this.game.turn !== seat) return
+      const stillGone = this.lobby.players.find((p) => p.seat === seat)
+      if (!stillGone || stillGone.connected) return
+      this.game = forceSkipTurn(this.game, seat)
+      this.room?.send('state', this.game)
+      this.listeners.onChange()
+      this.scheduleBot()
+      this.scheduleDisconnectSkip()
+    }, DISCONNECT_TIMEOUT)
+  }
+
   /** Rejouer une nouvelle manche avec la même table. */
   restart(): void {
     if (!this.isHost) return
@@ -455,6 +490,7 @@ export class Session {
   destroy(forget = false): void {
     if (this.botTimer) clearTimeout(this.botTimer)
     if (this.linkTimer) clearTimeout(this.linkTimer)
+    if (this.disconnectTimer) clearTimeout(this.disconnectTimer)
     this.room?.leave()
     this.room = null
     if (forget) clearSave()

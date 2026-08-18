@@ -244,6 +244,18 @@ function applyPass(state: GameState): ApplyResult {
   return { state: endTurn(next, null) }
 }
 
+/**
+ * Force la fin du tour d'un siège sans exiger l'absence de coup légal —
+ * réservé à l'hôte pour l'abandon de tour d'un pair déconnecté. Un joueur ne
+ * peut jamais déclencher ceci via `apply()`/`dispatch()` : ce n'est pas une
+ * action du protocole réseau, seulement un utilitaire appelé côté hôte.
+ */
+export function forceSkipTurn(state: GameState, seat: Seat): GameState {
+  if (state.phase === 'finished' || state.turn !== seat) return state
+  const next = addLog({ ...state, seq: state.seq + 1 }, seat, { kind: 'timeout' })
+  return endTurn(next, null)
+}
+
 /** Décide qui joue ensuite, en tenant compte des primes de rejeu. */
 function endTurn(state: GameState, move: Move | null): GameState {
   let next = state

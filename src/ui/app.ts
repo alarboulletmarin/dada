@@ -984,12 +984,26 @@ export class App {
 
       const meta =
         rank >= 0
-          ? `${rank === 0 ? '1re' : `${rank + 1}e`} place`
+          ? rank === 0
+            ? t('play.place.first')
+            : t('play.place', { n: rank + 1 })
           : done > 0
-            ? `${done} rentré${done > 1 ? 's' : ''}`
+            ? t(done > 1 ? 'play.homed.other' : 'play.homed.one', { n: done })
             : running > 0
-              ? `${running} en piste`
-              : 'à l’écurie'
+              ? t('play.running', { n: running })
+              : t('play.stable')
+
+      // Un pair distant déconnecté ne joue plus : sans ce signal, un tour qui
+      // se termine tout seul (voir `scheduleDisconnectSkip` côté session)
+      // resterait inexpliqué à l'écran. `state.players[].connected` est une
+      // photo figée au lancement de la partie : seul le lobby, tenu à jour en
+      // continu, sait qui est là maintenant.
+      const lobbyPlayer = session.lobby.players.find((x) => x.seat === seat)
+      const offline =
+        lobbyPlayer !== undefined &&
+        lobbyPlayer.kind !== 'bot' &&
+        lobbyPlayer.clientId !== session.self &&
+        !lobbyPlayer.connected
 
       return h(
         'div',
@@ -1002,7 +1016,14 @@ export class App {
           'div',
           { class: 'body' },
           h('span', { class: 'who', text: p.name }),
-          h('span', { class: 'meta', text: session.controls(seat) ? `vous · ${meta}` : meta }),
+          h('span', {
+            class: 'meta',
+            text: session.controls(seat)
+              ? `${t('common.you')} · ${meta}`
+              : offline
+                ? `${t('lobby.offline')} · ${meta}`
+                : meta,
+          }),
         ),
       )
     }
@@ -1179,6 +1200,7 @@ export class App {
             // être et rester traduisible : `id` sert de clé, `variantName` la lit.
             text: t('win.detail', {
               n: done(state.ranking[0] ?? 0),
+              total: state.variant.pawnsPerPlayer,
               variant: variantName(state.variant.id),
             }),
           }),
@@ -1196,7 +1218,7 @@ export class App {
               h('span', { class: 'n', text: String(i + 1) }),
               this.token(seat),
               h('span', { class: 'who', text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
-              h('span', { class: 'score', text: `${done(seat)}/4` }),
+              h('span', { class: 'score', text: `${done(seat)}/${state.variant.pawnsPerPlayer}` }),
             ),
           ),
         ),

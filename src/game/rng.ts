@@ -15,10 +15,11 @@ export function nextFloat(state: number): [number, number] {
   return [t, ((r ^ (r >>> 14)) >>> 0) / 4294967296]
 }
 
-// Tables à 9 cases pour le bonus de dé : ~66,7% de chances côté favorisé contre
-// ~33,3% de l'autre — un vrai bonus, pas un dé truqué à 100%.
-const LOW_BIAS_FACES = [1, 1, 2, 2, 3, 3, 4, 5, 6]
-const HIGH_BIAS_FACES = [1, 2, 3, 4, 4, 5, 5, 6, 6]
+// Tables à 15 cases pour le bonus de dé : ~80% de chances côté favorisé
+// (chaque face du côté choisi à égalité) contre ~6,7% chacune de l'autre —
+// un vrai bonus qui se sent, mais pas un dé truqué à 100%.
+const LOW_BIAS_FACES = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 5, 6]
+const HIGH_BIAS_FACES = [1, 2, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6]
 
 /** Retourne le prochain état et un entier dans [1,6], `bias` pesant vers les petits ou grands nombres. */
 export function rollDie(state: number, bias?: 'low' | 'high'): [number, number] {
