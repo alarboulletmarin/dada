@@ -808,8 +808,11 @@ export class App {
     setKeepAwake(true)
 
     const boardHost = h('div')
-    const top = h('div', { class: 'players' })
-    const bottom = h('div', { class: 'players' })
+    // Les deux rangées se distinguent par une classe et non par leur rang : la
+    // disposition paysage les place dans des lignes différentes, et compter les
+    // enfants en CSS se serait cassé au premier bloc inséré.
+    const top = h('div', { class: 'players players--top' })
+    const bottom = h('div', { class: 'players players--bottom' })
     const turn = h('div', { class: 'turnline', attrs: { 'aria-live': 'polite' } })
     const die = h('div', { class: 'face' })
     const dieBtn = h(
@@ -847,7 +850,10 @@ export class App {
           }),
         ),
         top,
-        boardHost,
+        // Le plateau ne se dimensionne pas sur la largeur mais sur la place qui
+        // reste : c'est ce créneau qui la mesure (voir `.board-slot`). Sans lui,
+        // un écran court poussait le dé hors de l'écran.
+        h('div', { class: 'board-slot' }, boardHost),
         bottom,
         turn,
         dieBtn,

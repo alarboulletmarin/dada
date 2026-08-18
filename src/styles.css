@@ -117,13 +117,18 @@ body {
   touch-action: manipulation;
 }
 
+/* La coque, et elle ne défile jamais.
+   `height` et non `min-height` : une hauteur définie est ce qui permet aux
+   écrans, plus bas, de se répartir la place — avec `min-height` la coque grandit
+   avec son contenu, et le surplus part sous la ligne de flottaison.
+   `svh` et non `dvh` : la plus petite hauteur visible, celle qu'on a barre
+   d'adresse déployée. L'écran tient donc dans le pire cas, et ne saute pas quand
+   la barre se rétracte — ce que `dvh` ferait à chaque geste.
+   `height: 100%` d'abord, comme repli : `html` et `body` en portent une. */
 #app {
-  min-height: 100%;
-  /* `svh` et non `dvh` : la plus petite hauteur visible, celle qu'on a quand la
-     barre d'adresse est déployée. L'écran tient donc sans défilement dans le
-     pire cas, et ne saute pas quand la barre se rétracte — ce que `dvh` ferait
-     à chaque geste. */
-  min-height: 100svh;
+  height: 100%;
+  height: 100svh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
@@ -311,8 +316,17 @@ input:disabled {
 
 /* ─────────────────────────── blocs ─────────────────────────── */
 
+/* Les écrans de lecture — accueil, salon, règles, à propos — défilent chez eux
+   et non dans la page : la coque garde ainsi ses marges d'encoche en place, et
+   les bandeaux flottants ne glissent pas avec le texte.
+   `min-height: 0` est la ligne sans laquelle rien de tout cela ne marche : un
+   élément flexible refuse par défaut de descendre sous la taille de son contenu,
+   et `overflow` n'a alors jamais rien à faire. */
 .screen {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -885,11 +899,14 @@ input:disabled {
 
 /* ─────────────────────────── partie ─────────────────────────── */
 
+/* La partie, elle, ne défile jamais — ni dans la page, ni chez elle. Le dé est
+   le seul moyen de jouer : il doit être à l'écran, toujours. Tout ce qui
+   entoure le plateau garde sa taille, et c'est le plateau qui cède. */
 .play {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   gap: 12px;
   width: min(100%, 480px);
   margin: 0 auto;
@@ -991,12 +1008,45 @@ input:disabled {
 }
 
 /* Le plateau déborde jusqu'aux bords : c'est la pièce maîtresse de l'écran. */
+/* Le créneau du plateau : il prend toute la place que les autres ont laissée,
+   et il la mesure pour lui.
+   `container-type: size` fait de lui une référence pour `cqw`/`cqh`, ce qui
+   permet au plateau ci-dessous de se dimensionner sur une hauteur qu'aucune
+   autre unité CSS ne connaît — celle qui reste après l'en-tête, les cartes des
+   joueurs, la ligne de tour et le dé. La solution de rechange aurait été une
+   réserve en pixels écrite à la main : elle aurait menti le jour où l'un de ces
+   cinq blocs change d'un pixel. */
+.board-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* C'est le créneau qui mord les 16 px de marge intérieure de `.play`, et non
+     le plateau. La différence n'est pas cosmétique : un élément de grille plus
+     large que sa zone ne se centre pas, il s'aligne au début et déborde d'un
+     seul côté. En portant le bord à bord ici, le plateau reste toujours ≤ son
+     conteneur, et son centrage est vrai à toutes les tailles. */
+  margin-inline: -16px;
+  container-type: size;
+  display: grid;
+  place-items: center;
+}
+
+/* Le plateau prend toute la largeur — c'est son allure — tant que la hauteur le
+   permet, et rétrécit seulement quand elle ne le permet plus. `100cqw` est la
+   largeur bord à bord, `100cqh` la hauteur qui reste après l'en-tête, les
+   cartes des joueurs, la ligne de tour et le dé ; le plus petit des deux gagne.
+   Les deux épaisseurs de trait sont retranchées de la seconde et d'elle seule :
+   les traits sont en haut et en bas, ils coûtent de la hauteur, pas de la
+   largeur.
+   `content-box` est la seule exception au modèle de boîte du projet, et elle se
+   justifie : c'est la GRILLE qui doit être carrée, pas la boîte qui la porte. En
+   border-box, `aspect-ratio: 1` rend une boîte carrée dont l'intérieur est plus
+   court de la hauteur des deux traits — les cases mesuraient 27,60 × 27,07, et
+   un plateau de petits chevaux à cases rectangulaires se voit. */
 .board-wrap {
   position: relative;
-  width: calc(100% + 32px);
-  margin: 0 -16px;
+  box-sizing: content-box;
+  width: min(100cqw, calc(100cqh - 2 * var(--bw-thick)));
   aspect-ratio: 1;
-  flex: none;
   border-top: var(--bw-thick) solid var(--ink);
   border-bottom: var(--bw-thick) solid var(--ink);
   background: var(--card);
@@ -1776,9 +1826,66 @@ input:disabled {
 
 /* ─────────────────────────── grands écrans ─────────────────────────── */
 
+/* `justify-content: center` a disparu avec l'ancien gabarit : le créneau du
+   plateau absorbe désormais toute la place libre, il n'en reste plus à répartir.
+   C'est `place-items: center` du créneau qui centre le plateau sur un grand
+   écran, et l'écart entre les blocs qui respire. */
 @media (min-height: 900px) and (min-width: 420px) {
   .play {
-    justify-content: center;
     gap: 18px;
+  }
+}
+
+/* ─────────────────────────── partie en paysage ───────────────────────────
+   Téléphone couché : la colonne ne tient plus. L'en-tête, les cartes, la ligne
+   de tour et le dé mangent 330 px de haut — sur 390 disponibles, il restait
+   53 px pour le plateau. Rien ne défilait, mais rien n'était jouable non plus.
+   Deux colonnes : le plateau prend toute la hauteur à gauche, le reste se
+   range à droite. Aucun changement de balisage — les blocs sont désignés par
+   leur classe, et le plateau enjambe toutes les lignes. */
+@media (orientation: landscape) and (max-height: 620px) {
+  .play {
+    display: grid;
+    grid-template-columns: auto minmax(210px, 1fr);
+    grid-template-rows: auto auto 1fr auto auto;
+    align-content: center;
+    column-gap: 16px;
+    row-gap: 8px;
+    width: min(100%, 900px);
+  }
+
+  .play > .topbar {
+    grid-area: 1 / 2;
+  }
+  .play > .players--top {
+    grid-area: 2 / 2;
+  }
+  .play > .players--bottom {
+    grid-area: 3 / 2;
+    align-self: start;
+  }
+  .play > .turnline {
+    grid-area: 4 / 2;
+  }
+  .play > .dice {
+    grid-area: 5 / 2;
+  }
+
+  /* Toute la hauteur, à gauche. La largeur est posée en dur — et elle doit
+     l'être : une colonne `auto` demanderait sa taille au contenu, or le créneau
+     est un conteneur de requête et ne répond pas sur sa taille. `100svh` moins
+     les marges de `.play`, et `min()` dans `.board-wrap` rattrape l'écart des
+     encoches. */
+  .board-slot {
+    grid-area: 1 / 1 / -1 / 2;
+    width: calc(100svh - 32px);
+    max-width: 52vw;
+    margin-inline: -16px 0;
+  }
+
+  /* Les cartes des joueurs passent en colonne : côte à côte, dans 210 px, elles
+     n'affichent plus que leur pastille. */
+  .play > .players {
+    flex-direction: column;
   }
 }
