@@ -1,0 +1,31 @@
+{
+  "name": "jeu-dada",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Jeu du Dada / Petits Chevaux — PWA peer-to-peer, sans compte ni serveur",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "dependencies": {
+    "trystero": "^0.25.3"
+  },
+  "devDependencies": {
+    "@fontsource/baloo-2": "^5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-pwa": "^0.21.1",
+    "vitest": "^3.2.7"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.21.5": true
+  }
+}

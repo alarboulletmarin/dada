@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Jeu du Dada">
+  <rect width="512" height="512" rx="112" fill="#12131a" />
+  <!-- La croix du plateau, ramenée à l'essentiel. Le motif reste dans la zone
+       centrale sûre pour supporter le rognage des icônes « maskable ». -->
+  <g fill="#2b3049">
+    <rect x="196" y="120" width="120" height="272" rx="16" />
+    <rect x="120" y="196" width="272" height="120" rx="16" />
+  </g>
+  <g>
+    <circle cx="168" cy="168" r="46" fill="#e5484d" />
+    <circle cx="344" cy="168" r="46" fill="#4a8dff" />
+    <circle cx="344" cy="344" r="46" fill="#2fb47c" />
+    <circle cx="168" cy="344" r="46" fill="#f0b429" />
+  </g>
+  <circle cx="256" cy="256" r="38" fill="#e9eaf2" />
+</svg>
