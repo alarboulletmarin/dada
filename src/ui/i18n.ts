@@ -98,6 +98,9 @@ const fr = {
 
   'play.roll': 'Lancer le dé',
   'play.rolling': 'Le dé roule…',
+  'play.boost.low': 'Petit nombre',
+  'play.boost.high': 'Grand nombre',
+  'play.boost.remaining': '{n} bonus restants',
   'play.yourTurn': 'À vous',
   'play.touchDie': 'touchez le dé',
   'play.turnOf': 'Tour {name}',
@@ -268,6 +271,9 @@ const en: Partial<Record<Key, string>> = {
 
   'play.roll': 'Roll the die',
   'play.rolling': 'The die is rolling…',
+  'play.boost.low': 'Low number',
+  'play.boost.high': 'High number',
+  'play.boost.remaining': '{n} boosts left',
   'play.yourTurn': 'Your turn',
   'play.touchDie': 'tap the die',
   'play.turnOf': "{name}'s turn",

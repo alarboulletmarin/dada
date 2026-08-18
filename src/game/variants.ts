@@ -8,6 +8,8 @@ import type { Variant } from './types.ts'
 export const VARIANTS: Variant[] = [
   {
     id: 'petits-chevaux',
+    boardSize: 6,
+    pawnsPerPlayer: 4,
     exitRolls: [6],
     extraTurnOnSix: true,
     maxConsecutiveSixes: 3,
@@ -20,6 +22,8 @@ export const VARIANTS: Variant[] = [
   },
   {
     id: 'ludo',
+    boardSize: 6,
+    pawnsPerPlayer: 4,
     exitRolls: [6],
     extraTurnOnSix: true,
     maxConsecutiveSixes: 3,
@@ -32,6 +36,8 @@ export const VARIANTS: Variant[] = [
   },
   {
     id: 'rapide',
+    boardSize: 4,
+    pawnsPerPlayer: 2,
     exitRolls: [1, 6],
     extraTurnOnSix: true,
     maxConsecutiveSixes: 0,

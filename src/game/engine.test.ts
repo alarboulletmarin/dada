@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { START_INDEX } from './board.ts'
+import { geometryFor } from './board.ts'
 import { apply, createGame, hasWon, legalMoves, pawnId } from './engine.ts'
 import { rollDie } from './rng.ts'
 import { variantById } from './variants.ts'
-import { LAST_STEP, STABLE, TRACK_LENGTH, type GameState, type Player, type Seat } from './types.ts'
+import { DICE_BOOSTS_PER_GAME, STABLE, type GameState, type Player, type Seat } from './types.ts'
 
 const players = (seats: Seat[]): Player[] =>
   seats.map((seat) => ({ seat, name: `J${seat + 1}`, kind: 'local' as const, peerId: null, connected: true }))
+
+/** Géométrie de la variante par défaut des tests (petits-chevaux), et de la variante rapide. */
+const STANDARD = geometryFor(variantById('petits-chevaux'))
+const RAPIDE = geometryFor(variantById('rapide'))
 
 /** Fabrique un état contrôlé : positions imposées, dé imposé. */
 function setup(opts: {
@@ -38,7 +42,7 @@ function seedFor(value: number): number {
 
 /** Position relative du siège `seat` qui tombe sur la case absolue `index`. */
 const stepsToReach = (seat: Seat, index: number): number =>
-  (index - START_INDEX[seat] + TRACK_LENGTH) % TRACK_LENGTH
+  (index - STANDARD.startIndex[seat] + STANDARD.trackLength) % STANDARD.trackLength
 
 describe('sortie de l’écurie', () => {
   it('interdit de sortir sans la bonne valeur', () => {
@@ -54,7 +58,8 @@ describe('sortie de l’écurie', () => {
   })
 
   it('accepte aussi le 1 en variante rapide', () => {
-    expect(legalMoves(setup({ variant: 'rapide', dice: 1 }))).toHaveLength(4)
+    // La variante rapide joue avec 2 chevaux par joueur, pas 4.
+    expect(legalMoves(setup({ variant: 'rapide', dice: 1 }))).toHaveLength(2)
   })
 })
 
@@ -85,7 +90,7 @@ describe('capture', () => {
   it('épargne un cheval sur une case de départ', () => {
     const victim = pawnId(1, 0)
     const state = setup({
-      at: { [pawnId(0, 0)]: 25, [victim]: stepsToReach(1, START_INDEX[2]) },
+      at: { [pawnId(0, 0)]: 25, [victim]: stepsToReach(1, STANDARD.startIndex[2]) },
       dice: 3,
     })
     expect(legalMoves(state)[0]!.to).toBe(28)
@@ -101,26 +106,26 @@ describe('capture', () => {
 
 describe('arrivée', () => {
   it('exige le compte exact', () => {
-    const at = { [pawnId(0, 0)]: LAST_STEP - 1 }
+    const at = { [pawnId(0, 0)]: STANDARD.lastStep - 1 }
     expect(legalMoves(setup({ at, dice: 1 }))[0]!.finishes).toBe(true)
     expect(legalMoves(setup({ at, dice: 2 }))).toHaveLength(0)
   })
 
   it('tolère le dépassement en variante rapide', () => {
-    const move = legalMoves(setup({ variant: 'rapide', at: { [pawnId(0, 0)]: LAST_STEP - 1 }, dice: 5 }))[0]!
-    expect(move.to).toBe(LAST_STEP)
+    const move = legalMoves(setup({ variant: 'rapide', at: { [pawnId(0, 0)]: RAPIDE.lastStep - 1 }, dice: 5 }))[0]!
+    expect(move.to).toBe(RAPIDE.lastStep)
     expect(move.finishes).toBe(true)
   })
 
   it('ignore un cheval déjà arrivé', () => {
-    const state = setup({ at: { [pawnId(0, 0)]: LAST_STEP }, dice: 6 })
+    const state = setup({ at: { [pawnId(0, 0)]: STANDARD.lastStep }, dice: 6 })
     expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(false)
   })
 
   it('traverse l’escalier sans quitter le circuit', () => {
     // 55 = dernière case du circuit ; +2 doit mener à la 2ᵉ case de l'escalier.
-    const move = legalMoves(setup({ at: { [pawnId(0, 0)]: TRACK_LENGTH - 1 }, dice: 2 }))[0]!
-    expect(move.to).toBe(TRACK_LENGTH + 1)
+    const move = legalMoves(setup({ at: { [pawnId(0, 0)]: STANDARD.trackLength - 1 }, dice: 2 }))[0]!
+    expect(move.to).toBe(STANDARD.trackLength + 1)
   })
 })
 
@@ -195,7 +200,7 @@ describe('enchaînement des tours', () => {
   })
 
   it('saute les joueurs déjà arrivés', () => {
-    const done = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(1, i), LAST_STEP]))
+    const done = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(1, i), STANDARD.lastStep]))
     const state: GameState = {
       ...setup({ seats: [0, 1, 2], at: done, dice: 3 }),
       ranking: [1],
@@ -207,8 +212,8 @@ describe('enchaînement des tours', () => {
 
 describe('fin de partie', () => {
   it('classe le joueur qui rentre son dernier cheval', () => {
-    const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), LAST_STEP]))
-    at[pawnId(0, 3)] = LAST_STEP - 1
+    const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), STANDARD.lastStep]))
+    at[pawnId(0, 3)] = STANDARD.lastStep - 1
 
     const state = setup({ at, dice: 1 })
     const { state: after } = apply(state, { type: 'move', pawnId: pawnId(0, 3) }, 0)
@@ -221,8 +226,8 @@ describe('fin de partie', () => {
   })
 
   it('continue à trois tant qu’il reste deux joueurs en lice', () => {
-    const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), LAST_STEP]))
-    at[pawnId(0, 3)] = LAST_STEP - 1
+    const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), STANDARD.lastStep]))
+    at[pawnId(0, 3)] = STANDARD.lastStep - 1
 
     const state = setup({ seats: [0, 1, 2], at, dice: 1 })
     const { state: after } = apply(state, { type: 'move', pawnId: pawnId(0, 3) }, 0)
@@ -242,8 +247,8 @@ describe('journal', () => {
   // L'affichage compose « <acteur> <texte> » : si le texte répétait le nom,
   // le journal afficherait « Alice Alice gagne la partie ! ».
   it("ne met jamais le nom de l'acteur dans l'événement", () => {
-    const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), LAST_STEP]))
-    at[pawnId(0, 3)] = LAST_STEP - 1
+    const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), STANDARD.lastStep]))
+    at[pawnId(0, 3)] = STANDARD.lastStep - 1
     const { state } = apply(setup({ at, dice: 1 }), { type: 'move', pawnId: pawnId(0, 3) }, 0)
 
     // Le nom du joueur est porté une fois, par `actor`. Si l'événement le
@@ -276,5 +281,27 @@ describe('déterminisme', () => {
       return s
     }
     expect(JSON.stringify(play().pawns)).toBe(JSON.stringify(play().pawns))
+  })
+})
+
+describe('bonus de dé', () => {
+  it('consomme un bonus quand le lancer est boosté', () => {
+    const state = setup({})
+    expect(state.diceBoosts).toBe(DICE_BOOSTS_PER_GAME)
+
+    const rolled = apply(state, { type: 'roll', boost: 'low' }, 0).state
+    expect(rolled.diceBoosts).toBe(DICE_BOOSTS_PER_GAME - 1)
+  })
+
+  it('laisse les bonus intacts sans boost', () => {
+    const rolled = apply(setup({}), { type: 'roll' }, 0).state
+    expect(rolled.diceBoosts).toBe(DICE_BOOSTS_PER_GAME)
+  })
+
+  it('ignore un boost demandé sans bonus restant, sans planter', () => {
+    const state: GameState = { ...setup({}), diceBoosts: 0 }
+    const rolled = apply(state, { type: 'roll', boost: 'high' }, 0).state
+    expect(rolled.diceBoosts).toBe(0)
+    expect(rolled.dice).not.toBeNull()
   })
 })

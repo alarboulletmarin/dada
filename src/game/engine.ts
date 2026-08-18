@@ -6,17 +6,10 @@
  * tests. Toute la logique de règles vit ici et nulle part ailleurs.
  */
 
-import {
-  START_INDEX,
-  STAR_INDICES,
-  hasFinished,
-  isOnTrack,
-  trackIndexOf,
-} from './board.ts'
+import { geometryFor, hasFinished, isOnTrack, trackIndexOf } from './board.ts'
 import { rollDie } from './rng.ts'
 import {
-  LAST_STEP,
-  PAWNS_PER_PLAYER,
+  DICE_BOOSTS_PER_GAME,
   STABLE,
   type Action,
   type GameError,
@@ -30,8 +23,6 @@ import {
 } from './types.ts'
 
 const LOG_LIMIT = 60
-const START_INDICES = new Set(Object.values(START_INDEX))
-const STAR_SET = new Set(STAR_INDICES)
 
 export const pawnId = (seat: Seat, index: number): string => `p${seat}-${index}`
 export const pawnSlot = (id: string): number => Number(id.split('-')[1] ?? 0)
@@ -43,7 +34,7 @@ export function createGame(opts: {
 }): GameState {
   const players = [...opts.players].sort((a, b) => a.seat - b.seat)
   const pawns: Pawn[] = players.flatMap((p) =>
-    Array.from({ length: PAWNS_PER_PLAYER }, (_, i) => ({
+    Array.from({ length: opts.variant.pawnsPerPlayer }, (_, i) => ({
       id: pawnId(p.seat, i),
       owner: p.seat,
       steps: STABLE,
@@ -61,6 +52,7 @@ export function createGame(opts: {
     phase: 'rolling',
     ranking: [],
     rng: opts.seed,
+    diceBoosts: DICE_BOOSTS_PER_GAME,
     log: [
       { seq: 0, seat: players[0]!.seat, actor: '', event: { kind: 'start', variant: opts.variant.id } },
     ],
@@ -76,20 +68,27 @@ export const playerAt = (state: GameState, seat: Seat): Player | undefined =>
 export const pawnsOf = (state: GameState, seat: Seat): Pawn[] =>
   state.pawns.filter((p) => p.owner === seat)
 
-export const hasWon = (state: GameState, seat: Seat): boolean =>
-  pawnsOf(state, seat).every((p) => hasFinished(p.steps))
+export const hasWon = (state: GameState, seat: Seat): boolean => {
+  const geometry = geometryFor(state.variant)
+  return pawnsOf(state, seat).every((p) => hasFinished(geometry, p.steps))
+}
 
 /** Une case du circuit est-elle protégée de la capture ? */
 export function isSafeIndex(variant: Variant, index: number): boolean {
-  if (variant.startSquaresAreSafe && START_INDICES.has(index)) return true
-  if (variant.starSquaresAreSafe && STAR_SET.has(index)) return true
+  const g = geometryFor(variant)
+  if (variant.startSquaresAreSafe && g.startIndexSet.has(index)) return true
+  if (variant.starSquaresAreSafe && g.starIndexSet.has(index)) return true
   return false
 }
 
 /** Pions présents sur une case absolue du circuit. */
 function pawnsOnTrackIndex(state: GameState, index: number, exceptId?: string): Pawn[] {
+  const geometry = geometryFor(state.variant)
   return state.pawns.filter(
-    (p) => p.id !== exceptId && isOnTrack(p.steps) && trackIndexOf(p.owner, p.steps) === index,
+    (p) =>
+      p.id !== exceptId &&
+      isOnTrack(geometry, p.steps) &&
+      trackIndexOf(geometry, p.owner, p.steps) === index,
   )
 }
 
@@ -103,9 +102,10 @@ function isBlockaded(state: GameState, index: number, exceptId: string): boolean
 
 /** Le trajet `from → to` traverse-t-il un barrage ? La case d'arrivée compte. */
 function pathIsBlocked(state: GameState, pawn: Pawn, from: number, to: number): boolean {
+  const geometry = geometryFor(state.variant)
   for (let s = from + 1; s <= to; s++) {
-    if (!isOnTrack(s)) continue
-    const index = trackIndexOf(pawn.owner, s)
+    if (!isOnTrack(geometry, s)) continue
+    const index = trackIndexOf(geometry, pawn.owner, s)
     if (index !== null && isBlockaded(state, index, pawn.id)) return true
   }
   return false
@@ -116,10 +116,11 @@ export function legalMoves(state: GameState): Move[] {
   const { dice, variant } = state
   if (dice === null || state.phase !== 'moving' || state.voided) return []
 
+  const geometry = geometryFor(variant)
   const moves: Move[] = []
 
   for (const pawn of pawnsOf(state, state.turn)) {
-    if (hasFinished(pawn.steps)) continue
+    if (hasFinished(geometry, pawn.steps)) continue
 
     let to: number
     const exits = pawn.steps === STABLE
@@ -129,9 +130,9 @@ export function legalMoves(state: GameState): Move[] {
       to = 0
     } else {
       to = pawn.steps + dice
-      if (to > LAST_STEP) {
+      if (to > geometry.lastStep) {
         if (variant.exactFinish) continue
-        to = LAST_STEP
+        to = geometry.lastStep
       }
     }
 
@@ -140,8 +141,8 @@ export function legalMoves(state: GameState): Move[] {
 
     // Capture : uniquement sur le circuit, et jamais sur une case protégée.
     let captures: string[] = []
-    if (isOnTrack(to)) {
-      const index = trackIndexOf(pawn.owner, to)!
+    if (isOnTrack(geometry, to)) {
+      const index = trackIndexOf(geometry, pawn.owner, to)!
       if (!isSafeIndex(variant, index)) {
         captures = pawnsOnTrackIndex(state, index, pawn.id)
           .filter((p) => p.owner !== pawn.owner)
@@ -149,7 +150,7 @@ export function legalMoves(state: GameState): Move[] {
       }
     }
 
-    moves.push({ pawnId: pawn.id, from, to, captures, finishes: to === LAST_STEP, exits })
+    moves.push({ pawnId: pawn.id, from, to, captures, finishes: to === geometry.lastStep, exits })
   }
 
   return moves
@@ -169,7 +170,7 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
 
   switch (action.type) {
     case 'roll':
-      return applyRoll(state)
+      return applyRoll(state, action.boost)
     case 'move':
       return applyMove(state, action.pawnId)
     case 'pass':
@@ -177,10 +178,13 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
   }
 }
 
-function applyRoll(state: GameState): ApplyResult {
+function applyRoll(state: GameState, boost?: 'low' | 'high'): ApplyResult {
   if (state.phase !== 'rolling') return { state, error: 'alreadyRolled' }
 
-  const [rng, dice] = rollDie(state.rng)
+  // Un boost sans bonus restant (UI périmée par la latence réseau) n'est pas
+  // une faute du joueur : le lancer se fait simplement sans biais.
+  const useBoost = boost !== undefined && state.diceBoosts > 0
+  const [rng, dice] = rollDie(state.rng, useBoost ? boost : undefined)
   const consecutiveSixes = dice === 6 ? state.consecutiveSixes + 1 : 0
   const max = state.variant.maxConsecutiveSixes
   const voided = max > 0 && dice === 6 && consecutiveSixes >= max
@@ -192,6 +196,7 @@ function applyRoll(state: GameState): ApplyResult {
     consecutiveSixes,
     voided,
     phase: 'moving',
+    diceBoosts: useBoost ? state.diceBoosts - 1 : state.diceBoosts,
     seq: state.seq + 1,
   }
   next = addLog(next, state.turn, { kind: 'roll', dice })
@@ -309,6 +314,10 @@ function addLog(state: GameState, seat: Seat, event: LogEvent): GameState {
 // ─────────────────────────────── divers ───────────────────────────────
 
 /** Progression 0..1 d'un pion, pour la barre de chaque joueur. */
-export const progressOf = (state: GameState, seat: Seat): number =>
-  pawnsOf(state, seat).reduce((sum, p) => sum + Math.max(0, p.steps + 1), 0) /
-  (PAWNS_PER_PLAYER * (LAST_STEP + 1))
+export const progressOf = (state: GameState, seat: Seat): number => {
+  const geometry = geometryFor(state.variant)
+  return (
+    pawnsOf(state, seat).reduce((sum, p) => sum + Math.max(0, p.steps + 1), 0) /
+    (state.variant.pawnsPerPlayer * (geometry.lastStep + 1))
+  )
+}

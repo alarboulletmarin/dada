@@ -6,8 +6,9 @@
  * avec un détour possible par « rejoindre » et par les règles.
  */
 
+import { geometryFor } from '../game/board.ts'
 import { pawnsOf } from '../game/engine.ts'
-import { LAST_STEP, STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
+import { STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { makeCode } from '../net/room.ts'
 import { clearSave, readSave } from '../net/save.ts'
@@ -66,6 +67,9 @@ export class App {
     turn: HTMLElement
     dieBtn: HTMLButtonElement
     die: HTMLElement
+    boostLowBtn: HTMLButtonElement
+    boostHighBtn: HTMLButtonElement
+    boostCount: HTMLElement
   } | null = null
   private name = localStorage.getItem(NAME_KEY) ?? ''
   /** Ce qu'on fera de la variante choisie sur l'écran « on joue à quoi ? ». */
@@ -855,6 +859,28 @@ export class App {
       die,
     )
 
+    // Chaque bouton lance le dé ET applique le bonus en un seul geste, comme
+    // le bouton du dé lui-même.
+    const boostLowBtn = h('button', {
+      class: 'btn small',
+      text: t('play.boost.low'),
+      attrs: { 'aria-label': t('play.boost.low') },
+      on: { click: () => this.session!.dispatch({ type: 'roll', boost: 'low' }) },
+    })
+    const boostHighBtn = h('button', {
+      class: 'btn small',
+      text: t('play.boost.high'),
+      attrs: { 'aria-label': t('play.boost.high') },
+      on: { click: () => this.session!.dispatch({ type: 'roll', boost: 'high' }) },
+    })
+    const boostCount = h('p', { class: 'hint center' })
+    const boostRow = h(
+      'div',
+      { class: 'stack boost-row' },
+      h('div', { class: 'row' }, boostLowBtn, boostHighBtn),
+      boostCount,
+    )
+
     fill(
       this.root,
       h(
@@ -884,11 +910,12 @@ export class App {
         bottom,
         turn,
         dieBtn,
+        boostRow,
       ),
     )
 
     this.board = new BoardView(boardHost, this.session!.game!.variant)
-    this.mounts = { players: [top, bottom], turn, dieBtn, die }
+    this.mounts = { players: [top, bottom], turn, dieBtn, die, boostLowBtn, boostHighBtn, boostCount }
     this.shownDice = null
     this.tumbling = false
     this.autoAt = -1
@@ -900,6 +927,11 @@ export class App {
     const mounts = this.mounts!
     const moves = session.moves()
     if (state.dice !== null) this.lastDie = state.dice
+
+    const canBoost = session.myTurn && state.phase === 'rolling' && state.diceBoosts > 0
+    mounts.boostLowBtn.disabled = !canBoost
+    mounts.boostHighBtn.disabled = !canBoost
+    mounts.boostCount.textContent = t('play.boost.remaining', { n: state.diceBoosts })
 
     // Un dé qui apparaît, c'est quelqu'un — moi, un pair ou un bot — qui vient
     // de lancer : on le fait rouler pour tout le monde de la même façon.
@@ -943,9 +975,10 @@ export class App {
       // côté de son quadrant.
       if (!p) return h('div', { class: 'pcard ghost' })
 
+      const lastStep = geometryFor(state.variant).lastStep
       const pawns = pawnsOf(state, seat)
-      const done = pawns.filter((x) => x.steps === LAST_STEP).length
-      const running = pawns.filter((x) => x.steps > STABLE && x.steps < LAST_STEP).length
+      const done = pawns.filter((x) => x.steps === lastStep).length
+      const running = pawns.filter((x) => x.steps > STABLE && x.steps < lastStep).length
       const rank = state.ranking.indexOf(seat)
       const active = state.turn === seat && state.phase !== 'finished'
 
@@ -1019,9 +1052,10 @@ export class App {
 
     fill(
       host,
-      finished ? null : this.token(state.turn),
-      h('strong', { text: title }),
-      detail ? h('span', { class: 'detail', text: `· ${detail}` }) : null,
+      h('div', { class: 'turnline-row' }, finished ? null : this.token(state.turn), h('strong', { text: title })),
+      // Toujours présente, même vide : la ligne garde sa hauteur (voir le CSS)
+      // pour que le bloc ne change jamais de taille d'un tour à l'autre.
+      h('span', { class: 'detail', text: detail ? `· ${detail}` : '' }),
     )
 
     const canRoll = mine && state.phase === 'rolling' && !finished
@@ -1115,7 +1149,8 @@ export class App {
     if (document.querySelector('.overlay')) return
     const session = this.session!
     const winner = state.players.find((p) => p.seat === state.ranking[0])
-    const done = (seat: Seat) => pawnsOf(state, seat).filter((p) => p.steps === LAST_STEP).length
+    const lastStep = geometryFor(state.variant).lastStep
+    const done = (seat: Seat) => pawnsOf(state, seat).filter((p) => p.steps === lastStep).length
 
     // Les joueurs restants suivent les arrivés, du plus avancé au moins avancé.
     const rest = state.players

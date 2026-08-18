@@ -1100,7 +1100,7 @@ input:disabled {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template: repeat(15, 1fr) / repeat(15, 1fr);
+  grid-template: repeat(var(--grid, 15), 1fr) / repeat(var(--grid, 15), 1fr);
   touch-action: manipulation;
 }
 
@@ -1271,8 +1271,8 @@ input:disabled {
 
 .pawn {
   position: absolute;
-  width: calc(100% / 15);
-  height: calc(100% / 15);
+  width: calc(100% / var(--grid, 15));
+  height: calc(100% / var(--grid, 15));
   display: grid;
   place-items: center;
   transition: transform 0.14s linear;
@@ -1347,16 +1347,33 @@ input:disabled {
 
 /* ─────────────────────────── tour de jeu ─────────────────────────── */
 
-/* Une seule ligne dit qui joue et quoi faire ; le dé, juste dessous, est le
-   bouton. Trois blocs pour une action, c'était deux de trop. */
+/* Qui joue, puis quoi faire — deux lignes fixes, jamais une de plus. Le texte
+   long (« Vous avez fait 6 · choisissez un cheval cerclé ») a de quoi
+   déborder sur un téléphone étroit ; en une seule ligne flexible, il se
+   repliait au milieu d'un mot, sur une hauteur qui changeait d'un tour à
+   l'autre — le plateau juste en dessous se redimensionnait avec lui, ce qui
+   se voyait comme un zoom involontaire à chaque coup. Deux lignes de hauteur
+   fixe, chacune tronquée plutôt que repliée, referment le problème : la
+   place réservée au-dessus du dé ne bouge plus jamais. */
 .turnline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: none;
+  width: 100%;
+  height: 52px;
+  text-align: center;
+}
+
+.turnline-row {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  flex: none;
-  min-height: 34px;
-  text-align: center;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .turnline .token {
@@ -1367,12 +1384,24 @@ input:disabled {
 }
 
 .turnline strong {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-family: var(--title);
   font-weight: 700;
   font-size: 19px;
 }
 
 .turnline .detail {
+  display: block;
+  max-width: 100%;
+  min-height: 21px;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 15px;
   font-weight: 700;
   color: var(--muted);
@@ -1934,7 +1963,7 @@ input:disabled {
   .play {
     display: grid;
     grid-template-columns: auto minmax(210px, 1fr);
-    grid-template-rows: auto auto 1fr auto auto;
+    grid-template-rows: auto auto 1fr auto auto auto;
     align-content: center;
     column-gap: 16px;
     row-gap: 8px;
@@ -1956,6 +1985,9 @@ input:disabled {
   }
   .play > .dice {
     grid-area: 5 / 2;
+  }
+  .play > .boost-row {
+    grid-area: 6 / 2;
   }
 
   /* Toute la hauteur, à gauche. La largeur est posée en dur — et elle doit

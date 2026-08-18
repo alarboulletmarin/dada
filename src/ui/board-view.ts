@@ -10,17 +10,7 @@
  * d'encre, écuries pleines couleur, cœur en moulin à quatre pointes.
  */
 
-import {
-  GRID,
-  HOME_PATH,
-  STABLE_ORIGIN,
-  STABLE_SLOTS,
-  START_INDEX,
-  STAR_INDICES,
-  TRACK,
-  cellOf,
-  type Cell,
-} from '../game/board.ts'
+import { cellOf, geometryFor, type BoardGeometry, type Cell } from '../game/board.ts'
 import { pawnSlot } from '../game/engine.ts'
 import type { GameState, Move, Seat, Variant } from '../game/types.ts'
 
@@ -38,9 +28,12 @@ export class BoardView {
   private previous = new Map<string, number>()
   private animating = false
   private pending: (() => void) | null = null
+  private geometry: BoardGeometry
 
   constructor(root: HTMLElement, private variant: Variant) {
+    this.geometry = geometryFor(this.variant)
     root.classList.add('board-wrap')
+    root.style.setProperty('--grid', String(this.geometry.grid))
     this.board = this.buildGrid()
     root.append(this.board)
     this.layer = document.createElement('div')
@@ -76,24 +69,27 @@ export class BoardView {
     // Le plateau ne doit annoncer que les règles réellement appliquées : une
     // étoile dessinée là où rien ne protège est un mensonge.
     const safeStars = this.variant.starSquaresAreSafe
-    const starts = new Map(SEATS.map((s) => [START_INDEX[s], s]))
+    const geo = this.geometry
+    const starts = new Map(SEATS.map((s) => [geo.startIndex[s], s]))
     // Chaque case étoile est le relais d'un camp : elle en prend la couleur.
     const starOwner = new Map<number, Seat>(
-      STAR_INDICES.flatMap((i) => {
-        const seat = SEATS.find((s) => (i - START_INDEX[s] + TRACK.length) % TRACK.length === 8)
+      geo.starIndices.flatMap((i) => {
+        const seat = SEATS.find(
+          (s) => (i - geo.startIndex[s] + geo.track.length) % geo.track.length === geo.stableSize + 2,
+        )
         return seat === undefined ? [] : [[i, seat] as [number, Seat]]
       }),
     )
 
     // 1. Le circuit commun : trait fin entre deux cases, trait d'encre sur les
     //    cases qui comptent (départ, étoile).
-    TRACK.forEach((c, i) => {
+    geo.track.forEach((c, i) => {
       const startSeat = starts.get(i)
       if (startSeat !== undefined) {
         const cell = at('cell start', c.col, c.row, 1, 1, startSeat)
         // Une flèche dans le sens de la marche : le plateau explique lui-même
         // par où l'on part et dans quel sens on tourne.
-        const next = TRACK[(i + 1) % TRACK.length]!
+        const next = geo.track[(i + 1) % geo.track.length]!
         const angle = next.col > c.col ? 0 : next.row > c.row ? 90 : next.col < c.col ? 180 : 270
         const arrow = document.createElement('i')
         arrow.style.setProperty('--rot', `${angle}deg`)
@@ -105,16 +101,16 @@ export class BoardView {
 
     // 2. Les écuries : bloc plein, enclos ivoire, quatre emplacements pointillés.
     for (const seat of SEATS) {
-      const o = STABLE_ORIGIN[seat]
-      at('deco stable', o.col, o.row, 6, 6, seat)
-      at('deco pen', o.col + 1, o.row + 1, 4, 4, seat)
-      for (const slot of STABLE_SLOTS[seat]) at('deco slot', slot.col, slot.row, 1, 1, seat)
+      const o = geo.stableOrigin[seat]
+      at('deco stable', o.col, o.row, geo.stableSize, geo.stableSize, seat)
+      at('deco pen', o.col + 1, o.row + 1, geo.stableSize - 2, geo.stableSize - 2, seat)
+      for (const slot of geo.stableSlots[seat]) at('deco slot', slot.col, slot.row, 1, 1, seat)
     }
 
     // 3. Les escaliers : une barre pleine par siège plutôt que six cases isolées,
     //    pour qu'on voie d'un coup où mène chaque couloir.
     for (const seat of SEATS) {
-      const path = HOME_PATH[seat]
+      const path = geo.homePath[seat]
       const first = path[0]!
       const last = path[path.length - 1]!
       const horizontal = first.row === last.row
@@ -135,7 +131,7 @@ export class BoardView {
     //    carré central appartiennent au circuit — c'est même ce qui rend le
     //    tracé continu — donc un bloc 3×3 les recouvrirait, et un cheval qui
     //    passe par là semblerait déjà arrivé.
-    const center = at('deco center', 7, 7)
+    const center = at('deco center', geo.center.col, geo.center.row)
     for (const seat of SEATS) {
       const tri = document.createElement('i')
       tri.className = `side-${this.sideOf(seat)}`
@@ -149,7 +145,7 @@ export class BoardView {
 
   /** De quel côté du plateau l'escalier d'un siège rejoint le cœur. */
   private sideOf(seat: Seat): 'left' | 'right' | 'top' | 'bottom' {
-    const path = HOME_PATH[seat]
+    const path = this.geometry.homePath[seat]
     const first = path[0]!
     const last = path[path.length - 1]!
     if (first.row === last.row) return first.col < last.col ? 'left' : 'right'
@@ -185,7 +181,7 @@ export class BoardView {
   private offsets(state: GameState): Map<string, { x: number; y: number }> {
     const byCell = new Map<string, string[]>()
     for (const p of state.pawns) {
-      const k = key(cellOf(p.owner, p.steps, pawnSlot(p.id)))
+      const k = key(cellOf(this.geometry, p.owner, p.steps, pawnSlot(p.id)))
       byCell.set(k, [...(byCell.get(k) ?? []), p.id])
     }
 
@@ -257,7 +253,7 @@ export class BoardView {
       }
 
       if (animated?.id !== p.id) {
-        this.place(el, cellOf(p.owner, p.steps, pawnSlot(p.id)), offsets.get(p.id)!)
+        this.place(el, cellOf(this.geometry, p.owner, p.steps, pawnSlot(p.id)), offsets.get(p.id)!)
       }
     }
 
@@ -279,7 +275,7 @@ export class BoardView {
 
     for (let s = step.from + 1; s <= step.to; s++) {
       const last = s === step.to
-      this.place(el, cellOf(step.seat, s, slot), last ? offsets.get(step.id)! : { x: 0, y: 0 })
+      this.place(el, cellOf(this.geometry, step.seat, s, slot), last ? offsets.get(step.id)! : { x: 0, y: 0 })
       await new Promise((r) => setTimeout(r, STEP_MS))
     }
 
@@ -300,7 +296,3 @@ export class BoardView {
     this.pending = null
   }
 }
-
-// `GRID` reste la source de vérité de la taille du plateau : une divergence
-// entre la grille CSS et la géométrie du moteur serait invisible à l'œil.
-if (GRID !== 15) throw new Error(`Plateau ${GRID}×${GRID} : la grille CSS attend 15×15.`)

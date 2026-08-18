@@ -2,19 +2,18 @@
  * Modèle de données du jeu.
  *
  * Position d'un pion : un seul entier `steps`, compté depuis SA propre case de départ.
- *   -1        → à l'écurie
- *   0..55     → sur le circuit commun (56 cases, 14 par bras)
- *   56..61    → dans l'escalier privé (6 cases)
- *   61        → arrivé
+ *   -1                              → à l'écurie
+ *   0..trackLength-1                → sur le circuit commun
+ *   trackLength..lastStep           → dans l'escalier privé
+ *   lastStep                        → arrivé
+ * `trackLength` et `lastStep` dépendent de la géométrie de la variante en
+ * cours (voir `geometryFor` dans `board.ts`), pas de constantes fixes.
  * Cette représentation relative rend le moteur trivial : avancer = `steps + dé`.
  * La conversion vers une case absolue du plateau se fait dans `board.ts`.
  */
 
-export const TRACK_LENGTH = 56
-export const HOME_LENGTH = 6
-export const LAST_STEP = TRACK_LENGTH + HOME_LENGTH - 1 // 61
 export const STABLE = -1
-export const PAWNS_PER_PLAYER = 4
+export const DICE_BOOSTS_PER_GAME = 3
 
 /** Siège autour du plateau. 0 = haut-gauche, puis sens horaire. */
 export type Seat = 0 | 1 | 2 | 3
@@ -39,6 +38,14 @@ export type Player = {
 export type Variant = {
   /** Sert aussi de clé de traduction : le nom affiché n'est pas dans l'état. */
   id: string
+  /**
+   * Taille `S` du carré d'écurie de chaque siège : paramètre unique dont
+   * dérive toute la géométrie du plateau (grille, circuit, escaliers,
+   * emplacements d'écurie). Voir `geometryFor` dans `board.ts`.
+   */
+  boardSize: number
+  /** Nombre de pions par joueur. */
+  pawnsPerPlayer: number
   /** Valeurs du dé permettant de sortir un pion de l'écurie. */
   exitRolls: number[]
   /** Relancer le dé après un 6. */
@@ -115,13 +122,15 @@ export type GameState = {
   ranking: Seat[]
   /** État du générateur pseudo-aléatoire — rend chaque partie rejouable et vérifiable. */
   rng: number
+  /** Bonus de dé restants pour la partie entière — budget partagé, pas par joueur. */
+  diceBoosts: number
   log: LogEntry[]
   /** Compteur monotone : sert à départager deux états lors d'un changement d'hôte. */
   seq: number
 }
 
 export type Action =
-  | { type: 'roll' }
+  | { type: 'roll'; boost?: 'low' | 'high' }
   | { type: 'move'; pawnId: string }
   /** Aucun coup possible : passe la main. */
   | { type: 'pass' }

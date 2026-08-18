@@ -5,11 +5,12 @@
  * être imbattable, ce qui est exactement ce qu'on veut pour compléter une table.
  */
 
-import { isOnTrack, trackIndexOf } from './board.ts'
+import { geometryFor, isOnTrack, trackIndexOf } from './board.ts'
 import { legalMoves } from './engine.ts'
-import { TRACK_LENGTH, type GameState, type Move } from './types.ts'
+import type { GameState, Move } from './types.ts'
 
 function score(move: Move, state: GameState): number {
+  const trackLength = geometryFor(state.variant).trackLength
   let s = 0
 
   // Manger reste le coup le plus rentable : l'adversaire repart de zéro.
@@ -25,13 +26,13 @@ function score(move: Move, state: GameState): number {
   }
 
   // Se mettre à l'abri dans l'escalier.
-  if (move.to >= TRACK_LENGTH && move.from < TRACK_LENGTH) s += 300
+  if (move.to >= trackLength && move.from < trackLength) s += 300
 
   // À défaut, faire progresser le cheval le plus avancé.
   s += move.to * 2
 
   // Éviter de finir juste devant un adversaire qui pourrait nous manger au tour suivant.
-  if (move.to < TRACK_LENGTH) s -= threatAt(state, move) * 60
+  if (move.to < trackLength) s -= threatAt(state, move) * 60
 
   return s
 }
@@ -42,14 +43,15 @@ function score(move: Move, state: GameState): number {
  * depuis son propre départ, comparer des `steps` bruts n'aurait aucun sens.
  */
 function threatAt(state: GameState, move: Move): number {
-  const target = trackIndexOf(state.turn, move.to)
+  const geometry = geometryFor(state.variant)
+  const target = trackIndexOf(geometry, state.turn, move.to)
   if (target === null) return 0
 
   let threats = 0
   for (const p of state.pawns) {
-    if (p.owner === state.turn || !isOnTrack(p.steps)) continue
-    const from = trackIndexOf(p.owner, p.steps)!
-    const gap = (target - from + TRACK_LENGTH) % TRACK_LENGTH
+    if (p.owner === state.turn || !isOnTrack(geometry, p.steps)) continue
+    const from = trackIndexOf(geometry, p.owner, p.steps)!
+    const gap = (target - from + geometry.trackLength) % geometry.trackLength
     if (gap >= 1 && gap <= 6) threats++
   }
   return threats

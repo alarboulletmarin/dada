@@ -1,23 +1,34 @@
 /**
- * Géométrie du plateau, sur une grille 15×15.
+ * Géométrie du plateau, paramétrée par `S` — la taille du carré d'écurie de
+ * chaque siège (`Variant.boardSize`). Toute la géométrie (grille, circuit,
+ * escaliers, emplacements d'écurie) se déduit de ce seul paramètre :
  *
- * Le circuit compte 56 cases (14 par bras, comme les petits chevaux français),
+ *   grid          = 2*S + 3
+ *   L (écart entre deux départs) = 2*S + 2
+ *   trackLength   = 4*L = 8*S + 8
+ *   homeLength    = S
+ *   lastStep      = trackLength + homeLength - 1
+ *   décalage étoile après chaque départ = S + 2
+ *   center        = (S+1, S+1)
+ *
+ * Avec S=6 (variantes « petits chevaux » et « ludo »), on retrouve exactement
+ * l'ancien plateau fixe : grid=15, trackLength=56, homeLength=6, lastStep=61.
+ *
+ * Le circuit compte `trackLength` cases, réparties à parts égales sur 4 bras,
  * ce qui donne un tracé **orthogonalement continu** : chaque case du circuit
- * touche la suivante par un côté. C'est ce qui permet d'animer un pion case par
- * case sans saut visuel.
+ * touche la suivante par un côté. C'est ce qui permet d'animer un pion case
+ * par case sans saut visuel.
  *
- *        col →  0 1 2 3 4 5 6 7 8 9 ...14
+ *        col →  0 1 2 3 4 5 6 7 8 9 ...
  *   row 0       ┌───────┐ · · · ┌───────┐
  *     ↓         │écurie │ │ │ │ │écurie │
- *     6         └───────┘ · · · └───────┘
- *     7         · · · · · · ·╳· · · · · ·
- *     8         ┌───────┐ · · · ┌───────┐
- *    14         └───────┘ · · · └───────┘
+ *     …         └───────┘ · · · └───────┘
+ *     …         · · · · · · ·╳· · · · · ·
+ *     …         ┌───────┐ · · · ┌───────┐
+ *     …         └───────┘ · · · └───────┘
  */
 
-import { HOME_LENGTH, LAST_STEP, TRACK_LENGTH, type Seat } from './types.ts'
-
-export const GRID = 15
+import type { Seat, Variant } from './types.ts'
 
 export type Cell = { col: number; row: number }
 
@@ -33,71 +44,146 @@ function segment(col: number, row: number, dc: number, dr: number, count: number
  * L'ordre des segments est ce qui garantit la continuité — ne pas réordonner
  * sans relancer `board.test.ts`, qui vérifie l'adjacence de bout en bout.
  */
-export const TRACK: readonly Cell[] = [
-  ...segment(0, 6, 1, 0, 7), //  0..6   bras gauche, ligne haute → coin (6,6)
-  ...segment(6, 5, 0, -1, 6), //  7..12  montée le long de la colonne 6
-  cell(7, 0), //                 13     sommet
-  ...segment(8, 0, 0, 1, 6), //  14..19 descente le long de la colonne 8
-  cell(8, 6), //                 20     coin
-  ...segment(9, 6, 1, 0, 6), //  21..26 bras droit, ligne haute
-  cell(14, 7), //                27     extrémité droite
-  ...segment(14, 8, -1, 0, 7), // 28..34 bras droit, ligne basse → coin (8,8)
-  ...segment(8, 9, 0, 1, 6), //  35..40 descente le long de la colonne 8
-  cell(7, 14), //                41     base
-  ...segment(6, 14, 0, -1, 6), // 42..47 montée le long de la colonne 6
-  cell(6, 8), //                 48     coin
-  ...segment(5, 8, -1, 0, 6), // 49..54 bras gauche, ligne basse
-  cell(0, 7), //                 55     extrémité gauche
-]
-
-/** Case de départ de chaque siège, en index de circuit. Répartis tous les 14. */
-export const START_INDEX: Record<Seat, number> = { 0: 0, 1: 14, 2: 28, 3: 42 }
+function buildTrack(S: number): Cell[] {
+  return [
+    ...segment(0, S, 1, 0, S + 1),
+    ...segment(S, S - 1, 0, -1, S),
+    cell(S + 1, 0),
+    ...segment(S + 2, 0, 0, 1, S),
+    cell(S + 2, S),
+    ...segment(S + 3, S, 1, 0, S),
+    cell(2 * S + 2, S + 1),
+    ...segment(2 * S + 2, S + 2, -1, 0, S + 1),
+    ...segment(S + 2, S + 3, 0, 1, S),
+    cell(S + 1, 2 * S + 2),
+    ...segment(S, 2 * S + 2, 0, -1, S),
+    cell(S, S + 2),
+    ...segment(S - 1, S + 2, -1, 0, S),
+    cell(0, S + 1),
+  ]
+}
 
 /**
- * Escalier privé de chaque siège : 6 cases convergeant vers le centre.
- * Le pion y entre après avoir parcouru les 55 cases du circuit.
+ * Escalier privé de chaque siège : `S` cases convergeant vers le centre.
+ * Le pion y entre après avoir parcouru les cases du circuit.
  */
-export const HOME_PATH: Record<Seat, readonly Cell[]> = {
-  0: segment(1, 7, 1, 0, HOME_LENGTH), // depuis la gauche  → (1,7)..(6,7)
-  1: segment(7, 1, 0, 1, HOME_LENGTH), // depuis le haut    → (7,1)..(7,6)
-  2: segment(13, 7, -1, 0, HOME_LENGTH), // depuis la droite  → (13,7)..(8,7)
-  3: segment(7, 13, 0, -1, HOME_LENGTH), // depuis le bas     → (7,13)..(7,8)
+function buildHomePath(S: number): Record<Seat, Cell[]> {
+  return {
+    0: segment(1, S + 1, 1, 0, S),
+    1: segment(S + 1, 1, 0, 1, S),
+    2: segment(2 * S + 1, S + 1, -1, 0, S),
+    3: segment(S + 1, 2 * S + 1, 0, -1, S),
+  }
 }
 
-/** Emplacements des pions au repos, dans le carré 6×6 de chaque siège. */
-export const STABLE_SLOTS: Record<Seat, readonly Cell[]> = {
-  0: [cell(1, 1), cell(4, 1), cell(1, 4), cell(4, 4)],
-  1: [cell(10, 1), cell(13, 1), cell(10, 4), cell(13, 4)],
-  2: [cell(10, 10), cell(13, 10), cell(10, 13), cell(13, 13)],
-  3: [cell(1, 10), cell(4, 10), cell(1, 13), cell(4, 13)],
+/** Coin haut-gauche du carré S×S de chaque siège. */
+function buildStableOrigin(S: number): Record<Seat, Cell> {
+  return {
+    0: cell(0, 0),
+    1: cell(S + 3, 0),
+    2: cell(S + 3, S + 3),
+    3: cell(0, S + 3),
+  }
 }
 
-/** Coin haut-gauche du carré 6×6 de chaque siège. */
-export const STABLE_ORIGIN: Record<Seat, Cell> = {
-  0: cell(0, 0),
-  1: cell(9, 0),
-  2: cell(9, 9),
-  3: cell(0, 9),
+/**
+ * Emplacements des pions au repos, relatifs au carré S×S de leur siège
+ * (à additionner à `STABLE_ORIGIN[seat]` pour la position absolue).
+ * 4 pions → les quatre coins en retrait de 1 ; 2 pions → deux coins en diagonale.
+ */
+function buildStableSlots(S: number, pawnsPerPlayer: number): Cell[] {
+  const corners = [cell(1, 1), cell(S - 2, 1), cell(1, S - 2), cell(S - 2, S - 2)]
+  if (pawnsPerPlayer === 4) return corners
+  if (pawnsPerPlayer === 2) return [corners[0]!, corners[3]!]
+  throw new Error(`pawnsPerPlayer=${pawnsPerPlayer} non supporté (2 ou 4 attendu)`)
 }
 
-/** Cases étoilées : 8 cases après chaque départ. */
-export const STAR_INDICES: readonly number[] = [8, 22, 36, 50]
+export type BoardGeometry = {
+  grid: number
+  stableSize: number
+  pawnsPerPlayer: number
+  trackLength: number
+  homeLength: number
+  lastStep: number
+  track: readonly Cell[]
+  startIndex: Record<Seat, number>
+  homePath: Record<Seat, readonly Cell[]>
+  stableSlots: Record<Seat, readonly Cell[]>
+  stableOrigin: Record<Seat, Cell>
+  starIndices: readonly number[]
+  startIndexSet: ReadonlySet<number>
+  starIndexSet: ReadonlySet<number>
+  center: Cell
+}
 
-export const CENTER: Cell = cell(7, 7)
+function buildGeometry(S: number, pawnsPerPlayer: number): BoardGeometry {
+  const grid = 2 * S + 3
+  const armLength = 2 * S + 2
+  const trackLength = 4 * armLength
+  const homeLength = S
+  const lastStep = trackLength + homeLength - 1
+  const track = buildTrack(S)
+  const startIndex: Record<Seat, number> = { 0: 0, 1: armLength, 2: 2 * armLength, 3: 3 * armLength }
+  const homePath = buildHomePath(S)
+  const stableOrigin = buildStableOrigin(S)
+  const slots = buildStableSlots(S, pawnsPerPlayer)
+  const origins: Seat[] = [0, 1, 2, 3]
+  const forSeat = <T>(fn: (seat: Seat) => T): Record<Seat, T> => {
+    const result = {} as Record<Seat, T>
+    for (const seat of origins) result[seat] = fn(seat)
+    return result
+  }
+  const stableSlots = forSeat<readonly Cell[]>((seat) =>
+    slots.map((s) => cell(s.col + stableOrigin[seat].col, s.row + stableOrigin[seat].row)),
+  )
+  const starIndices = origins.map((seat) => (startIndex[seat] + S + 2) % trackLength)
+
+  return {
+    grid,
+    stableSize: S,
+    pawnsPerPlayer,
+    trackLength,
+    homeLength,
+    lastStep,
+    track,
+    startIndex,
+    homePath,
+    stableSlots,
+    stableOrigin,
+    starIndices,
+    startIndexSet: new Set(Object.values(startIndex)),
+    starIndexSet: new Set(starIndices),
+    center: cell(S + 1, S + 1),
+  }
+}
+
+const cache = new Map<string, BoardGeometry>()
+
+/** Mémoïsée : évite de reconstruire les tableaux à chaque frame de rendu. */
+export function geometryFor(v: Pick<Variant, 'boardSize' | 'pawnsPerPlayer'>): BoardGeometry {
+  const key = `${v.boardSize}:${v.pawnsPerPlayer}`
+  const cached = cache.get(key)
+  if (cached) return cached
+  const geometry = buildGeometry(v.boardSize, v.pawnsPerPlayer)
+  cache.set(key, geometry)
+  return geometry
+}
 
 /** Convertit une position relative en index absolu du circuit, ou null si hors circuit. */
-export function trackIndexOf(seat: Seat, steps: number): number | null {
-  if (steps < 0 || steps >= TRACK_LENGTH) return null
-  return (START_INDEX[seat] + steps) % TRACK_LENGTH
+export function trackIndexOf(geometry: BoardGeometry, seat: Seat, steps: number): number | null {
+  if (steps < 0 || steps >= geometry.trackLength) return null
+  return (geometry.startIndex[seat] + steps) % geometry.trackLength
 }
 
 /** Case du plateau occupée par un pion à la position `steps`, ou null s'il est à l'écurie. */
-export function cellOf(seat: Seat, steps: number, stableSlot: number): Cell {
-  if (steps < 0) return STABLE_SLOTS[seat][stableSlot % 4]!
-  if (steps < TRACK_LENGTH) return TRACK[trackIndexOf(seat, steps)!]!
-  return HOME_PATH[seat][steps - TRACK_LENGTH]!
+export function cellOf(geometry: BoardGeometry, seat: Seat, steps: number, stableSlot: number): Cell {
+  if (steps < 0) return geometry.stableSlots[seat][stableSlot % geometry.pawnsPerPlayer]!
+  if (steps < geometry.trackLength) return geometry.track[trackIndexOf(geometry, seat, steps)!]!
+  return geometry.homePath[seat][steps - geometry.trackLength]!
 }
 
-export const isOnTrack = (steps: number): boolean => steps >= 0 && steps < TRACK_LENGTH
-export const isInHomePath = (steps: number): boolean => steps >= TRACK_LENGTH
-export const hasFinished = (steps: number): boolean => steps === LAST_STEP
+export const isOnTrack = (geometry: BoardGeometry, steps: number): boolean =>
+  steps >= 0 && steps < geometry.trackLength
+export const isInHomePath = (geometry: BoardGeometry, steps: number): boolean =>
+  steps >= geometry.trackLength
+export const hasFinished = (geometry: BoardGeometry, steps: number): boolean => steps === geometry.lastStep
