@@ -3634,6 +3634,14 @@ input:disabled {
   box-shadow: 0 6px 0 var(--shade), 0 0 0 3px var(--card), 0 0 0 6px var(--green);
 }
 
+/* Le dé pipé, lui, se valide par ses deux boutons : c'est la seule carte dont
+   le geste ne passe pas par le dé, et le halo va là où il faut appuyer. Posé
+   sur le dé, il désignait le seul geste qui gaspille la carte. */
+.dice-row.validating-boost .boost {
+  border-color: var(--ink);
+  box-shadow: 0 5px 0 var(--shade), 0 0 0 3px var(--card), 0 0 0 6px var(--green);
+}
+
 .hand.aiming .hand__hint {
   color: var(--ink);
 }

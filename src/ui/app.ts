@@ -2112,6 +2112,14 @@ export class App {
       if (needsPawn(armed.power) && armed.pawnId === undefined) {
         return this.notify('hand.aim.needed')
       }
+      // Le dé pipé se dépense en demandant son nombre. Le lancer nu le
+      // gaspillerait — la carte partirait, et le dé ne pencherait vers rien.
+      // Le dé déjà sur la table, en revanche, n'a plus rien à pencher : la
+      // carte s'y joue pour ce qu'il lui reste, un jeton de plus dans la
+      // réserve de la table.
+      if (armed.power === 'des' && boost === undefined && game.phase === 'rolling') {
+        return this.notify('hand.boost.needed')
+      }
       this.armed = null
       if (this.autoTimer) clearTimeout(this.autoTimer)
       this.autoTimer = null
@@ -2162,15 +2170,21 @@ export class App {
     const mounts = this.mounts
     if (!mounts) return
     const ready = this.armedReady()
-    mounts.diceRow.classList.toggle('validating', ready)
+    // Le dé pipé ne se valide pas par le dé mais par ses deux boutons : c'est
+    // là que le halo doit aller. Le poser sur le dé désignait le seul geste qui
+    // gaspille la carte — elle partait, et le lancer ne penchait vers rien.
+    const viaBoost = ready && this.armed!.power === 'des' && state.phase === 'rolling'
+    mounts.diceRow.classList.toggle('validating', ready && !viaBoost)
+    mounts.diceRow.classList.toggle('validating-boost', viaBoost)
     // Le dé fait trois choses selon l'instant : il valide une carte armée, il
     // lance, ou il passe la main. Ce qu'il fait doit se dire, au moins pour qui
     // écoute l'écran.
-    const label = ready
-      ? t('hand.validate', { power: t(`power.${this.armed!.power}` as Key) })
-      : state.phase === 'moving' && moveCount === 0
-        ? t('play.pass')
-        : t('play.roll')
+    const label =
+      ready && !viaBoost
+        ? t('hand.validate', { power: t(`power.${this.armed!.power}` as Key) })
+        : state.phase === 'moving' && moveCount === 0
+          ? t('play.pass')
+          : t('play.roll')
     mounts.dieBtn.setAttribute('aria-label', label)
   }
 
