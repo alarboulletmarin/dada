@@ -1595,7 +1595,7 @@ export class App {
         return h(
           'button',
           {
-            class: `card${usable ? ' on' : ''}${aimed ? ' aimed' : ''}`,
+            class: `hand__card${usable ? ' on' : ''}${aimed ? ' aimed' : ''}`,
             disabled: !usable,
             attrs: {
               'aria-pressed': String(aimed),
@@ -1851,25 +1851,39 @@ export class App {
       ] satisfies Column[]
     ).filter((c) => c.show)
 
+    // Un bloc par joueur, et non un tableau à colonnes.
+    //
+    // Six nombres et un nom ne tiennent pas sur la largeur d'un téléphone : le
+    // tableau à colonnes écrasait la colonne des noms jusqu'à la faire
+    // disparaître, et débordait quand même. Le nom prend donc sa ligne, et les
+    // valeurs se rangent dessous en autant de colonnes que la largeur permet.
     return h(
       'div',
       { class: 'card stats' },
       h('span', { class: 'label', text: t('stats.title') }),
-      h(
-        'div',
-        { class: 'stats__grid', style: { '--cols': String(columns.length + 1) } as Partial<CSSStyleDeclaration> },
-        // En-tête : le nom du joueur n'a pas d'intitulé, sa colonne se lit seule.
-        h('span', { class: 'stats__head' }),
-        ...columns.map((c) => h('span', { class: 'stats__head', text: t(c.key) })),
-        ...rows.flatMap(({ seat, stats }) => [
+      ...rows.map(({ seat, stats }) =>
+        h(
+          'div',
+          { class: 'stats__player', style: this.seatVars(seat) },
           h(
             'span',
-            { class: 'stats__who', style: this.seatVars(seat) },
+            { class: 'stats__who' },
             h('i'),
             h('b', { text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
           ),
-          ...columns.map((c) => h('span', { class: 'stats__cell', text: c.value(stats) })),
-        ]),
+          h(
+            'div',
+            { class: 'stats__pairs' },
+            ...columns.map((c) =>
+              h(
+                'span',
+                { class: 'stats__pair' },
+                h('b', { text: c.value(stats) }),
+                h('span', { text: t(c.key) }),
+              ),
+            ),
+          ),
+        ),
       ),
     )
   }
