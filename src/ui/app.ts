@@ -30,6 +30,7 @@ import { fill, h, setKeepAwake } from './dom.ts'
 import { icon, type IconName } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
 import { renderRulebook } from './rulebook.ts'
+import { swipeAway } from './swipe.ts'
 import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
 
 const NAME_KEY = 'dada.name'
@@ -1416,6 +1417,37 @@ export class App {
         ),
       )
 
+    const grab = h(
+      'div',
+      { class: 'sheet__grab' },
+      h('span', { class: 'sheet__grip', attrs: { 'aria-hidden': 'true' } }),
+      // Un en-tête, et non une carte de plus : la feuille est déjà pleine de
+      // cartes, et une boîte qui les annonce leur volerait le premier coup
+      // d'œil.
+      h(
+        'div',
+        { class: 'powers__head' },
+        h('h2', { text: t('powers.title') }),
+        h('p', {
+          class: 'hint center',
+          text: t('table.powers.fair', {
+            n: DECK_SIZE,
+            bonus: bonusCount,
+            malus: DECK_SIZE - bonusCount,
+          }),
+        }),
+      ),
+    )
+    const sheet = h(
+      'div',
+      { class: 'sheet powers__sheet' },
+      this.sheetClose(close),
+      grab,
+      // Le corps défile, la feuille non : la croix et le titre restent où on
+      // les a laissés. Une croix qui flotte au-dessus du texte qui défile
+      // sous elle se lit comme une carte de plus, mal placée.
+      h('div', { class: 'powers__body' }, group('bonus'), group('malus')),
+    )
     const overlay = h(
       'div',
       {
@@ -1427,32 +1459,9 @@ export class App {
           },
         },
       },
-      h(
-        'div',
-        { class: 'sheet powers__sheet' },
-        this.sheetClose(close),
-        // Un en-tête, et non une carte de plus : la feuille est déjà pleine de
-        // cartes, et une boîte qui les annonce leur volerait le premier coup
-        // d'œil.
-        h(
-          'div',
-          { class: 'powers__head' },
-          h('h2', { text: t('powers.title') }),
-          h('p', {
-            class: 'hint center',
-            text: t('table.powers.fair', {
-              n: DECK_SIZE,
-              bonus: bonusCount,
-              malus: DECK_SIZE - bonusCount,
-            }),
-          }),
-        ),
-        // Le corps défile, la feuille non : la croix et le titre restent où on
-        // les a laissés. Une croix qui flotte au-dessus du texte qui défile
-        // sous elle se lit comme une carte de plus, mal placée.
-        h('div', { class: 'powers__body' }, group('bonus'), group('malus')),
-      ),
+      sheet,
     )
+    swipeAway(grab, { moves: sheet, way: 'down', tapAway: false, onDismiss: close })
     addEventListener('keydown', onKey)
     document.body.append(overlay)
     // Ouvert depuis une carte en main : elle est cerclée, et l'on va la
@@ -1959,7 +1968,16 @@ export class App {
     // La plus ancienne s'efface quand la pile déborde : c'est celle qu'on a
     // déjà eu le temps de lire.
     while (host.children.length > NOTE_STACK) host.firstElementChild?.remove()
-    setTimeout(() => el.remove(), NOTE_MS[kind])
+    const timer = setTimeout(() => el.remove(), NOTE_MS[kind])
+    // Et elle part au doigt, sans attendre son tour. Six secondes et demie sont
+    // le bon délai pour qui n'a pas encore lu ; pour qui a lu, c'est une attente
+    // qu'on subit devant une information qu'on possède déjà.
+    swipeAway(el, {
+      onDismiss: () => {
+        clearTimeout(timer)
+        el.remove()
+      },
+    })
   }
 
   /**
@@ -2098,13 +2116,7 @@ export class App {
         // Le texte a son propre nœud : c'est LUI qu'on tronque à trois lignes,
         // et une troncature demande `overflow: hidden` — posée sur la bulle,
         // elle rognait la pointe, qui vit hors de ses bords.
-        bubble
-          ? h(
-              'div',
-              { class: `pcard__bubble${emojiOnly(bubble.text) ? ' solo' : ''}` },
-              h('span', { class: 'pcard__bubble-text', text: bubble.text }),
-            )
-          : null,
+        bubble ? this.chatBubble(seat, bubble.text) : null,
       )
     }
 
@@ -2287,11 +2299,17 @@ export class App {
 
     const body = h('div', { class: 'tray__cards' })
     const foot = h('span', { class: 'hint center' })
+    const grab = h(
+      'div',
+      { class: 'sheet__grab' },
+      h('span', { class: 'sheet__grip', attrs: { 'aria-hidden': 'true' } }),
+      h('h2', { class: 'tray__title', text: t('hand.title') }),
+    )
     const sheet = h(
       'div',
       { class: 'sheet tray__sheet' },
       this.sheetClose(() => this.closeHandTray()),
-      h('h2', { class: 'tray__title', text: t('hand.title') }),
+      grab,
       body,
       foot,
       // Les malus ne passent jamais par la main : la question « c'était quoi,
@@ -2315,6 +2333,16 @@ export class App {
       },
       sheet,
     )
+
+    // La feuille se pousse par sa poignée. Pas par n'importe où : son corps
+    // défile, et un doigt qui descend dedans doit faire défiler — pas emporter
+    // la feuille entière au premier geste de lecture.
+    swipeAway(grab, {
+      moves: sheet,
+      way: 'down',
+      tapAway: false,
+      onDismiss: () => this.closeHandTray(),
+    })
 
     this.handTray = { overlay, body, foot }
     addEventListener('keydown', this.onTrayKey)
@@ -2920,6 +2948,31 @@ export class App {
     if (seat !== undefined) this.showChatBubble(seat, message.text)
   }
 
+  /**
+   * La bulle posée sur la carte de son auteur — et chassable au doigt.
+   *
+   * Elle sort de la carte par le haut et couvre le siège du dessus : quatre
+   * secondes, c'est court quand on lit et long quand on a lu. Elle part donc
+   * comme les autres flottants, d'un appui ou d'un geste, et sa minuterie part
+   * avec elle.
+   */
+  private chatBubble(seat: Seat, text: string): HTMLElement {
+    const el = h(
+      'div',
+      { class: `pcard__bubble${emojiOnly(text) ? ' solo' : ''}` },
+      h('span', { class: 'pcard__bubble-text', text }),
+    )
+    swipeAway(el, {
+      onDismiss: () => {
+        const shown = this.chatBubbles.get(seat)
+        if (shown) clearTimeout(shown.timer)
+        this.chatBubbles.delete(seat)
+        this.refreshPlayerCards()
+      },
+    })
+    return el
+  }
+
   /** Fait apparaître le message sur la carte de son auteur, en jeu — pas
    *  besoin d'ouvrir le chat pour le voir passer. Un envoi qui se répète
    *  relance simplement la minuterie plutôt que d'empiler les bulles. */
@@ -3130,5 +3183,16 @@ export class App {
     document.body.append(el)
     if (this.toastTimer) clearTimeout(this.toastTimer)
     this.toastTimer = setTimeout(() => el.remove(), 2800)
+    // Posé en bas, il sort par le bas : le plus court chemin hors de l'écran.
+    // Il couvre le dé et ses deux boutons, et l'on n'a pas toujours trois
+    // secondes à donner à un message qu'on a lu en une.
+    swipeAway(el, {
+      tapWay: 'down',
+      onDismiss: () => {
+        if (this.toastTimer) clearTimeout(this.toastTimer)
+        this.toastTimer = null
+        el.remove()
+      },
+    })
   }
 }

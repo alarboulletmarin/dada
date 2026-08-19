@@ -202,6 +202,21 @@ est jouable, comme le dé prêt à partir ; il devient plein quand une carte est
 armée. Le tiroir, lui, se referme dès qu'on choisit — le geste suivant est sur
 le plateau ou sur le dé, et un panneau resté ouvert les cacherait tous les deux.
 
+**Rien ne se subit.** Une annonce, un message, une bulle de chat s'en vont
+d'eux-mêmes au bout de quelques secondes — et ces secondes sont exactement le
+problème : on a lu, on a compris, et il faut attendre que ça veuille bien
+partir. Attendre quelque chose qu'on a fini de lire est la forme la plus bête
+d'attente qu'une interface puisse imposer. Un appui suffit donc, ou un geste
+vers le haut ou vers le bas : le flottant suit le doigt, pâlit à mesure qu'il
+s'en va, et part au relâchement — ou revient se poser si le geste était trop
+court. Les seuils vivent dans `swipe.ts`, avec leurs tests : quarante-quatre
+pixels, ou une chiquenaude sèche de vingt, parce que ne garder que la distance
+exclut la moitié des gens.
+
+Les feuilles se poussent de la même façon, mais par leur poignée seulement — la
+barrette qui les coiffe. Leur corps défile, et un doigt qui descend dedans doit
+faire défiler, pas emporter la feuille au premier geste de lecture.
+
 **Une feuille se ferme par sa croix.** En haut à droite, au même endroit quel
 que soit l'endroit où l'on a défilé : c'est le corps de la feuille qui défile,
 pas la feuille. Un bouton « Fermer » posé sous le contenu demandait un écran et

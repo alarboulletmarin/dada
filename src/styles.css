@@ -1087,6 +1087,8 @@ input:disabled {
    Elle sort donc du côté du plateau (vers le bas pour la rangée du haut, vers
    le haut pour celle du bas), là où il y a la place : `.play` reste en
    `overflow: hidden`, mais le plateau est à l'intérieur, rien n'est coupé. */
+/* Elle prend le doigt — c'est déjà le défaut, et il ne faut pas le lui retirer :
+   c'est ce qui permet de la chasser au lieu d'attendre ses quatre secondes. */
 .pcard__bubble {
   /* Où la pointe rejoint la carte, mesuré depuis le bord gauche de la bulle.
      Calé sur la pastille du joueur : la pointe désigne la couleur, pas le vide. */
@@ -2664,7 +2666,12 @@ input:disabled {
   border-radius: 18px;
   background: var(--card);
   box-shadow: 0 4px 0 var(--shade);
-  pointer-events: none;
+  /* Elle prend le doigt : c'est ce qui permet de la chasser d'un appui ou d'un
+     geste (voir `swipe.ts`). Elle le prenait autrefois pour rien — le dé restait
+     jouable dessous, mais elle-même ne répondait à rien, et l'on attendait ses
+     six secondes devant une information qu'on avait finie de lire. Le bandeau
+     qui la porte, lui, reste transparent : hors de la carte, le doigt passe. */
+  pointer-events: auto;
   animation: cardnote-in 0.2s ease-out;
 }
 
@@ -3684,6 +3691,31 @@ input:disabled {
 
 .tray__all:active {
   color: var(--ink);
+}
+
+/* ── la poignée des feuilles ───────────────────────────────────────────────
+   La barrette qui dit « ça se pousse ». Elle coiffe la partie qui ne défile pas
+   — la poignée et le titre — et c'est de là seulement qu'on tire : le corps
+   défile, et un doigt qui descend dedans doit faire défiler, pas emporter la
+   feuille au premier geste de lecture. */
+.sheet__grab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: none;
+  cursor: grab;
+}
+
+.sheet__grab:active {
+  cursor: grabbing;
+}
+
+.sheet__grip {
+  align-self: center;
+  width: 46px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.22);
 }
 
 /* ── la croix des feuilles ─────────────────────────────────────────────────
