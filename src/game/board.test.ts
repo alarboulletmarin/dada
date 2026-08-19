@@ -1,60 +1,123 @@
 import { describe, expect, it } from 'vitest'
-import { geometryFor, trackIndexOf, type BoardGeometry, type Cell } from './board.ts'
+import {
+  BOARD_SHAPES,
+  geometryFor,
+  homeLengthFor,
+  trackIndexOf,
+  type BoardGeometry,
+  type Cell,
+} from './board.ts'
 import type { Seat } from './types.ts'
+import { VARIANTS } from './variants.ts'
 
 const SEATS: Seat[] = [0, 1, 2, 3]
-const key = (c: Cell) => `${c.col},${c.row}`
-const adjacent = (a: Cell, b: Cell) => Math.abs(a.col - b.col) + Math.abs(a.row - b.row) === 1
+const key = (c: Cell) => `${c.col.toFixed(3)},${c.row.toFixed(3)}`
+const distance = (a: Cell, b: Cell) => Math.hypot(a.col - b.col, a.row - b.row)
 
-const CONFIGS = [
-  { label: 'standard (petits-chevaux/ludo)', boardSize: 6, pawnsPerPlayer: 4 },
-  { label: 'rapide (plateau réduit)', boardSize: 4, pawnsPerPlayer: 2 },
-]
+/**
+ * Deux cases se suivent si l'on peut passer de l'une à l'autre sans « saut »
+ * visible. Un pas orthogonal vaut 1, la diagonale des angles du plateau
+ * international vaut √2, et l'arc d'un plateau rond vaut à peine moins de 1.
+ * Au-delà de 1,5, le cheval téléporte.
+ */
+const STEP_MAX = 1.5
 
-describe.each(CONFIGS)('$label', ({ boardSize, pawnsPerPlayer }) => {
-  const geometry: BoardGeometry = geometryFor({ boardSize, pawnsPerPlayer })
-  const inGrid = (c: Cell) => c.col >= 0 && c.col < geometry.grid && c.row >= 0 && c.row < geometry.grid
-  const armLength = 2 * boardSize + 2
+const CONFIGS = BOARD_SHAPES.flatMap((shape) =>
+  VARIANTS.map((v) => ({
+    label: `${v.id} · ${shape}`,
+    shape,
+    trackLength: v.trackLength,
+    pawnsPerPlayer: v.pawnsPerPlayer,
+  })),
+)
+
+describe.each(CONFIGS)('$label', ({ shape, trackLength, pawnsPerPlayer }) => {
+  const geometry: BoardGeometry = geometryFor({
+    shape,
+    trackLength,
+    pawnsPerPlayer,
+    powers: true,
+  })
+  const arm = geometry.trackLength / 4
+  const inGrid = (c: Cell, w = 1) =>
+    c.col >= -0.001 &&
+    c.row >= -0.001 &&
+    c.col + w <= geometry.grid + 0.001 &&
+    c.row + w <= geometry.grid + 0.001
 
   describe('circuit', () => {
-    it(`compte ${geometry.trackLength} cases distinctes`, () => {
+    it('compte quatre bras égaux, tous distincts', () => {
       expect(geometry.track).toHaveLength(geometry.trackLength)
+      expect(geometry.trackLength % 4).toBe(0)
       expect(new Set(geometry.track.map(key)).size).toBe(geometry.trackLength)
     })
 
-    it(`tient dans la grille ${geometry.grid}×${geometry.grid}`, () => {
-      expect(geometry.track.every(inGrid)).toBe(true)
+    it(`tient dans la grille ${geometry.grid.toFixed(2)}`, () => {
+      expect(geometry.track.every((c) => inGrid(c))).toBe(true)
     })
 
     // C'est la propriété qui permet d'animer un pion case par case : sans elle,
     // un pion « saute » visuellement dans les coins.
-    it('est orthogonalement continu, boucle comprise', () => {
+    it('se suit sans saut, boucle comprise', () => {
       for (let i = 0; i < geometry.trackLength; i++) {
         const a = geometry.track[i]!
         const b = geometry.track[(i + 1) % geometry.trackLength]!
-        expect(adjacent(a, b), `case ${i} ${key(a)} → ${key(b)}`).toBe(true)
+        expect(distance(a, b), `case ${i} ${key(a)} → ${key(b)}`).toBeLessThanOrEqual(STEP_MAX)
       }
     })
 
-    it(`répartit les départs tous les ${armLength} crans`, () => {
-      expect(SEATS.map((s) => geometry.startIndex[s])).toEqual(SEATS.map((s) => s * armLength))
+    it(`répartit les départs tous les ${arm} crans`, () => {
+      expect(SEATS.map((s) => geometry.startIndex[s])).toEqual(SEATS.map((s) => s * arm))
     })
 
-    it(`place les étoiles ${boardSize + 2} cases après chaque départ`, () => {
-      expect(geometry.starIndices).toEqual(
-        SEATS.map((s) => (geometry.startIndex[s] + boardSize + 2) % geometry.trackLength),
+    it('pose une étoile par siège, au même décalage pour tous', () => {
+      const offsets = SEATS.map(
+        (s) => (geometry.starIndices[s]! - geometry.startIndex[s] + geometry.trackLength) % geometry.trackLength,
       )
+      expect(new Set(offsets).size).toBe(1)
+      expect(geometry.starIndexSet.size).toBe(4)
+      // Une étoile ne doit jamais tomber sur un départ : deux protections sur
+      // la même case, c'est une case perdue.
+      expect([...geometry.starIndexSet].some((i) => geometry.startIndexSet.has(i))).toBe(false)
+    })
+  })
+
+  describe('cases pouvoir', () => {
+    // L'équité ne se corrige pas coup par coup : elle est posée dans la
+    // géométrie. Le motif doit être invariant par rotation d'un quart de tour,
+    // sinon un joueur croiserait plus de cases qu'un autre.
+    it('se répètent à l’identique tous les quarts de tour', () => {
+      expect(geometry.powerIndices.length).toBeGreaterThan(0)
+      expect(geometry.powerIndices.length % 4).toBe(0)
+      for (const index of geometry.powerIndexSet) {
+        expect(geometry.powerIndexSet.has((index + arm) % geometry.trackLength)).toBe(true)
+      }
+    })
+
+    it('ne recouvrent ni un départ ni une étoile', () => {
+      for (const index of geometry.powerIndexSet) {
+        expect(geometry.startIndexSet.has(index)).toBe(false)
+        expect(geometry.starIndexSet.has(index)).toBe(false)
+      }
+    })
+
+    it("n'existent pas si la table ne les a pas activées", () => {
+      const plain = geometryFor({ shape, trackLength, pawnsPerPlayer })
+      expect(plain.powerIndices).toHaveLength(0)
     })
   })
 
   describe('escaliers', () => {
-    it(`font ${geometry.homeLength} cases continues chacun`, () => {
+    it(`font ${geometry.homeLength} marches, la même longueur sur toutes les formes`, () => {
+      expect(geometry.homeLength).toBe(homeLengthFor(arm))
       for (const seat of SEATS) {
         const path = geometry.homePath[seat]
         expect(path).toHaveLength(geometry.homeLength)
-        expect(path.every(inGrid)).toBe(true)
+        expect(path.every((c) => inGrid(c))).toBe(true)
         for (let i = 0; i < path.length - 1; i++) {
-          expect(adjacent(path[i]!, path[i + 1]!), `siège ${seat}, case ${i}`).toBe(true)
+          expect(distance(path[i]!, path[i + 1]!), `siège ${seat}, marche ${i}`).toBeLessThanOrEqual(
+            STEP_MAX,
+          )
         }
       }
     })
@@ -62,7 +125,9 @@ describe.each(CONFIGS)('$label', ({ boardSize, pawnsPerPlayer }) => {
     it("s'enchaînent avec la dernière case du circuit", () => {
       for (const seat of SEATS) {
         const lastTrack = geometry.track[trackIndexOf(geometry, seat, geometry.trackLength - 1)!]!
-        expect(adjacent(lastTrack, geometry.homePath[seat][0]!), `siège ${seat}`).toBe(true)
+        expect(distance(lastTrack, geometry.homePath[seat][0]!), `siège ${seat}`).toBeLessThanOrEqual(
+          STEP_MAX,
+        )
       }
     })
 
@@ -78,10 +143,12 @@ describe.each(CONFIGS)('$label', ({ boardSize, pawnsPerPlayer }) => {
       }
     })
 
-    it('convergent vers le centre sans le recouvrir', () => {
+    it('convergent vers le cœur sans le recouvrir', () => {
       for (const seat of SEATS) {
         const last = geometry.homePath[seat][geometry.homeLength - 1]!
-        expect(adjacent(last, geometry.center)).toBe(true)
+        const gap = distance(last, geometry.center)
+        expect(gap, `siège ${seat}`).toBeLessThanOrEqual(STEP_MAX)
+        expect(gap, `siège ${seat}`).toBeGreaterThan(0.5)
       }
     })
   })
@@ -92,17 +159,24 @@ describe.each(CONFIGS)('$label', ({ boardSize, pawnsPerPlayer }) => {
       for (const seat of SEATS) {
         const slots = geometry.stableSlots[seat]
         expect(slots).toHaveLength(pawnsPerPlayer)
-        expect(slots.every(inGrid)).toBe(true)
+        expect(slots.every((c) => inGrid(c))).toBe(true)
         expect(slots.every((c) => !track.has(key(c)))).toBe(true)
       }
     })
 
     it('restent dans le quadrant de leur siège', () => {
       const mid = geometry.grid / 2
-      const quadrant = (c: Cell) => `${c.col < mid ? 'G' : 'D'}${c.row < mid ? 'H' : 'B'}`
+      const quadrant = (c: Cell) => `${c.col + 0.5 < mid ? 'G' : 'D'}${c.row + 0.5 < mid ? 'H' : 'B'}`
       const expected: Record<Seat, string> = { 0: 'GH', 1: 'DH', 2: 'DB', 3: 'GB' }
       for (const seat of SEATS) {
         for (const c of geometry.stableSlots[seat]) expect(quadrant(c)).toBe(expected[seat])
+      }
+    })
+
+    it('tiennent dans le plateau', () => {
+      for (const seat of SEATS) {
+        const box = geometry.stableBox[seat]
+        expect(inGrid({ col: box.col, row: box.row }, box.size), `siège ${seat}`).toBe(true)
       }
     })
   })
@@ -122,27 +196,93 @@ describe.each(CONFIGS)('$label', ({ boardSize, pawnsPerPlayer }) => {
       expect(trackIndexOf(geometry, 0, geometry.trackLength)).toBeNull()
     })
   })
+})
 
-  describe('carré central', () => {
-    it("ne laisse qu'une seule case libre au centre", () => {
-      // Les quatre angles du carré 3×3 appartiennent au circuit — c'est même ce
-      // qui rend le tracé orthogonalement continu — et les quatre milieux sont
-      // les dernières marches des escaliers. Seul le centre est libre.
-      //
-      // Ce test existe parce que l'inverse a été dessiné : un bloc 3×3 posé au
-      // centre recouvrait quatre cases du circuit, et un cheval qui passait par
-      // là semblait déjà arrivé.
-      const onTrack = new Set(geometry.track.map((c) => `${c.col},${c.row}`))
-      const onHome = new Set(SEATS.flatMap((s) => geometry.homePath[s].map((c) => `${c.col},${c.row}`)))
+// ─────────────────────────── les deux plateaux officiels ───────────────────────────
 
-      const free: string[] = []
-      for (let col = geometry.center.col - 1; col <= geometry.center.col + 1; col++) {
-        for (let row = geometry.center.row - 1; row <= geometry.center.row + 1; row++) {
-          const k = `${col},${row}`
-          if (!onTrack.has(k) && !onHome.has(k)) free.push(k)
-        }
+/**
+ * Ces deux plateaux ne sont pas des réglages : ce sont des objets qui existent,
+ * imprimés, avec un nombre de cases qu'on peut compter. Les tests qui suivent
+ * les fixent, pour qu'un refactor de géométrie ne les fasse pas dériver.
+ */
+describe('plateaux officiels', () => {
+  const at = (g: BoardGeometry, i: number) => key(g.track[i]!)
+
+  describe('petits chevaux — croix française, 56 cases', () => {
+    const g = geometryFor({ shape: 'croix', trackLength: 56, pawnsPerPlayer: 4 })
+
+    it('compte 56 cases, 14 par quart, sur une grille de 15', () => {
+      expect(g.trackLength).toBe(56)
+      expect(g.trackLength / 4).toBe(14)
+      expect(g.grid).toBe(15)
+      expect(g.homeLength).toBe(6)
+    })
+
+    // C'est le point qui sépare le plateau français du plateau international :
+    // le tracé passe par les angles du carré central au lieu de les couper.
+    it('passe par les quatre angles du carré central', () => {
+      const corners = ['6.000,6.000', '8.000,6.000', '8.000,8.000', '6.000,8.000']
+      const track = new Set(g.track.map(key))
+      for (const c of corners) expect(track.has(c), `angle ${c}`).toBe(true)
+    })
+
+    it('est orthogonalement continu, sans une seule diagonale', () => {
+      for (let i = 0; i < g.trackLength; i++) {
+        const a = g.track[i]!
+        const b = g.track[(i + 1) % g.trackLength]!
+        expect(Math.abs(a.col - b.col) + Math.abs(a.row - b.row), `case ${i}`).toBe(1)
       }
-      expect(free).toEqual([`${geometry.center.col},${geometry.center.row}`])
+    })
+
+    it('part de la lisière du bras gauche et tourne dans le sens horaire', () => {
+      expect(at(g, 0)).toBe('0.000,6.000')
+      expect(at(g, 1)).toBe('1.000,6.000')
+      expect(at(g, 14)).toBe('8.000,0.000')
+      expect(at(g, 55)).toBe('0.000,7.000')
+    })
+
+    it("ouvre l'escalier du siège 0 juste après sa dernière case de circuit", () => {
+      expect(g.homePath[0].map(key)).toEqual([
+        '1.000,7.000',
+        '2.000,7.000',
+        '3.000,7.000',
+        '4.000,7.000',
+        '5.000,7.000',
+        '6.000,7.000',
+      ])
+    })
+  })
+
+  describe('ludo — croix internationale, 52 cases', () => {
+    const g = geometryFor({ shape: 'croix', trackLength: 52, pawnsPerPlayer: 4 })
+
+    it('compte 52 cases, 13 par quart, sur la même grille de 15', () => {
+      expect(g.trackLength).toBe(52)
+      expect(g.trackLength / 4).toBe(13)
+      expect(g.grid).toBe(15)
+      expect(g.homeLength).toBe(6)
+    })
+
+    it('coupe les quatre angles du carré central', () => {
+      const corners = ['6.000,6.000', '8.000,6.000', '8.000,8.000', '6.000,8.000']
+      const track = new Set(g.track.map(key))
+      for (const c of corners) expect(track.has(c), `angle ${c}`).toBe(false)
+    })
+
+    it('ne tourne en diagonale qu’aux quatre angles', () => {
+      let diagonals = 0
+      for (let i = 0; i < g.trackLength; i++) {
+        const a = g.track[i]!
+        const b = g.track[(i + 1) % g.trackLength]!
+        if (Math.abs(a.col - b.col) + Math.abs(a.row - b.row) !== 1) diagonals++
+      }
+      expect(diagonals).toBe(4)
+    })
+
+    // La règle internationale : la case abritée tombe huit crans après le
+    // départ, c'est-à-dire cinq cases avant le départ suivant.
+    it('pose les cases étoile huit crans après chaque départ', () => {
+      expect([...g.starIndexSet].sort((a, b) => a - b)).toEqual([8, 21, 34, 47])
     })
   })
 })

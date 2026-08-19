@@ -5,9 +5,10 @@
  * être imbattable, ce qui est exactement ce qu'on veut pour compléter une table.
  */
 
-import { geometryFor, isOnTrack, trackIndexOf } from './board.ts'
-import { legalMoves } from './engine.ts'
-import type { GameState, Move } from './types.ts'
+import { geometryFor, hasFinished, isOnTrack, trackIndexOf } from './board.ts'
+import { canPlayPower, legalMoves, pawnsOf, playablePowers } from './engine.ts'
+import { HAND_LIMIT, POWERS, type PowerId } from './powers.ts'
+import type { Action, GameState, Move } from './types.ts'
 
 function score(move: Move, state: GameState): number {
   const trackLength = geometryFor(state.variant).trackLength
@@ -32,19 +33,21 @@ function score(move: Move, state: GameState): number {
   s += move.to * 2
 
   // Éviter de finir juste devant un adversaire qui pourrait nous manger au tour suivant.
-  if (move.to < trackLength) s -= threatAt(state, move) * 60
+  if (move.to < trackLength) s -= threatOn(state, move.to) * 60
 
   return s
 }
 
 /**
- * Nombre de chevaux adverses situés 1 à 6 cases derrière la destination.
+ * Nombre de chevaux adverses situés 1 à 6 cases derrière cette position.
+ *
  * Le calcul se fait en cases absolues du circuit : chaque joueur compte ses pas
  * depuis son propre départ, comparer des `steps` bruts n'aurait aucun sens.
  */
-function threatAt(state: GameState, move: Move): number {
+function threatOn(state: GameState, steps: number): number {
   const geometry = geometryFor(state.variant)
-  const target = trackIndexOf(geometry, state.turn, move.to)
+  if (!isOnTrack(geometry, steps)) return 0
+  const target = trackIndexOf(geometry, state.turn, steps)
   if (target === null) return 0
 
   let threats = 0
@@ -62,4 +65,56 @@ export function chooseMove(state: GameState): Move | null {
   const moves = legalMoves(state)
   if (moves.length === 0) return null
   return moves.reduce((best, m) => (score(m, state) > score(best, state) ? m : best))
+}
+
+/**
+ * La carte que le bot jouerait maintenant, s'il en a une qui vaut le coup.
+ *
+ * Volontairement frugale : un bot qui viderait sa main dès qu'il le peut
+ * gaspillerait ses cartes, et un bot qui ne les jouerait jamais donnerait à la
+ * table l'impression que les pouvoirs ne marchent pas. Trois règles suffisent —
+ * relancer un dé qui ne sert à rien, protéger le cheval le plus exposé, et
+ * pousser un cheval qui rentre.
+ */
+export function choosePower(state: GameState): Action | null {
+  const hand = playablePowers(state)
+  if (hand.length === 0) return null
+
+  const geometry = geometryFor(state.variant)
+  const mine = pawnsOf(state, state.turn).filter((p) => !hasFinished(geometry, p.steps))
+  const best = (power: PowerId): string | undefined =>
+    mine
+      .filter((p) => canPlayPower(state, power, p.id))
+      .sort((a, b) => b.steps - a.steps)[0]?.id
+
+  // Un galop qui fait rentrer un cheval est toujours bon à prendre.
+  if (hand.includes('galop')) {
+    const finisher = mine.find(
+      (p) => canPlayPower(state, 'galop', p.id) && p.steps + POWERS.galop.steps === geometry.lastStep,
+    )
+    if (finisher) return { type: 'power', power: 'galop', pawnId: finisher.id }
+  }
+
+  // Relancer un dé qui ne donne aucun coup : il n'y a rien à perdre.
+  if (hand.includes('rejeu') && legalMoves(state).length === 0) return { type: 'power', power: 'rejeu' }
+
+  // Protéger le cheval le plus avancé, quand il est vraiment menacé.
+  if (hand.includes('bouclier')) {
+    const target = mine
+      .filter((p) => canPlayPower(state, 'bouclier', p.id))
+      .sort((a, b) => b.steps - a.steps)
+      .find((p) => threatOn(state, p.steps) > 0)
+    if (target) return { type: 'power', power: 'bouclier', pawnId: target.id }
+  }
+
+  // Main pleine : mieux vaut dépenser que refuser la prochaine carte.
+  if ((state.hands?.[state.turn]?.length ?? 0) >= HAND_LIMIT) {
+    for (const power of hand) {
+      if (POWERS[power].target === 'aucune') return { type: 'power', power }
+      const pawnId = best(power)
+      if (pawnId) return { type: 'power', power, pawnId }
+    }
+  }
+
+  return null
 }

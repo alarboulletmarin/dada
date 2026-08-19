@@ -1,0 +1,511 @@
+/**
+ * Le règlement complet, en français et en anglais.
+ *
+ * Dans son propre module, et non dans `i18n.ts`, pour la même raison que les
+ * textes de la page « à propos » : ce n'est pas de la chaîne d'interface, c'est
+ * un document. Il se relit en entier quand une règle change, il n'a aucune
+ * raison de bouger au rythme des libellés de boutons, et le mélanger aux clés
+ * d'écran rendrait les deux illisibles.
+ *
+ * ## Ce que ce document doit être
+ *
+ * **Vrai de ce jeu-là.** Pas des petits chevaux en général : de celui-ci, avec
+ * ses trois variantes et ses réglages de table. Une règle écrite ici et pas
+ * appliquée par `engine.ts` est un bug — dans le texte ou dans le code, mais un
+ * bug.
+ *
+ * **Utile aux moments de dispute.** L'écran « Comment on joue » explique en neuf
+ * étapes comment lancer sa première partie ; il ne dit pas si l'on peut poser
+ * deux chevaux sur la même case, ni ce qui se passe quand on tombe sur un
+ * bouclier. Ce document-ci répond à ces questions-là, et c'est son seul travail.
+ * Chaque section dit donc aussi ce qui est **interdit** : c'est ce qu'on vient
+ * y chercher.
+ *
+ * **Marqué par variante.** Les trois jeux ne partagent pas toutes leurs règles,
+ * et une règle sans étiquette laisserait croire qu'elle vaut partout. Les
+ * étiquettes sont celles des cartes de l'écran de choix : FR, INT, EXPRESS.
+ */
+
+import type { Lang } from './i18n.ts'
+
+/** Les variantes auxquelles une règle s'applique. Vide = toutes. */
+export type RuleTag = 'fr' | 'int' | 'express'
+
+export type Rule = {
+  title: string
+  body: string[]
+  /** Vide : la règle vaut pour les trois jeux. */
+  only?: RuleTag[]
+}
+
+export type RuleChapter = {
+  heading: string
+  rules: Rule[]
+}
+
+export type RulesText = {
+  title: string
+  back: string
+  intro: string
+  legend: Record<RuleTag, string>
+  all: string
+  chapters: RuleChapter[]
+}
+
+const fr: RulesText = {
+  title: 'Le règlement',
+  back: 'Retour',
+  intro:
+    "Ce qui est permis, ce qui ne l'est pas, et ce qui change d'un jeu à l'autre. Les règles marquées d'une étiquette ne valent que pour le jeu correspondant.",
+  legend: { fr: 'Petits chevaux', int: 'Ludo', express: 'Rapide' },
+  all: 'les trois jeux',
+  chapters: [
+    {
+      heading: 'Le plateau',
+      rules: [
+        {
+          title: 'Deux plateaux, et non un seul',
+          body: [
+            "Les petits chevaux se jouent sur le plateau français : 56 cases, 14 par quart de tour. Son tracé passe par les quatre angles du carré central, si bien qu'un cheval avance toujours d'un côté de case à la fois.",
+            "Le Ludo se joue sur le plateau international : 52 cases, 13 par quart. Il coupe ces quatre angles, et le pion y tourne en diagonale — exactement comme sur un plateau imprimé.",
+            "La variante rapide se joue sur un plateau réduit de 40 cases, avec deux chevaux par joueur au lieu de quatre.",
+          ],
+        },
+        {
+          title: 'La forme ne change rien au jeu',
+          body: [
+            "L'hôte choisit dans le salon la forme du plateau : croix, carré, rond ou serpent. C'est du décor. Les quatre formes ont le même circuit, les mêmes distances, les mêmes cases protégées et les mêmes cases pouvoir : une partie sur le rond se déroule exactement comme la même partie sur la croix.",
+            "Une seule exception, et elle est visible : le carré demande un nombre de cases pair par quart. Le Ludo joué sur un plateau carré tourne donc sur 56 cases et non 52.",
+          ],
+        },
+        {
+          title: "L'escalier et son décompte",
+          body: [
+            "Chaque camp a son escalier privé, qui mène au cœur du plateau. Il compte 6 marches sur les deux grands plateaux, 4 sur le plateau réduit. Aucun cheval ne peut entrer dans l'escalier d'un autre camp, ni même le traverser.",
+            "Sur le plateau français, les marches portent leur numéro : c'est un plateau où la règle stricte demande le chiffre exact de la marche visée. Le couloir du Ludo est une bande de couleur, sans numéros.",
+          ],
+        },
+      ],
+    },
+    {
+      heading: "Sortir de l'écurie",
+      rules: [
+        {
+          title: 'Il faut un 6',
+          body: [
+            "Un cheval à l'écurie ne peut en sortir que sur un 6, et il se pose alors sur la case de départ de sa couleur. Aucune autre valeur ne le fait sortir, et aucun cheval ne peut être déplacé tant qu'il est à l'écurie.",
+          ],
+          only: ['fr', 'int'],
+        },
+        {
+          title: 'Un 1 suffit aussi',
+          body: ["Dans la variante rapide, un cheval sort de l'écurie sur un 1 comme sur un 6."],
+          only: ['express'],
+        },
+        {
+          title: 'Le dé finit par pencher',
+          body: [
+            "Attendre un 6 est une loi de probabilité, pas une épreuve d'adresse : une partie sur cinq laisserait un joueur enfermé plus de huit tours. Le dé reste donc franc au premier essai, puis penche d'un cran par tour passé sans pouvoir sortir. Au sixième, la sortie est certaine.",
+            "Le joueur concerné le lit au-dessus du dé — « le dé penche vers la sortie », puis « ce lancer vous sort ». Un dé qui aiderait sans le dire serait un dé truqué. Le compteur retombe à zéro dès qu'un cheval est dehors.",
+            "La variante rapide, qui sort déjà sur deux faces, garde un dé entièrement franc.",
+          ],
+        },
+        {
+          title: 'La case de départ peut être bloquée',
+          body: [
+            "Si l'un de vos chevaux occupe déjà votre case de départ, vous ne pouvez pas en sortir un second : une case ne porte qu'un cheval. Il faut d'abord dégager celui qui est là.",
+          ],
+          only: ['fr'],
+        },
+      ],
+    },
+    {
+      heading: 'Avancer',
+      rules: [
+        {
+          title: 'Du nombre de points, dans le sens des aiguilles',
+          body: [
+            "On avance un seul cheval du nombre indiqué par le dé. On ne partage jamais un résultat entre deux chevaux.",
+            "Si aucun coup n'est possible, la main passe. Ce n'est pas une punition : c'est simplement qu'il n'y avait rien à jouer.",
+          ],
+        },
+        {
+          title: 'Une case, un cheval',
+          body: [
+            "Deux chevaux ne peuvent pas occuper la même case. S'il s'agit de vos propres chevaux, l'un reste derrière l'autre : le coup qui les superposerait n'existe pas, et il ne vous est pas proposé.",
+            "Un coup qui amènerait votre cheval sur un adversaire que vous ne pouvez pas manger — parce qu'il est sur sa case de départ — est refusé pour la même raison.",
+            "L'arrivée fait exception : c'est là que tous les chevaux se rejoignent.",
+          ],
+          only: ['fr'],
+        },
+        {
+          title: 'Les barrages',
+          body: [
+            "Deux pions d'une même couleur posés sur la même case forment un barrage. Aucun pion adverse ne peut s'y arrêter, ni le franchir : il reste bloqué derrière tant que le barrage tient.",
+            "Un barrage n'arrête jamais son propriétaire : vos propres pions le traversent librement. Un mur qui enfermerait celui qui le pose ne serait posé par personne.",
+          ],
+          only: ['int'],
+        },
+      ],
+    },
+    {
+      heading: 'Manger',
+      rules: [
+        {
+          title: 'Tomber pile renvoie à l’écurie',
+          body: [
+            "Arriver exactement sur une case occupée par un cheval adverse le renvoie à son écurie. Il devra ressortir sur un 6. Passer par-dessus ne fait rien : seule la case d'arrivée compte.",
+            "On ne mange jamais dans un escalier : ils sont privés, et aucun adversaire n'y entre.",
+          ],
+        },
+        {
+          title: 'Les cases de départ protègent',
+          body: [
+            "Un cheval posé sur sa propre case de départ ne peut pas être mangé. C'est la seule protection de la règle française.",
+          ],
+          only: ['fr'],
+        },
+        {
+          title: 'Les cases étoilées protègent aussi',
+          body: [
+            "Outre les quatre cases de départ, quatre cases étoilées sont abritées — une par camp, huit crans après son départ. Un pion qui s'y trouve ne peut pas être mangé, et deux couleurs peuvent y cohabiter.",
+          ],
+          only: ['int', 'express'],
+        },
+      ],
+    },
+    {
+      heading: 'Rentrer et gagner',
+      rules: [
+        {
+          title: 'Le compte exact',
+          body: [
+            "Après le tour complet du circuit, le cheval prend son escalier. Il faut le compte exact pour atteindre l'arrivée : un résultat trop grand ne se joue pas, et ce cheval-là reste où il est.",
+          ],
+          only: ['fr', 'int'],
+        },
+        {
+          title: 'Sans compte exact',
+          body: [
+            "Dans la variante rapide, un résultat trop grand amène quand même le cheval à l'arrivée. Les parties finissent bien plus vite.",
+          ],
+          only: ['express'],
+        },
+        {
+          title: 'La partie continue après le premier',
+          body: [
+            "Le premier joueur qui a rentré tous ses chevaux gagne, mais la partie ne s'arrête pas là : les autres continuent de jouer pour la deuxième et la troisième place. Elle s'achève quand il ne reste plus qu'un joueur en piste.",
+          ],
+        },
+      ],
+    },
+    {
+      heading: 'Rejouer, et perdre son tour',
+      rules: [
+        {
+          title: 'Un 6 rejoue',
+          body: [
+            "Un 6 donne droit à un second lancer, même si l'on n'a rien pu jouer avec.",
+            "Trois 6 d'affilée annulent le tour : le troisième ne se joue pas, et la main passe. Sans cette règle, une bonne série n'aurait pas de fin.",
+          ],
+        },
+        {
+          title: 'Manger et rentrer rejouent aussi',
+          body: [
+            "Au Ludo et en rapide, manger un pion adverse ou amener un pion à l'arrivée donne également droit à un second lancer. La règle française ne l'accorde qu'au 6.",
+          ],
+          only: ['int', 'express'],
+        },
+        {
+          title: 'Dix secondes pour jouer',
+          body: [
+            "Chaque tour est minuté, et le contour de la carte du joueur se vide. Passé le délai, le tour saute — rien n'est joué à sa place, ne pas jouer est toute la peine.",
+            "Trois tours sautés d'affilée, ou vingt secondes d'absence, et un bot tient le siège en attendant. Le siège reste celui de son joueur : il porte toujours son nom, et son retour — ou un appui sur « Reprendre » — le lui rend.",
+          ],
+        },
+      ],
+    },
+    {
+      heading: 'Le bonus de dé',
+      rules: [
+        {
+          title: 'Trois fois par partie, pour toute la table',
+          body: [
+            "Avant de lancer, on peut demander un petit nombre (1 à 3) ou un grand nombre (4 à 6). Le dé penche alors nettement du côté choisi, sans jamais y être forcé.",
+            "La réserve est commune à toute la table, pas par joueur : trois bonus pour la partie entière. Celui qui s'en sert le premier s'en sert.",
+          ],
+        },
+      ],
+    },
+    {
+      heading: 'Les cases pouvoir',
+      rules: [
+        {
+          title: 'Facultatives, et décidées ensemble',
+          body: [
+            "L'hôte les active dans le salon, avant le lancement. Sans elles, le jeu est exactement celui décrit plus haut.",
+            "Activées, elles posent huit cases marquées sur le circuit — deux par camp, aux mêmes distances du départ de chacun. Le motif se répète à l'identique tous les quarts de tour : personne n'a le bon coin du plateau.",
+          ],
+        },
+        {
+          title: 'S’arrêter dessus fait piocher',
+          body: [
+            "Il faut s'arrêter exactement sur la case : la traverser ne fait rien.",
+            "La pioche est un paquet de seize cartes — dix bonus, six malus — mélangé au début de la partie et partagé par toute la table. Il se consomme par le haut et se remélange quand il est vide. Le hasard décide de l'ordre, jamais des proportions : au bout du paquet, tout le monde a vu la même chose.",
+            "Un pouvoir qui déplace un cheval ne redéclenche pas la case sur laquelle il l'amène.",
+          ],
+        },
+        {
+          title: 'Les bonus se gardent, les malus se subissent',
+          body: [
+            "Un malus s'applique immédiatement. Un bonus rejoint votre main, et c'est vous qui choisissez son moment.",
+            "On garde trois cartes au plus. Une carte ramassée alors que la main est pleine est perdue — c'est ce qui pousse à dépenser plutôt qu'à thésauriser.",
+            "Jouer une carte ne consomme pas le tour : on peut poser un bouclier puis lancer le dé, ou relancer un dé décevant puis jouer son coup.",
+          ],
+        },
+        {
+          title: 'Ce que fait chaque carte',
+          body: [
+            "Bouclier — le cheval désigné encaisse la prochaine capture sans bouger, et le bouclier se brise. Il se pose sur un cheval en piste : à l'écurie, rien ne peut le manger.",
+            "Galop — le cheval désigné avance de trois cases de plus. Il ne dépasse jamais l'arrivée : gagner par accident serait pire que rien.",
+            "Rejeu — on relance le dé et on rejoue. Une chaîne de 6 continue de compter : relancer n'efface pas les 6 déjà posés.",
+            "Dé pipé — un bonus de dé de plus dans la réserve commune. Il ne se garde pas en main : la réserve est déjà l'endroit où l'on garde.",
+            "Faux pas — votre cheval recule de trois cases. Il ne repasse jamais par l'écurie, et reculer ne mange personne.",
+            "Tour sauté — votre prochain tour saute. Un seul.",
+            "Retour à l'écurie — votre cheval rentre, bouclier compris. La carte la plus dure, et la seule de son espèce dans le paquet.",
+          ],
+        },
+      ],
+    },
+  ],
+}
+
+const en: RulesText = {
+  title: 'The rulebook',
+  back: 'Back',
+  intro:
+    'What is allowed, what is not, and what changes from one game to another. Rules carrying a tag apply only to that game.',
+  legend: { fr: 'Little horses', int: 'Ludo', express: 'Quick' },
+  all: 'all three games',
+  chapters: [
+    {
+      heading: 'The board',
+      rules: [
+        {
+          title: 'Two boards, not one',
+          body: [
+            'Little horses is played on the French board: 56 squares, 14 per quarter. Its path runs through the four corners of the central square, so a horse always moves one square-edge at a time.',
+            'Ludo is played on the international board: 52 squares, 13 per quarter. It cuts those four corners, and the pawn turns diagonally there — exactly as on a printed board.',
+            'The quick variant uses a reduced 40-square board, with two horses per player instead of four.',
+          ],
+        },
+        {
+          title: 'The shape changes nothing',
+          body: [
+            'The host picks the board shape in the lobby: cross, square, round or snake. It is decoration. All four share the same track, the same distances, the same protected squares and the same power squares: a game on the round board plays exactly like the same game on the cross.',
+            'One visible exception: the square needs an even number of squares per quarter. Ludo played on a square board therefore runs on 56 squares, not 52.',
+          ],
+        },
+        {
+          title: 'The home lane and its count',
+          body: [
+            "Each colour has a private home lane leading to the centre. It has 6 steps on both large boards, 4 on the reduced one. No horse may enter another colour's lane, or even cross it.",
+            'On the French board the steps carry their number: it is a board whose strict rule asks for the exact number of the step you aim at. The Ludo lane is a plain colour band, without numbers.',
+          ],
+        },
+      ],
+    },
+    {
+      heading: 'Leaving the stable',
+      rules: [
+        {
+          title: 'You need a 6',
+          body: [
+            'A horse in the stable comes out only on a 6, landing on its colour’s starting square. No other value brings it out, and a horse in the stable cannot be moved.',
+          ],
+          only: ['fr', 'int'],
+        },
+        {
+          title: 'A 1 works too',
+          body: ['In the quick variant a horse comes out on a 1 as well as on a 6.'],
+          only: ['express'],
+        },
+        {
+          title: 'The die eventually leans',
+          body: [
+            'Waiting for a 6 is a law of probability, not a test of skill: one game in five would leave a player penned for more than eight turns. The die stays fair on the first try, then leans one notch per turn spent stuck. On the sixth, coming out is certain.',
+            'The player concerned reads it above the die — “the die leans towards the exit”, then “this roll gets you out”. A die that helped without saying so would be a loaded die. The counter resets the moment a horse is out.',
+            'The quick variant, which already comes out on two faces, keeps a completely fair die.',
+          ],
+        },
+        {
+          title: 'The starting square can be blocked',
+          body: [
+            'If one of your horses already stands on your starting square, you cannot bring a second one out: a square holds one horse. Clear the first one out of the way.',
+          ],
+          only: ['fr'],
+        },
+      ],
+    },
+    {
+      heading: 'Moving',
+      rules: [
+        {
+          title: 'By the number rolled, clockwise',
+          body: [
+            'You move a single horse by the number shown. A roll is never split between two horses.',
+            'If no move is possible, the turn passes. That is not a punishment: there was simply nothing to play.',
+          ],
+        },
+        {
+          title: 'One horse per square',
+          body: [
+            'Two horses cannot occupy the same square. If they are both yours, one stays behind the other: the move that would stack them does not exist, and is not offered to you.',
+            'A move that would bring your horse onto an opponent you cannot eat — because it stands on its starting square — is refused for the same reason.',
+            'The finish is the exception: that is where every horse gathers.',
+          ],
+          only: ['fr'],
+        },
+        {
+          title: 'Blockades',
+          body: [
+            'Two pawns of the same colour on one square form a blockade. No opposing pawn may stop on it or pass it: it stays stuck behind for as long as the blockade holds.',
+            'A blockade never stops its owner: your own pawns pass through freely. A wall that penned in whoever built it would be built by nobody.',
+          ],
+          only: ['int'],
+        },
+      ],
+    },
+    {
+      heading: 'Eating',
+      rules: [
+        {
+          title: 'Landing exactly sends it home',
+          body: [
+            'Landing exactly on a square held by an opposing horse sends it back to its stable, to come out again on a 6. Passing over it does nothing: only the landing square counts.',
+            'You never eat inside a home lane: they are private, and no opponent enters them.',
+          ],
+        },
+        {
+          title: 'Starting squares protect',
+          body: [
+            'A horse standing on its own starting square cannot be eaten. It is the only protection in the French rules.',
+          ],
+          only: ['fr'],
+        },
+        {
+          title: 'Star squares protect too',
+          body: [
+            'Besides the four starting squares, four star squares are safe — one per colour, eight steps after its start. A pawn there cannot be eaten, and two colours may share it.',
+          ],
+          only: ['int', 'express'],
+        },
+      ],
+    },
+    {
+      heading: 'Coming home and winning',
+      rules: [
+        {
+          title: 'The exact count',
+          body: [
+            'After a full lap the horse takes its home lane. The exact count is needed to reach the finish: too large a roll cannot be played, and that horse stays where it is.',
+          ],
+          only: ['fr', 'int'],
+        },
+        {
+          title: 'Without an exact count',
+          body: [
+            'In the quick variant, too large a roll still brings the horse home. Games end far sooner.',
+          ],
+          only: ['express'],
+        },
+        {
+          title: 'The game continues after the first',
+          body: [
+            'The first player to bring every horse home wins, but the game does not stop there: the others keep playing for second and third place. It ends when only one player is left running.',
+          ],
+        },
+      ],
+    },
+    {
+      heading: 'Rolling again, and losing a turn',
+      rules: [
+        {
+          title: 'A 6 rolls again',
+          body: [
+            'A 6 grants a second roll, even when nothing could be played with it.',
+            'Three 6s in a row void the turn: the third is not played, and the turn passes. Without that rule a good streak would have no end.',
+          ],
+        },
+        {
+          title: 'Eating and coming home roll again too',
+          body: [
+            'In Ludo and Quick, eating an opposing pawn or bringing one home also grants a second roll. The French rules grant it only on a 6.',
+          ],
+          only: ['int', 'express'],
+        },
+        {
+          title: 'Ten seconds to play',
+          body: [
+            'Every turn is timed, and the outline of the player’s card empties. Past the deadline the turn is skipped — nothing is played on their behalf; not playing is the whole penalty.',
+            'Three skipped turns in a row, or twenty seconds away, and a bot holds the seat meanwhile. The seat stays theirs: it still carries their name, and their return — or a tap on “Take back” — gives it to them.',
+          ],
+        },
+      ],
+    },
+    {
+      heading: 'The die bonus',
+      rules: [
+        {
+          title: 'Three times a game, for the whole table',
+          body: [
+            'Before rolling you may ask for a low number (1 to 3) or a high one (4 to 6). The die then leans clearly that way, without ever being forced.',
+            'The reserve is shared by the whole table, not per player: three bonuses for the entire game. Whoever spends first, spends.',
+          ],
+        },
+      ],
+    },
+    {
+      heading: 'Power squares',
+      rules: [
+        {
+          title: 'Optional, and decided together',
+          body: [
+            'The host turns them on in the lobby, before the start. Without them the game is exactly the one described above.',
+            'Turned on, they place eight marked squares on the track — two per colour, at the same distances from everyone’s start. The pattern repeats identically every quarter lap: nobody has the good corner of the board.',
+          ],
+        },
+        {
+          title: 'Stopping on one draws a card',
+          body: [
+            'You must stop exactly on the square: crossing it does nothing.',
+            'The draw is a sixteen-card deck — ten bonuses, six penalties — shuffled at the start and shared by the whole table. It is consumed from the top and reshuffled when empty. Chance decides the order, never the proportions: by the end of the deck everyone has seen the same thing.',
+            'A power that moves a horse does not re-trigger the square it lands it on.',
+          ],
+        },
+        {
+          title: 'Bonuses are kept, penalties are suffered',
+          body: [
+            'A penalty applies at once. A bonus joins your hand, and you choose its moment.',
+            'You hold three cards at most. A card drawn with a full hand is lost — that is what pushes you to spend rather than hoard.',
+            'Playing a card does not use up your turn: you can shield a horse then roll, or reroll a disappointing die then play your move.',
+          ],
+        },
+        {
+          title: 'What each card does',
+          body: [
+            'Shield — the chosen horse takes the next capture without moving, and the shield breaks. It goes on a horse out on the track: in the stable, nothing can eat it.',
+            'Gallop — the chosen horse moves three more squares. It never overshoots the finish: winning by accident would be worse than nothing.',
+            'Replay — you roll again and play on. A streak of 6s keeps counting: rerolling does not erase the 6s already rolled.',
+            'Loaded die — one more die bonus in the shared reserve. It is not kept in hand: the reserve is already where you keep things.',
+            'Stumble — your horse goes back three squares. It never falls back into the stable, and moving back eats nobody.',
+            'Lost turn — your next turn is skipped. Just one.',
+            'Back to the stable — your horse goes home, shield included. The harshest card, and the only one of its kind in the deck.',
+          ],
+        },
+      ],
+    },
+  ],
+}
+
+export const RULES_TEXT: Record<Lang, RulesText> = { fr, en }

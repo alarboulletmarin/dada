@@ -12,6 +12,9 @@
  * La conversion vers une case absolue du plateau se fait dans `board.ts`.
  */
 
+import type { BoardShape } from './board.ts'
+import type { PowerId } from './powers.ts'
+
 export const STABLE = -1
 export const DICE_BOOSTS_PER_GAME = 3
 
@@ -23,6 +26,12 @@ export type Pawn = {
   owner: Seat
   /** Voir l'en-tête du fichier. */
   steps: number
+  /**
+   * Ce cheval porte un bouclier : la prochaine capture le manque et le
+   * bouclier se brise. Ramassé sur une case pouvoir, il ne survit pas à un
+   * retour à l'écurie.
+   */
+  shield?: boolean
 }
 
 export type Player = {
@@ -39,13 +48,27 @@ export type Variant = {
   /** Sert aussi de clé de traduction : le nom affiché n'est pas dans l'état. */
   id: string
   /**
-   * Taille `S` du carré d'écurie de chaque siège : paramètre unique dont
-   * dérive toute la géométrie du plateau (grille, circuit, escaliers,
-   * emplacements d'écurie). Voir `geometryFor` dans `board.ts`.
+   * Longueur du circuit — 56 sur le plateau français des petits chevaux, 52
+   * sur le plateau international du Ludo, 40 sur le plateau réduit. Doit être
+   * un multiple de 4 : les quatre départs sont équidistants.
+   *
+   * Toute la géométrie en découle (voir `geometryFor` dans `board.ts`) : bras,
+   * escaliers, cases étoile, cases pouvoir.
    */
-  boardSize: number
+  trackLength: number
   /** Nombre de pions par joueur. */
   pawnsPerPlayer: number
+  /**
+   * Le décor du plateau. Réglé dans le salon, jamais dans les règles : les
+   * quatre formes partagent le même circuit et les mêmes distances, seul le
+   * dessin change. Absent = la croix officielle.
+   */
+  shape?: BoardShape
+  /**
+   * Les cases pouvoir sont-elles posées sur le circuit ? Réglé dans le salon.
+   * Voir `powers.ts` pour ce qu'on y gagne — et ce qu'on y perd.
+   */
+  powers?: boolean
   /** Valeurs du dé permettant de sortir un pion de l'écurie. */
   exitRolls: number[]
   /**
@@ -72,13 +95,67 @@ export type Variant = {
   starSquaresAreSafe: boolean
   /** Les 4 cases de départ protègent de la capture. */
   startSquaresAreSafe: boolean
-  /** Deux pions d'un même joueur sur une case bloquent le passage des autres. */
+  /**
+   * Deux pions d'un même joueur sur une case forment un barrage : aucun pion
+   * **adverse** ne peut s'y arrêter ni le franchir. Le barrage n'arrête jamais
+   * son propriétaire — c'est un mur qu'on dresse contre les autres, pas une
+   * case qu'on se condamne à soi-même.
+   */
   blockades: boolean
+  /**
+   * Une case, un cheval.
+   *
+   * La règle française : « deux chevaux ne peuvent pas occuper la même case ;
+   * s'il s'agit de vos propres chevaux, l'un reste derrière l'autre ». Un coup
+   * qui amènerait un cheval sur une case déjà tenue par un cheval qu'il ne peut
+   * pas manger — le sien, ou un adversaire protégé — n'est donc pas jouable.
+   *
+   * L'arrivée fait exception, évidemment : c'est là que les quatre se rejoignent.
+   *
+   * Le Ludo ne connaît pas cette règle, et ne peut pas la connaître : empiler
+   * deux pions d'une même couleur est exactement ce qui y forme un barrage.
+   */
+  onePerSquare: boolean
   /** L'entrée à l'arrivée exige le compte exact (sinon le coup est illégal). */
   exactFinish: boolean
+  /**
+   * Les marches de l'escalier portent-elles leur numéro ?
+   *
+   * Oui sur le plateau français, où les six marches sont imprimées 1 à 6 et où
+   * la règle stricte demande le chiffre exact de la marche visée. Non sur le
+   * plateau international du Ludo, dont le couloir est une simple bande de
+   * couleur : y écrire des numéros serait inventer un plateau qui n'existe pas.
+   *
+   * C'est bien du dessin, et pas de la règle : le moteur ne lit jamais ce champ.
+   */
+  numberedHome: boolean
 }
 
 export type Phase = 'rolling' | 'moving' | 'finished'
+
+/**
+ * Ce qu'un siège a fait de sa partie.
+ *
+ * Rien ici ne sert au moteur : ces compteurs n'entrent dans aucune décision de
+ * règle. Ils existent pour l'écran de fin — « tu as fait 4,1 de moyenne et tu
+ * as perdu quand même » est la phrase qui fait relancer une manche, et on ne
+ * peut pas la reconstituer après coup à partir de l'état final.
+ */
+export type SeatStats = {
+  /** Lancers de dé. */
+  rolls: number
+  /** Somme des faces — la moyenne se calcule à l'affichage. */
+  pips: number
+  sixes: number
+  /** Chevaux adverses renvoyés à l'écurie. */
+  captures: number
+  /** Ses propres chevaux renvoyés à l'écurie. */
+  losses: number
+  /** Cases parcourues vers l'avant, écurie et escalier compris. */
+  distance: number
+  /** Cartes pouvoir ramassées. */
+  powers: number
+}
 
 /**
  * Un événement du journal, sous forme structurée et non de phrase.
@@ -99,6 +176,16 @@ export type LogEvent =
   | { kind: 'timeout' }
   | { kind: 'win' }
   | { kind: 'rank'; place: number }
+  /** Un cheval a ramassé une case pouvoir. */
+  | { kind: 'power'; power: PowerId; pawn: number }
+  /** Une capture s'est brisée sur un bouclier. */
+  | { kind: 'shielded'; pawn: number; owner: string }
+  /** Un tour sauté par un malus déjà ramassé. */
+  | { kind: 'skipped' }
+  /** Une carte gardée vient d'être jouée. `pawn` vaut 0 si elle ne vise personne. */
+  | { kind: 'played'; power: PowerId; pawn: number }
+  /** Une carte bonus perdue faute de place en main. */
+  | { kind: 'handFull'; power: PowerId }
 
 export type LogEntry = {
   seq: number
@@ -117,6 +204,10 @@ export type GameError =
   | 'illegal'
   | 'nothingToPass'
   | 'moveExists'
+  /** Cette carte n'est pas dans votre main. */
+  | 'noSuchPower'
+  /** Cette carte ne peut pas être jouée maintenant. */
+  | 'powerNotNow'
 
 export type GameState = {
   variant: Variant
@@ -143,6 +234,23 @@ export type GameState = {
    * il retombe à zéro dès qu'un cheval est dehors.
    */
   stuck: number[]
+  /**
+   * La pioche des pouvoirs : un paquet mélangé et partagé par toute la table,
+   * consommé par le haut. Un paquet, et non un tirage indépendant à chaque
+   * case : c'est ce qui garantit qu'au bout de seize cases pouvoir, tout le
+   * monde a vu exactement la même distribution de bonus et de malus. Vide ou
+   * absent tant que la table n'a pas activé les pouvoirs.
+   */
+  deck?: PowerId[]
+  /** Tours à sauter, par siège — un malus « tour sauté » déjà ramassé. */
+  skips?: number[]
+  /**
+   * Les cartes que chaque siège garde devant lui, dans l'ordre du ramassage.
+   * L'indice est le siège. Trois au plus (voir `HAND_LIMIT`).
+   */
+  hands?: PowerId[][]
+  /** Ce que chaque siège a fait de sa partie. L'indice est le siège. */
+  stats?: SeatStats[]
   log: LogEntry[]
   /** Compteur monotone : sert à départager deux états lors d'un changement d'hôte. */
   seq: number
@@ -153,6 +261,11 @@ export type Action =
   | { type: 'move'; pawnId: string }
   /** Aucun coup possible : passe la main. */
   | { type: 'pass' }
+  /**
+   * Jouer une carte gardée en main. `pawnId` désigne le cheval visé pour les
+   * cartes qui en demandent un. Jouer une carte ne consomme pas le tour.
+   */
+  | { type: 'power'; power: PowerId; pawnId?: string }
 
 /** Un coup légal, précalculé pour l'affichage et pour l'IA. */
 export type Move = {
@@ -161,6 +274,11 @@ export type Move = {
   to: number
   /** Pions adverses renvoyés à l'écurie par ce coup. */
   captures: string[]
+  /**
+   * Pions adverses présents sur la case d'arrivée mais protégés par un
+   * bouclier : le coup reste légal, ils survivent, et leur bouclier se brise.
+   */
+  shielded: string[]
   /** Le pion atteint l'arrivée. */
   finishes: boolean
   /** Le pion sort de l'écurie. */

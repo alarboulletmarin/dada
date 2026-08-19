@@ -10,9 +10,12 @@
  * sans aucun pair, qui contrôle tous les sièges. Une seule logique à maintenir.
  */
 
-import { chooseMove } from '../game/bot.ts'
-import { apply, createGame, forceSkipTurn, legalMoves } from '../game/engine.ts'
+import { isBoardShape, type BoardShape } from '../game/board.ts'
+import { chooseMove, choosePower } from '../game/bot.ts'
+import { apply, createGame, forceSkipTurn, handOf, legalMoves, playablePowers, powerTargets } from '../game/engine.ts'
 import { seedFrom } from '../game/rng.ts'
+import type { Variant } from '../game/types.ts'
+import type { PowerId } from '../game/powers.ts'
 import { variantById } from '../game/variants.ts'
 import type { Action, GameError, GameState, Seat } from '../game/types.ts'
 import {
@@ -25,6 +28,24 @@ import {
 } from './presence.ts'
 import { clientId, joinGameRoom, type ChatMessage, type Lobby, type LobbyPlayer, type Room } from './room.ts'
 import { clearInvite, clearSave, writeInvite, writeSave, type Save } from './save.ts'
+
+/**
+ * Les règles de la variante, plus les réglages que la table s'est donnés.
+ *
+ * Forme et pouvoirs ne sont pas des règles de famille : ils vivent dans le
+ * salon. Mais le moteur ne connaît qu'un objet `Variant`, et c'est bien lui
+ * qui doit les porter — sinon chaque appel de géométrie devrait aller
+ * redemander au salon ce que le plateau est censé être, jusque dans les tests.
+ * Ils sont donc recopiés ici, une fois, au moment du lancement.
+ */
+export function tableVariant(lobby: Lobby): Variant {
+  const base = variantById(lobby.variantId)
+  return {
+    ...base,
+    shape: isBoardShape(lobby.shape) ? lobby.shape : 'croix',
+    powers: lobby.powers === true,
+  }
+}
 
 const MAX_SEATS = 4
 const BOT_DELAY = 700
@@ -445,6 +466,22 @@ export class Session {
     this.listeners.onChange()
   }
 
+  /** Le décor du plateau. Ne change aucune règle ni aucune distance. */
+  setShape(shape: BoardShape): void {
+    if (!this.isHost || this.lobby.started) return
+    this.lobby.shape = shape
+    this.publishLobby()
+    this.listeners.onChange()
+  }
+
+  /** Les cases pouvoir sont-elles de la partie ? */
+  setPowers(on: boolean): void {
+    if (!this.isHost || this.lobby.started) return
+    this.lobby.powers = on
+    this.publishLobby()
+    this.listeners.onChange()
+  }
+
   rename(seat: Seat, name: string): void {
     const player = this.lobby.players.find((p) => p.seat === seat)
     if (!player) return
@@ -489,7 +526,7 @@ export class Session {
         peerId: p.peerId,
         connected: p.connected,
       })),
-      variant: variantById(this.lobby.variantId),
+      variant: tableVariant(this.lobby),
       seed: seedFrom(`${this.lobby.code}:${Date.now()}`),
     })
 
@@ -556,6 +593,13 @@ export class Session {
 
     this.botTimer = setTimeout(() => {
       if (!this.game || this.game.turn !== seat) return
+      // Une carte d'abord, s'il en a une qui vaut le coup : la jouer ne consomme
+      // pas le tour, et `applyAsHost` rappellera `scheduleBot` pour la suite.
+      const card = choosePower(this.game)
+      if (card) {
+        this.applyAsHost(card, seat)
+        return
+      }
       if (this.game.phase === 'rolling') {
         this.applyAsHost({ type: 'roll' }, seat)
         return
@@ -738,6 +782,28 @@ export class Session {
   /** Coups jouables affichés à l'écran, uniquement si c'est bien notre tour. */
   moves() {
     return this.game && this.myTurn ? legalMoves(this.game) : []
+  }
+
+  /**
+   * Les cartes du joueur dont c'est le tour, et celles qui sont jouables tout
+   * de suite.
+   *
+   * Celles du joueur courant, et non les siennes : la barre est sous le dé, et
+   * le dé appartient à qui joue. Elles ne sont d'ailleurs pas secrètes — elles
+   * voyagent dans l'état de la partie, et voir ce que tient l'adversaire fait
+   * partie du jeu. Seule la possibilité de les jouer dépend du siège.
+   */
+  hand(): { cards: PowerId[]; playable: PowerId[] } {
+    if (!this.game) return { cards: [], playable: [] }
+    return {
+      cards: handOf(this.game, this.game.turn),
+      playable: this.myTurn ? playablePowers(this.game) : [],
+    }
+  }
+
+  /** Les chevaux sur lesquels une carte peut se poser. */
+  targetsFor(power: PowerId): string[] {
+    return this.game && this.myTurn ? powerTargets(this.game, power) : []
   }
 }
 

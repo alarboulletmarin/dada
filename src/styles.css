@@ -1317,12 +1317,26 @@ input:disabled {
   overflow: hidden;
 }
 
+/* Les cases sont posées en pourcentage, pas en cellules de grille : c'est ce
+   qui rend possible un plateau rond, dont aucune case ne tombe sur un entier.
+   Chaque case connaît son coin haut-gauche et sa taille en unités de case ;
+   `board-view.ts` les convertit une fois pour toutes. */
 .board {
   position: absolute;
   inset: 0;
-  display: grid;
-  grid-template: repeat(var(--grid, 15), 1fr) / repeat(var(--grid, 15), 1fr);
   touch-action: manipulation;
+}
+
+.board > * {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+/* L'inclinaison d'une case courbe. Séparée de tout autre `transform` : les
+   plateaux droits n'en posent pas, et une case droite ne doit pas payer une
+   composition de matrices pour rien. */
+.board > [style*='--tilt'] {
+  transform: rotate(var(--tilt, 0deg));
 }
 
 /* Trois niveaux de trait, du plus discret au plus affirmé :
@@ -1380,49 +1394,46 @@ input:disabled {
   transform: rotate(var(--rot));
 }
 
-/* L'escalier privé : une barre pleine, refendue tous les six pour qu'on
-   puisse encore compter les cases des yeux. */
-.deco.lane {
-  background-color: var(--seat);
-  border: var(--bw) solid var(--ink);
+/* L'escalier privé, marche par marche et numéroté — comme sur un plateau
+   français, où les six marches portent leur rang. L'ancienne barre pleine
+   était plus nette, mais elle supposait un escalier droit (impossible sur un
+   plateau rond) et surtout elle cachait le compte. */
+.cell.home {
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--seat) 62%, var(--card));
+  border: 2px solid var(--ink);
+  color: var(--on);
 }
 
-.deco.lane.lane-h {
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0 calc(16.6667% - 2px),
-    rgba(var(--ink-rgb), 0.45) calc(16.6667% - 2px) 16.6667%
-  );
+.cell.home b {
+  font-size: clamp(6px, 1.9cqw, 12px);
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0.75;
+  transform: rotate(var(--rot, 0deg));
 }
 
-.deco.lane.lane-v {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0 calc(16.6667% - 2px),
-    rgba(var(--ink-rgb), 0.45) calc(16.6667% - 2px) 16.6667%
-  );
+/* Case pouvoir : un losange d'encre sur fond neutre. Ni couleur de camp — elle
+   n'appartient à personne — ni étoile, déjà prise par les cases abritées. */
+.cell.power {
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--ink) 12%, var(--card));
+  border: 2.5px solid var(--ink);
 }
 
-.deco.lane.end-left {
-  border-radius: 10px 0 0 10px;
+.cell.power i {
+  width: 52%;
+  aspect-ratio: 1;
+  background: var(--ink);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
 
-.deco.lane.end-right {
-  border-radius: 0 10px 10px 0;
-}
-
-.deco.lane.end-top {
-  border-radius: 10px 10px 0 0;
-}
-
-.deco.lane.end-bottom {
-  border-radius: 0 0 10px 10px;
-}
-
-/* Décors posés par-dessus la grille : écuries, centre, emplacements au repos.
-   Ce sont des cases de la même grille, placées par `grid-area`. */
+/* Décors posés par-dessus le circuit : écuries, cœur, emplacements au repos.
+   Ils se posent comme les cases, en pourcentage, et ne prennent jamais le
+   doigt : seuls les pions sont cliquables. */
 .deco {
-  position: relative;
   pointer-events: none;
 }
 
@@ -1458,20 +1469,13 @@ input:disabled {
   background: var(--seat);
 }
 
-.deco.center i.side-top {
+/* Une pointe par camp, tournée vers l'escalier d'où il arrive. Le quart est
+   toujours le même — celui du haut — et c'est la rotation qui le place : sur un
+   plateau rond, les quatre escaliers n'arrivent pas par les quatre côtés d'un
+   carré. */
+.deco.center i {
   clip-path: polygon(0 0, 100% 0, 50% 50%);
-}
-
-.deco.center i.side-right {
-  clip-path: polygon(100% 0, 100% 100%, 50% 50%);
-}
-
-.deco.center i.side-bottom {
-  clip-path: polygon(0 100%, 50% 50%, 100% 100%);
-}
-
-.deco.center i.side-left {
-  clip-path: polygon(0 0, 50% 50%, 0 100%);
+  transform: rotate(var(--rot, 0deg));
 }
 
 /* Un camp sans joueur s'efface : à deux, le plateau ne montre que deux couleurs. */
@@ -1540,6 +1544,20 @@ input:disabled {
 
 .pawn.moving i {
   transform: scale(1.16);
+}
+
+/* Le cheval au bouclier porte un anneau d'encre doublé de sa couleur. Ni icône
+   ni emoji : à cette taille un pictogramme ne se lit pas, un anneau si — et il
+   disparaît de lui-même le jour où le bouclier se brise. */
+.pawn.shielded i {
+  box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 2px var(--card),
+    0 0 0 4px var(--ink);
+}
+
+.pawn.shielded.playable i {
+  animation: none;
+  box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 2px var(--card),
+    0 0 0 4px var(--ink), 0 0 0 7px var(--card), 0 0 0 9px var(--ink);
 }
 
 @keyframes circled {
@@ -2693,4 +2711,310 @@ input:disabled {
   .pcard__bubble {
     animation-name: bubble-pop-side;
   }
+}
+
+
+/* ─────────────────────────── réglages de table ───────────────────────────
+   La forme du plateau et les cases pouvoir. Deux réglages, un seul bloc : ce
+   sont les deux choses qu'on décide ensemble avant de lancer, et les voir
+   côte à côte évite d'en oublier une. */
+
+.table-card hr {
+  height: 2px;
+  margin: 14px 0;
+  border: 0;
+  background: var(--line);
+}
+
+.row--split {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shapes {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 10px 0 6px;
+}
+
+.shape-btn {
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  padding: 9px 4px 7px;
+  border: 2.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.shape-btn svg {
+  width: 26px;
+  height: 26px;
+}
+
+.shape-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+/* La forme retenue se cerne d'encre, comme une case qui compte sur le plateau :
+   le même vocabulaire, du salon au circuit. */
+.shape-btn.on {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.shape-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* L'interrupteur porte son état écrit, pas seulement sa couleur : « Activées »
+   se lit sans distinguer le vert du gris, et un lecteur d'écran l'annonce. */
+.toggle {
+  padding: 7px 14px;
+  border: 2.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.toggle.on {
+  border-color: var(--ink);
+  background: var(--green);
+  color: var(--card);
+}
+
+.toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* ─────────────────────────── le catalogue des pouvoirs ─────────────────────────── */
+
+.powers__sheet {
+  max-height: min(88vh, 720px);
+  overflow-y: auto;
+}
+
+.powers-group {
+  margin-top: 16px;
+}
+
+.power-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 0;
+  border-top: 2px solid var(--line);
+}
+
+.powers-group .label + .power-row {
+  border-top: 0;
+}
+
+.power-mark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 2.5px solid var(--ink);
+  border-radius: 4px;
+}
+
+.power-mark--bonus {
+  background: var(--green);
+}
+
+.power-mark--malus {
+  background: var(--red);
+}
+
+.power-text {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.power-text .desc {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.power-copies {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+
+/* ─────────────────────────── les cartes en main ───────────────────────────
+   Une rangée au-dessus du dé, et non dessous : une carte se joue *avant* de
+   lancer aussi bien qu'après, et la ranger sous le dé la ferait lire comme une
+   conséquence du lancer.
+
+   La rangée garde sa hauteur même vide, comme la ligne de tour : rien ne doit
+   sauter sous le plateau au moment où la première carte arrive. */
+.hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 4px;
+}
+
+.hand.empty::after {
+  content: '';
+}
+
+/* `hand__card` et non `card` : `.card` est déjà la grande boîte arrondie des
+   écrans, avec sa colonne, son épaisse bordure et son ombre de 7 px. Une pilule
+   qui reprenait ce nom en héritait de la colonne et de l'ombre, et se dessinait
+   en pastille ronde illisible — un nom de classe partagé est un bug qui attend
+   son tour.
+
+   `flex: none` n'est pas cosmétique non plus : sans lui la pilule se laisse
+   comprimer par l'indication qui la suit et son libellé passe à la ligne. */
+.hand__card {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  white-space: nowrap;
+  border: 2.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 0 2px 0 var(--shade);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+/* Une carte jouable se cercle d'encre — le même vocabulaire que le cheval
+   jouable sur le plateau. Une carte éteinte reste lisible : la retirer ferait
+   croire qu'on l'a perdue. */
+.hand__card.on {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.hand__card.on:hover {
+  transform: translateY(-1px);
+}
+
+.hand__card:disabled {
+  box-shadow: none;
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* La carte en visée : c'est au plateau de jouer, et elle le dit. */
+.hand__card.aimed {
+  background: var(--ink);
+  border-color: var(--ink);
+  box-shadow: none;
+  color: var(--cream);
+}
+
+.hand__hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hand.aiming .hand__hint {
+  color: var(--ink);
+}
+
+
+/* ─────────────────────────── la feuille de match ───────────────────────────
+   Un bloc par joueur, et non un tableau à colonnes : six nombres et un nom ne
+   tiennent pas sur la largeur d'un téléphone. Le tableau écrasait la colonne
+   des noms jusqu'à la faire disparaître, et débordait quand même. */
+.stats {
+  margin-top: 4px;
+}
+
+.stats__player {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 2px solid var(--line);
+}
+
+.stats__who {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+/* La pastille reprend la couleur du camp : la ligne se retrouve d'un coup
+   d'œil sans lire le nom. */
+.stats__who i {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--seat);
+}
+
+.stats__who b {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `auto-fit` plutôt qu'un nombre fixe : la colonne des cartes n'existe que
+   sur une partie avec pouvoirs, et le bloc doit se réorganiser sans qu'on lui
+   dise combien de valeurs il porte. */
+.stats__pairs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 6px 8px;
+  margin-top: 6px;
+}
+
+.stats__pair {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stats__pair b {
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.stats__pair span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }

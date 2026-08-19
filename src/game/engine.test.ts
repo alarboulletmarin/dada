@@ -8,8 +8,11 @@ import { DICE_BOOSTS_PER_GAME, STABLE, type GameState, type Player, type Seat } 
 const players = (seats: Seat[]): Player[] =>
   seats.map((seat) => ({ seat, name: `J${seat + 1}`, kind: 'local' as const, peerId: null, connected: true }))
 
-/** Géométrie de la variante par défaut des tests (petits-chevaux), et de la variante rapide. */
+/** Géométries des trois variantes. Elles n'ont pas le même plateau : le
+ *  français fait 56 cases, l'international 52, le rapide 40. Un test qui vise
+ *  une case absolue doit donc dire sur quel plateau il compte. */
 const STANDARD = geometryFor(variantById('petits-chevaux'))
+const LUDO = geometryFor(variantById('ludo'))
 const RAPIDE = geometryFor(variantById('rapide'))
 
 /** Fabrique un état contrôlé : positions imposées, dé imposé. */
@@ -41,8 +44,8 @@ function seedFor(value: number): number {
 }
 
 /** Position relative du siège `seat` qui tombe sur la case absolue `index`. */
-const stepsToReach = (seat: Seat, index: number): number =>
-  (index - STANDARD.startIndex[seat] + STANDARD.trackLength) % STANDARD.trackLength
+const stepsToReach = (seat: Seat, index: number, geometry = STANDARD): number =>
+  (index - geometry.startIndex[seat] + geometry.trackLength) % geometry.trackLength
 
 describe('sortie de l’écurie', () => {
   it('interdit de sortir sans la bonne valeur', () => {
@@ -81,26 +84,87 @@ describe('capture', () => {
 
   it('épargne un cheval sur une case étoilée en Ludo', () => {
     const victim = pawnId(1, 0)
-    const at = { [pawnId(0, 0)]: 5, [victim]: stepsToReach(1, 8) }
-    expect(legalMoves(setup({ variant: 'ludo', at, dice: 3 }))[0]!.captures).toEqual([])
+    // La case étoilée du siège 0 tombe huit crans après son départ, sur les deux
+    // plateaux — mais le siège 1 n'y est pas au même nombre de pas, le circuit
+    // n'ayant pas la même longueur.
+    const ludo = { [pawnId(0, 0)]: 5, [victim]: stepsToReach(1, 8, LUDO) }
+    const move = legalMoves(setup({ variant: 'ludo', at: ludo, dice: 3 })).find(
+      (m) => m.pawnId === pawnId(0, 0),
+    )!
+    expect(move.to).toBe(8)
+    expect(move.captures).toEqual([])
+
     // La règle française n'a pas de case étoilée : la capture passe.
-    expect(legalMoves(setup({ variant: 'petits-chevaux', at, dice: 3 }))[0]!.captures).toEqual([victim])
+    const french = { [pawnId(0, 0)]: 5, [victim]: stepsToReach(1, 8) }
+    expect(legalMoves(setup({ variant: 'petits-chevaux', at: french, dice: 3 }))[0]!.captures).toEqual([
+      victim,
+    ])
   })
 
-  it('épargne un cheval sur une case de départ', () => {
+  // Deux camps peuvent partager une case abritée au Ludo. En règle française,
+  // c'est le coup entier qui devient injouable — voir « une case, un cheval ».
+  it('épargne un cheval sur une case de départ, et le laisse partager la case', () => {
     const victim = pawnId(1, 0)
     const state = setup({
-      at: { [pawnId(0, 0)]: 25, [victim]: stepsToReach(1, STANDARD.startIndex[2]) },
+      variant: 'ludo',
+      at: { [pawnId(0, 0)]: 23, [victim]: stepsToReach(1, LUDO.startIndex[2], LUDO) },
       dice: 3,
     })
-    expect(legalMoves(state)[0]!.to).toBe(28)
-    expect(legalMoves(state)[0]!.captures).toEqual([])
+    const move = legalMoves(state).find((m) => m.pawnId === pawnId(0, 0))!
+    expect(move.to).toBe(26)
+    expect(move.captures).toEqual([])
   })
 
   it('ne mange jamais ses propres chevaux', () => {
-    const state = setup({ at: { [pawnId(0, 0)]: 2, [pawnId(0, 1)]: 5 }, dice: 3 })
+    // Au Ludo, deux pions d'une même couleur cohabitent : c'est un barrage.
+    const state = setup({ variant: 'ludo', at: { [pawnId(0, 0)]: 2, [pawnId(0, 1)]: 5 }, dice: 3 })
     const move = legalMoves(state).find((m) => m.pawnId === pawnId(0, 0))!
     expect(move.captures).toEqual([])
+  })
+})
+
+/**
+ * « Deux chevaux ne peuvent pas occuper la même case ; s'il s'agit de vos
+ * propres chevaux, l'un reste derrière l'autre. » C'est la règle française, et
+ * c'est aussi celle que le Ludo ne peut pas suivre : y empiler deux pions
+ * d'une même couleur est exactement ce qui forme un barrage.
+ */
+describe('une case, un cheval (règle française)', () => {
+  it('interdit de se poser sur son propre cheval', () => {
+    const state = setup({ at: { [pawnId(0, 0)]: 2, [pawnId(0, 1)]: 7 }, dice: 5 })
+    expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(false)
+  })
+
+  it('interdit de se poser sur un adversaire protégé, faute de pouvoir le manger', () => {
+    const at = { [pawnId(0, 0)]: stepsToReach(0, STANDARD.startIndex[1]) - 3, [pawnId(1, 0)]: 0 }
+    expect(legalMoves(setup({ at, dice: 3 })).some((m) => m.pawnId === pawnId(0, 0))).toBe(false)
+  })
+
+  it('autorise le coup dès lors que la case se libère par la capture', () => {
+    const at = { [pawnId(0, 0)]: 2, [pawnId(1, 0)]: stepsToReach(1, STANDARD.startIndex[0] + 7) }
+    const move = legalMoves(setup({ at, dice: 5 })).find((m) => m.pawnId === pawnId(0, 0))
+    expect(move?.captures).toEqual([pawnId(1, 0)])
+  })
+
+  it('interdit aussi de doubler une marche de son escalier', () => {
+    const at = {
+      [pawnId(0, 0)]: STANDARD.trackLength,
+      [pawnId(0, 1)]: STANDARD.trackLength + 2,
+    }
+    expect(legalMoves(setup({ at, dice: 2 })).some((m) => m.pawnId === pawnId(0, 0))).toBe(false)
+  })
+
+  // Sans cette exception, le deuxième cheval ne pourrait jamais rentrer.
+  it("laisse les quatre chevaux se rejoindre à l'arrivée", () => {
+    const at = { [pawnId(0, 0)]: STANDARD.lastStep - 1, [pawnId(0, 1)]: STANDARD.lastStep }
+    const move = legalMoves(setup({ at, dice: 1 })).find((m) => m.pawnId === pawnId(0, 0))
+    expect(move?.finishes).toBe(true)
+  })
+
+  it('ne vaut pas pour le Ludo, dont les barrages en dépendent', () => {
+    const mine = stepsToReach(0, 7, LUDO)
+    const state = setup({ variant: 'ludo', at: { [pawnId(0, 0)]: mine - 5, [pawnId(0, 1)]: mine }, dice: 5 })
+    expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(true)
   })
 })
 
@@ -130,7 +194,7 @@ describe('arrivée', () => {
 })
 
 describe('barrages (Ludo)', () => {
-  const blocker = stepsToReach(1, 5)
+  const blocker = stepsToReach(1, 5, LUDO)
 
   it('bloquent le passage', () => {
     const state = setup({
@@ -150,10 +214,27 @@ describe('barrages (Ludo)', () => {
     expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(true)
   })
 
+  // Un barrage est un mur dressé contre les autres. S'il arrêtait aussi son
+  // propriétaire, en poser un reviendrait à s'enfermer derrière, et personne
+  // n'en poserait jamais.
+  it("n'arrêtent jamais leur propre camp", () => {
+    const mine = stepsToReach(0, 5, LUDO)
+    const state = setup({
+      variant: 'ludo',
+      at: { [pawnId(0, 0)]: mine - 5, [pawnId(0, 1)]: mine, [pawnId(0, 2)]: mine },
+      dice: 6,
+    })
+    expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(true)
+  })
+
   it('sont ignorés en règle française', () => {
     const state = setup({
       variant: 'petits-chevaux',
-      at: { [pawnId(0, 0)]: 2, [pawnId(1, 0)]: blocker, [pawnId(1, 1)]: blocker },
+      at: {
+        [pawnId(0, 0)]: 2,
+        [pawnId(1, 0)]: stepsToReach(1, 5),
+        [pawnId(1, 1)]: stepsToReach(1, 5),
+      },
       dice: 5,
     })
     expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(true)
