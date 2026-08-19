@@ -116,7 +116,7 @@ describe('capture', () => {
   })
 
   it('ne mange jamais ses propres chevaux', () => {
-    // Au Ludo, deux pions d'une même couleur cohabitent : c'est un barrage.
+    // Au Ludo, deux pions d'une même couleur cohabitent sur une case.
     const state = setup({ variant: 'ludo', at: { [pawnId(0, 0)]: 2, [pawnId(0, 1)]: 5 }, dice: 3 })
     const move = legalMoves(state).find((m) => m.pawnId === pawnId(0, 0))!
     expect(move.captures).toEqual([])
@@ -125,9 +125,8 @@ describe('capture', () => {
 
 /**
  * « Deux chevaux ne peuvent pas occuper la même case ; s'il s'agit de vos
- * propres chevaux, l'un reste derrière l'autre. » C'est la règle française, et
- * c'est aussi celle que le Ludo ne peut pas suivre : y empiler deux pions
- * d'une même couleur est exactement ce qui forme un barrage.
+ * propres chevaux, l'un reste derrière l'autre. » C'est la règle française ;
+ * le Ludo, lui, laisse deux pions d'une même couleur partager une case.
  */
 describe('une case, un cheval (règle française)', () => {
   it('interdit de se poser sur son propre cheval', () => {
@@ -161,7 +160,7 @@ describe('une case, un cheval (règle française)', () => {
     expect(move?.finishes).toBe(true)
   })
 
-  it('ne vaut pas pour le Ludo, dont les barrages en dépendent', () => {
+  it('ne vaut pas pour le Ludo, qui laisse deux pions partager une case', () => {
     const mine = stepsToReach(0, 7, LUDO)
     const state = setup({ variant: 'ludo', at: { [pawnId(0, 0)]: mine - 5, [pawnId(0, 1)]: mine }, dice: 5 })
     expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(true)
@@ -193,31 +192,42 @@ describe('arrivée', () => {
   })
 })
 
-describe('barrages (Ludo)', () => {
+/**
+ * Empiler deux pions d'une même couleur ne dresse aucun mur.
+ *
+ * La règle des barrages a été retirée : elle enfermait la table derrière deux
+ * pions qu'on ne pouvait ni manger ni contourner, et la partie s'arrêtait de
+ * jouer. Ces tests-ci sont ce qui l'empêche de revenir par la porte de service.
+ */
+describe('deux pions sur une case ne bloquent personne', () => {
   const blocker = stepsToReach(1, 5, LUDO)
 
-  it('bloquent le passage', () => {
+  it('laisse passer un cheval adverse au Ludo', () => {
     const state = setup({
       variant: 'ludo',
       at: { [pawnId(0, 0)]: 2, [pawnId(1, 0)]: blocker, [pawnId(1, 1)]: blocker },
       dice: 5,
     })
-    expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(false)
-  })
-
-  it('laissent passer un cheval isolé', () => {
-    const state = setup({
-      variant: 'ludo',
-      at: { [pawnId(0, 0)]: 2, [pawnId(1, 0)]: blocker },
-      dice: 5,
-    })
     expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(true)
   })
 
-  // Un barrage est un mur dressé contre les autres. S'il arrêtait aussi son
-  // propriétaire, en poser un reviendrait à s'enfermer derrière, et personne
-  // n'en poserait jamais.
-  it("n'arrêtent jamais leur propre camp", () => {
+  // Franchir, c'est une chose ; s'y arrêter en est une autre, et les deux
+  // doivent passer. Un coup qui tombe pile sur la pile mange ce qu'il y trouve.
+  it("laisse s'arrêter dessus, et mange les deux", () => {
+    const state = setup({
+      variant: 'ludo',
+      at: {
+        [pawnId(0, 0)]: stepsToReach(0, 5, LUDO) - 3,
+        [pawnId(1, 0)]: blocker,
+        [pawnId(1, 1)]: blocker,
+      },
+      dice: 3,
+    })
+    const move = legalMoves(state).find((m) => m.pawnId === pawnId(0, 0))!
+    expect(move.captures).toEqual([pawnId(1, 0), pawnId(1, 1)])
+  })
+
+  it("n'arrête pas davantage son propre camp", () => {
     const mine = stepsToReach(0, 5, LUDO)
     const state = setup({
       variant: 'ludo',
@@ -227,7 +237,7 @@ describe('barrages (Ludo)', () => {
     expect(legalMoves(state).some((m) => m.pawnId === pawnId(0, 0))).toBe(true)
   })
 
-  it('sont ignorés en règle française', () => {
+  it('ne bloque rien non plus en règle française', () => {
     const state = setup({
       variant: 'petits-chevaux',
       at: {
@@ -265,6 +275,52 @@ describe('enchaînement des tours', () => {
     expect(rolled.voided).toBe(true)
     expect(legalMoves(rolled)).toHaveLength(0)
     expect(apply(rolled, { type: 'pass' }, 0).state.turn).toBe(1)
+  })
+
+  /**
+   * Trois 6 d'affilée, et le tour est perdu — le troisième compris.
+   *
+   * Sans plafond, un 6 rend la main, et la main rendue peut refaire 6 : la
+   * table regarde un joueur jouer seul aussi longtemps que le dé le veut. Le
+   * troisième 6 ne se joue donc pas : il annule le coup **et** le tour. La
+   * chaîne s'accumule bien d'un lancer à l'autre, y compris au travers du
+   * rejeu qui rend la main — c'est ce que ce test vérifie de bout en bout,
+   * plutôt qu'en posant le compteur à la main.
+   */
+  for (const variant of ['petits-chevaux', 'ludo', 'rapide']) {
+    it(`perd le tour au troisième 6, en ${variant}`, () => {
+      let state = setup({ variant })
+      expect(state.variant.maxConsecutiveSixes).toBe(3)
+
+      // Deux 6 joués : chacun rend la main au même joueur.
+      for (let n = 1; n < 3; n++) {
+        state = apply({ ...state, rng: seedFor(6) }, { type: 'roll' }, 0).state
+        expect(state.dice).toBe(6)
+        expect(state.voided).toBe(false)
+        const moves = legalMoves(state)
+        expect(moves.length).toBeGreaterThan(0)
+        state = apply(state, { type: 'move', pawnId: moves[0]!.pawnId }, 0).state
+        expect(state.turn).toBe(0)
+        expect(state.phase).toBe('rolling')
+      }
+
+      // Le troisième : rien n'est jouable, et la main passe.
+      state = apply({ ...state, rng: seedFor(6) }, { type: 'roll' }, 0).state
+      expect(state.voided).toBe(true)
+      expect(legalMoves(state)).toHaveLength(0)
+      expect(apply(state, { type: 'pass' }, 0).state.turn).toBe(1)
+    })
+  }
+
+  // Le rejeu relance le dé sans rendre la main : s'il remettait la chaîne à
+  // zéro, il serait le moyen d'effacer deux 6 déjà posés et d'échapper à la règle.
+  it('compte aussi les 6 obtenus par la carte rejeu', () => {
+    const state = { ...setup({}), rng: seedFor(6), consecutiveSixes: 2, dice: 3, phase: 'moving' as const }
+    const withCard = { ...state, hands: [['rejeu' as const], [], [], []] }
+    const played = apply(withCard, { type: 'power', power: 'rejeu' }, 0).state
+    expect(played.dice).toBe(6)
+    expect(played.voided).toBe(true)
+    expect(legalMoves(played)).toHaveLength(0)
   })
 
   it('refuse une action venant du mauvais siège', () => {

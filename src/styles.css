@@ -1116,6 +1116,8 @@ input:disabled {
    Elle sort donc du côté du plateau (vers le bas pour la rangée du haut, vers
    le haut pour celle du bas), là où il y a la place : `.play` reste en
    `overflow: hidden`, mais le plateau est à l'intérieur, rien n'est coupé. */
+/* Elle prend le doigt — c'est déjà le défaut, et il ne faut pas le lui retirer :
+   c'est ce qui permet de la chasser au lieu d'attendre ses quatre secondes. */
 .pcard__bubble {
   /* Où la pointe rejoint la carte, mesuré depuis le bord gauche de la bulle.
      Calé sur la pastille du joueur : la pointe désigne la couleur, pas le vide. */
@@ -1696,6 +1698,28 @@ input:disabled {
   transform: scale(1.16);
 }
 
+/* Le cheval mangé, à l'instant du choc.
+
+   Il encaisse et disparaît ; il ne rentre à l'écurie qu'une fois l'animation
+   passée (voir `sendHome` dans `board-view.ts`). Sans cela le plateau
+   annonçait la capture avant qu'elle n'ait lieu — la victime rentrait chez
+   elle pendant que son bourreau marchait encore vers elle. */
+.pawn.struck i {
+  animation: struck 0.2s ease-in both;
+}
+
+@keyframes struck {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  55% {
+    transform: scale(1.34) rotate(-13deg);
+  }
+  100% {
+    transform: scale(0.5) rotate(9deg);
+  }
+}
+
 /* Le cheval désigné par une carte armée : l'anneau ne bat plus, il est posé.
    Une carte se joue en deux temps — désigner, puis lancer le dé — et sans cette
    marque on relit une rangée de chevaux tous cerclés pareil sans savoir sur
@@ -1721,6 +1745,26 @@ input:disabled {
     0 0 0 4px var(--ink), 0 0 0 7px var(--card), 0 0 0 9px var(--ink);
 }
 
+/* Le plateau en visée : on ne joue plus un coup, on désigne le cheval d'une
+   carte. L'anneau prend le vert de la carte armée — sans quoi la rangée de
+   chevaux cerclés d'encre dit exactement la même chose dans les deux cas, et
+   l'on ne sait pas si toucher joue ou désigne. */
+.board-wrap.aiming .pawn.playable i {
+  animation: aimed 1.2s ease-in-out infinite;
+}
+
+@keyframes aimed {
+  0%,
+  100% {
+    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
+      0 0 0 6px var(--green);
+  }
+  50% {
+    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 4px var(--card),
+      0 0 0 9px var(--green);
+  }
+}
+
 @keyframes circled {
   0%,
   100% {
@@ -1743,6 +1787,17 @@ input:disabled {
     box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
       0 0 0 6px var(--ink);
   }
+  .board-wrap.aiming .pawn.playable i {
+    animation: none;
+    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
+      0 0 0 6px var(--green);
+  }
+  /* Le choc perd sa culbute, pas son temps : le délai reste, parce qu'il ne
+     sert pas à animer mais à ne pas annoncer la capture d'avance. */
+  .pawn.struck i {
+    animation: none;
+    opacity: 0.35;
+  }
 }
 
 /* ─────────────────────────── tour de jeu ─────────────────────────── */
@@ -1755,16 +1810,34 @@ input:disabled {
    se voyait comme un zoom involontaire à chaque coup. Deux lignes de hauteur
    fixe, chacune tronquée plutôt que repliée, referment le problème : la
    place réservée au-dessus du dé ne bouge plus jamais. */
+/* Une ligne, deux choses : ce qui se passe, et la main. La ligne de tour avait
+   de la largeur à revendre et le plateau n'avait pas une ligne à donner — c'est
+   ici que le bouton des cartes s'est installé, et non sur un rang à lui.
+
+   `justify-content: center` avec un bloc central élastique : le titre reste
+   centré dans ce qui reste, donc très légèrement à gauche du milieu vrai quand
+   le bouton est là. Réserver la même largeur de l'autre côté le centrerait
+   exactement, au prix de soixante-dix pixels de titre sur un petit écran — et
+   « Tour de Bot 2 » ne survit pas à ça. */
 .turnline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: none;
+  width: 100%;
+  height: clamp(42px, 6.2svh, 54px);
+  text-align: center;
+}
+
+.turnline__main {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  flex: none;
-  width: 100%;
-  height: clamp(42px, 6.2svh, 54px);
-  text-align: center;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .turnline-row {
@@ -2135,7 +2208,11 @@ input:disabled {
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  /* Au-dessus des nouvelles du haut d'écran (35).
+     Une feuille ouverte depuis le ⓘ d'une nouvelle se faisait couvrir par la
+     nouvelle elle-même — et par les deux suivantes, qui continuaient d'arriver
+     pendant qu'on lisait. */
+  z-index: 36;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2556,7 +2633,9 @@ input:disabled {
   position: fixed;
   left: 50%;
   bottom: calc(24px + env(safe-area-inset-bottom));
-  z-index: 30;
+  /* Au-dessus des feuilles (36) : un refus du moteur qui s'afficherait derrière
+     le voile d'une feuille ouverte ne s'afficherait pas. */
+  z-index: 38;
   max-width: min(92vw, 420px);
   padding: 14px 20px;
   border: var(--bw) solid var(--ink);
@@ -2588,23 +2667,40 @@ input:disabled {
 
    `pointer-events: none` n'est pas un détail : le dé reste jouable pendant les
    trois secondes d'affichage. Une information discrète ne bloque rien. */
-.cardnote {
+/* Le bandeau qui les porte. Elles s'empilent au lieu de se chasser : un tour de
+   bot qui joue une carte, lance, avance et mange produisait quatre nouvelles
+   dont on ne lisait aucune. */
+.cardnotes {
   position: fixed;
   top: calc(12px + env(safe-area-inset-top));
   left: 50%;
   z-index: 35;
   display: flex;
-  gap: 9px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
   width: max-content;
   max-width: min(92vw, 340px);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.cardnote {
+  position: relative;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
   padding: 9px 14px;
   border: 2.5px solid var(--ink);
   border-radius: 18px;
   background: var(--card);
   box-shadow: 0 4px 0 var(--shade);
-  pointer-events: none;
-  transform: translateX(-50%);
+  /* Elle prend le doigt : c'est ce qui permet de la chasser d'un appui ou d'un
+     geste (voir `swipe.ts`). Elle le prenait autrefois pour rien — le dé restait
+     jouable dessous, mais elle-même ne répondait à rien, et l'on attendait ses
+     six secondes devant une information qu'on avait finie de lire. Le bandeau
+     qui la porte, lui, reste transparent : hors de la carte, le doigt passe. */
+  pointer-events: auto;
   animation: cardnote-in 0.2s ease-out;
 }
 
@@ -2618,8 +2714,33 @@ input:disabled {
 
 .cardnote__text {
   display: grid;
+  flex: 1;
   gap: 1px;
   min-width: 0;
+}
+
+/* La seule chose de la nouvelle qui prenne un appui : une annonce qui passe
+   laisse une question derrière elle, et il faut un endroit où la poser. Le
+   reste du bandeau reste transparent au doigt — le dé demeure jouable pendant
+   qu'on lit. */
+.cardnote__info {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  margin-top: 1px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.cardnote__info:active {
+  background: var(--yellow);
 }
 
 .cardnote__who {
@@ -2640,6 +2761,15 @@ input:disabled {
   line-height: 1.15;
 }
 
+/* Seule la dernière nouvelle porte son explication. Trois nouvelles complètes
+   font deux cent cinquante pixels : elles couvriraient la rangée des joueurs et
+   le haut du plateau, c'est-à-dire ce qu'elles sont censées expliquer. Les
+   précédentes se replient sur leur nom — on les a déjà lues, elles ne sont plus
+   là que pour dire dans quel ordre les choses sont arrivées. */
+.cardnote:not(:last-child) .cardnote__desc {
+  display: none;
+}
+
 /* Deux lignes au plus : la description explique, elle ne raconte pas. */
 .cardnote__desc {
   display: -webkit-box;
@@ -2655,7 +2785,7 @@ input:disabled {
 @keyframes cardnote-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -12px);
+    transform: translateY(-10px);
   }
 }
 
@@ -2853,7 +2983,7 @@ input:disabled {
   .play {
     display: grid;
     grid-template-columns: auto minmax(210px, 1fr);
-    grid-template-rows: auto auto 1fr auto auto auto;
+    grid-template-rows: auto auto 1fr auto auto;
     align-content: center;
     column-gap: 16px;
     row-gap: 8px;
@@ -2873,16 +3003,8 @@ input:disabled {
   .play > .turnline {
     grid-area: 4 / 2;
   }
-  /* Sa propre ligne, nommée. Sans elle la rangée de cartes se faisait placer
-     automatiquement — donc dans une sixième ligne inventée par la grille — et
-     toute la colonne de droite se réorganisait à l'arrivée de la première
-     carte. Une ligne oubliée dans un gabarit explicite, c'est un écran qui
-     bouge. */
-  .play > .hand {
-    grid-area: 5 / 2;
-  }
   .play > .dice-row {
-    grid-area: 6 / 2;
+    grid-area: 5 / 2;
   }
 
   /* La colonne de droite fait 210 px : le dé et ses deux bonus n'y tiennent
@@ -3202,9 +3324,20 @@ input:disabled {
 }
 
 .powers__sheet {
+  position: relative;
   max-height: min(88vh, 720px);
   gap: 14px;
   padding: 18px 14px 20px;
+  overflow: hidden;
+}
+
+/* C'est le corps qui défile, et non la feuille : le titre et la croix ne
+   bougent pas d'un pixel quand on descend dans le paquet. */
+.powers__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -3246,6 +3379,14 @@ input:disabled {
   border-radius: 16px;
   background: var(--card);
   box-shadow: 0 4px 0 var(--shade);
+}
+
+/* La carte qu'on est venu chercher, quand le catalogue s'ouvre depuis un ⓘ de
+   la main. Sept cartes ne tiennent pas sur un écran de téléphone : sans repère,
+   la réponse est quelque part dans une liste qu'il faut relire en entier. */
+.power-card--focus {
+  border-color: var(--green);
+  box-shadow: 0 4px 0 var(--shade), 0 0 0 3px var(--card), 0 0 0 6px var(--green);
 }
 
 .power-card__top {
@@ -3332,96 +3473,314 @@ input:disabled {
 }
 
 
-/* ─────────────────────────── les cartes en main ───────────────────────────
-   Une rangée au-dessus du dé, et non dessous : une carte se joue *avant* de
-   lancer aussi bien qu'après, et la ranger sous le dé la ferait lire comme une
-   conséquence du lancer.
+/* ─────────────────────────── la main ───────────────────────────
 
-   La rangée garde sa hauteur même vide, comme la ligne de tour : rien ne doit
-   sauter sous le plateau au moment où la première carte arrive.
+   **Un bouton, et non une rangée.** Les cartes tenaient sur une ligne à hauteur
+   fixe sous la ligne de tour, qu'elles gardaient même vides — pour que rien ne
+   saute sous le plateau à l'arrivée de la première carte. Le remède coûtait plus
+   cher que le mal : quarante-cinq pixels pris au plateau pendant les trois
+   quarts d'une partie, pour un rang qui ne montrait rien. Or le plateau se
+   dimensionne sur ce qui reste (voir `.board-slot`), et un plateau qu'on voit
+   mal est un plateau sur lequel on joue mal.
 
-   `height` et non `min-height`, et `nowrap` et non `wrap` : c'était le bug. Le
-   plateau se dimensionne sur la hauteur qui RESTE sous lui (voir `.board-slot`),
-   si bien qu'une rangée qui grandissait d'une ligne rétrécissait le plateau —
-   l'écran entier bougeait à l'instant où l'on ramassait une carte, exactement
-   quand on avait besoin de le lire. La rangée a désormais une hauteur fixe : les
-   cartes ne passent jamais à la ligne, et c'est l'indication qui se tronque. */
-.hand {
-  flex: none;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  align-items: center;
-  justify-content: center;
-  height: 34px;
-  padding: 0 4px;
-  overflow: hidden;
-}
-
-.hand.empty::after {
-  content: '';
-}
-
-/* `hand__card` et non `card` : `.card` est déjà la grande boîte arrondie des
-   écrans, avec sa colonne, son épaisse bordure et son ombre de 7 px. Une pilule
-   qui reprenait ce nom en héritait de la colonne et de l'ombre, et se dessinait
-   en pastille ronde illisible — un nom de classe partagé est un bug qui attend
-   son tour.
-
-   `flex: none` n'est pas cosmétique non plus : sans lui la pilule se laisse
-   comprimer par l'indication qui la suit et son libellé passe à la ligne. */
-.hand__card {
+   La main tient donc dans la ligne de tour, qui avait de la largeur à revendre
+   et pas une ligne à donner. Le bouton ne porte que les figures des cartes : à
+   cette taille un dessin se reconnaît, un mot ne se lit pas. Le nom, l'effet et
+   le geste qui reste sont dans le tiroir, où il y a la place de les écrire. */
+.handbtn {
   flex: none;
   display: inline-flex;
+  gap: 4px;
   align-items: center;
-  padding: 6px 12px;
-  white-space: nowrap;
+  padding: 5px 9px;
   border: 2.5px solid var(--line);
   border-radius: 999px;
   background: var(--card);
   box-shadow: 0 2px 0 var(--shade);
   color: var(--muted);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 800;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
 }
 
-/* Une carte jouable se cercle d'encre — le même vocabulaire que le cheval
-   jouable sur le plateau. Une carte éteinte reste lisible : la retirer ferait
-   croire qu'on l'a perdue. */
-.hand__card.on {
+.handbtn[hidden] {
+  display: none;
+}
+
+.handbtn__glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 8px;
+  background: var(--paper-deep);
+}
+
+/* Une main jouable se cercle d'encre — le même vocabulaire que le cheval
+   jouable sur le plateau — et bat, comme le dé prêt à partir. Un bouton
+   immobile au-dessus du dé ne dit pas qu'on peut le toucher : on le lit comme
+   un compteur, on ne l'essaie jamais, et le tour se joue sans lui. */
+.handbtn.on {
   border-color: var(--ink);
   color: var(--ink);
+  animation: hand-wink 2.6s ease-in-out infinite;
 }
 
-.hand__card.on:hover {
-  transform: translateY(-1px);
+.handbtn:active {
+  transform: translateY(1px);
 }
 
-.hand__card:disabled {
+/* Une carte est armée : le bouton est plein, et la figure de la carte choisie
+   ressort sur les autres. Il ne bat plus — ce qui bat est ailleurs, sur le
+   plateau ou sur le dé. */
+.handbtn.aimed {
+  border-color: var(--ink);
+  background: var(--ink);
   box-shadow: none;
+  color: var(--cream);
+  animation: none;
+}
+
+.handbtn.aimed .handbtn__glyph {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.handbtn.aimed .handbtn__glyph.on {
+  background: var(--green);
+  color: var(--cream);
+}
+
+@keyframes hand-wink {
+  0%,
+  84%,
+  100% {
+    box-shadow: 0 2px 0 var(--shade);
+    transform: translateY(0);
+  }
+  90% {
+    box-shadow: 0 4px 0 var(--shade);
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .handbtn.on {
+    animation: none;
+  }
+}
+
+/* ── le tiroir de la main ──────────────────────────────────────────────────
+   Une carte y dit tout ce que le bouton ne peut pas : son nom, son effet, et si
+   elle se joue maintenant. Un appui l'arme et referme le tiroir — le geste
+   suivant est sur le plateau ou sur le dé, et un panneau resté ouvert les
+   cacherait tous les deux. */
+.tray__sheet {
+  position: relative;
+  max-height: min(86vh, 640px);
+  gap: 12px;
+  padding: 18px 14px;
+  overflow: hidden;
+}
+
+.tray__title {
+  margin: 0;
+  text-align: center;
+}
+
+.tray__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  /* Trois cartes tiennent sans défiler ; c'est un filet, pas une habitude. */
+  overflow-y: auto;
+}
+
+.tray-card {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border: var(--bw) solid var(--ink);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 4px 0 var(--shade);
+  overflow: hidden;
+}
+
+/* La carte armée est cerclée de vert : la même couleur que le cheval qu'elle
+   vise sur le plateau. Une couleur, un geste. */
+.tray-card.chosen {
+  border-color: var(--green);
+  box-shadow: 0 4px 0 var(--shade), inset 0 0 0 3px var(--green);
+}
+
+.tray-card__pick {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+  padding: 12px 8px 12px 12px;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tray-card__pick:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
-/* La carte en visée : c'est au plateau de jouer, et elle le dit. */
-.hand__card.aimed {
-  background: var(--ink);
-  border-color: var(--ink);
-  box-shadow: none;
+.tray-card__glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--green);
   color: var(--cream);
 }
 
-.hand__hint {
+.tray-card__glyph--malus {
+  background: var(--red);
+}
+
+.tray-card__text {
+  display: grid;
+  gap: 2px;
   min-width: 0;
-  overflow: hidden;
+}
+
+.tray-card__name {
+  font-family: var(--title);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.tray-card__desc {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
+}
+
+/* Une carte éteinte doit dire pourquoi : « grisée sans raison » se lit comme
+   une panne, et l'on retape dessus jusqu'à y croire. */
+.tray-card__state {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tray-card__pick:not(:disabled) .tray-card__state {
+  color: var(--ink);
+}
+
+.tray-card__info {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 46px;
+  padding: 0;
+  border: none;
+  border-left: 2px solid var(--line);
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tray-card__info:active {
+  background: var(--yellow);
+}
+
+/* Le chemin vers le catalogue entier — discret, parce qu'il ne répond pas à la
+   question du moment (« que fait cette carte-ci ? ») mais à celle d'après
+   (« et ce malus que je viens de subir ? »). Un bouton plein le mettrait au
+   même rang que les cartes, qu'on est venu voir. */
+.tray__all {
+  align-self: center;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.tray__all:active {
+  color: var(--ink);
+}
+
+/* ── la poignée des feuilles ───────────────────────────────────────────────
+   La barrette qui dit « ça se pousse ». Elle coiffe la partie qui ne défile pas
+   — la poignée et le titre — et c'est de là seulement qu'on tire : le corps
+   défile, et un doigt qui descend dedans doit faire défiler, pas emporter la
+   feuille au premier geste de lecture. */
+.sheet__grab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: none;
+  cursor: grab;
+}
+
+.sheet__grab:active {
+  cursor: grabbing;
+}
+
+.sheet__grip {
+  align-self: center;
+  width: 46px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.22);
+}
+
+/* ── la croix des feuilles ─────────────────────────────────────────────────
+   Un bouton « Fermer » posé sous le contenu oblige à faire défiler une feuille
+   entière pour en sortir — sur le catalogue des sept cartes, c'est un écran et
+   demi de défilement pour refermer ce qu'on est venu lire trois secondes. La
+   croix colle au haut de la zone visible : elle est au même endroit quel que
+   soit l'endroit où l'on a défilé. */
+.sheet__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 0 3px 0 var(--shade);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sheet__close:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--shade);
+}
+
+/* Le titre laisse la place à la croix des deux côtés : le rogner d'un seul
+   décentrerait le texte, et un titre centré qui ne l'est plus se remarque. */
+.tray__title,
+.powers__head {
+  padding-inline: 44px;
 }
 
 /* Le dé en validateur : une carte est armée et n'attend plus que lui. Le halo
@@ -3432,8 +3791,12 @@ input:disabled {
   box-shadow: 0 6px 0 var(--shade), 0 0 0 3px var(--card), 0 0 0 6px var(--green);
 }
 
-.hand.aiming .hand__hint {
-  color: var(--ink);
+/* Le dé pipé, lui, se valide par ses deux boutons : c'est la seule carte dont
+   le geste ne passe pas par le dé, et le halo va là où il faut appuyer. Posé
+   sur le dé, il désignait le seul geste qui gaspille la carte. */
+.dice-row.validating-boost .boost {
+  border-color: var(--ink);
+  box-shadow: 0 5px 0 var(--shade), 0 0 0 3px var(--card), 0 0 0 6px var(--green);
 }
 
 

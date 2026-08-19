@@ -27,7 +27,6 @@ export const VARIANTS: Variant[] = [
     extraTurnOnFinish: false,
     starSquaresAreSafe: false,
     startSquaresAreSafe: true,
-    blockades: false,
     // « Deux chevaux ne peuvent pas occuper la même case. »
     onePerSquare: true,
     exactFinish: true,
@@ -46,8 +45,7 @@ export const VARIANTS: Variant[] = [
     extraTurnOnFinish: true,
     starSquaresAreSafe: true,
     startSquaresAreSafe: true,
-    blockades: true,
-    // Impossible ici : deux pions sur une case, c'est justement un barrage.
+    // Deux pions d'une même couleur partagent une case sans se gêner.
     onePerSquare: false,
     exactFinish: true,
     // Le couloir d'arrivée du Ludo est une bande de couleur, sans numéros.
@@ -61,12 +59,15 @@ export const VARIANTS: Variant[] = [
     // Une sortie sur deux faces tombe déjà d'elle-même : le dé reste franc.
     mercyExit: 0,
     extraTurnOnSix: true,
-    maxConsecutiveSixes: 0,
+    // Trois, comme partout ailleurs. Zéro — la série sans fin — était un
+    // oubli et non un parti pris : le règlement annonce la règle sans
+    // étiquette de variante, donc pour les trois jeux, et un plateau de 40
+    // cases est justement celui où une bonne série fait le plus de dégâts.
+    maxConsecutiveSixes: 3,
     extraTurnOnCapture: true,
     extraTurnOnFinish: true,
     starSquaresAreSafe: true,
     startSquaresAreSafe: true,
-    blockades: false,
     onePerSquare: false,
     exactFinish: false,
     numberedHome: false,

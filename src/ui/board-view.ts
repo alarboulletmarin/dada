@@ -18,13 +18,32 @@
 
 import { cellOf, geometryFor, type BoardGeometry, type Cell } from '../game/board.ts'
 import { pawnSlot } from '../game/engine.ts'
-import type { GameState, Move, Seat, Variant } from '../game/types.ts'
+import { STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
 import { t } from './i18n.ts'
 
 const SEATS: Seat[] = [0, 1, 2, 3]
 /** Une forme par siège : le plateau reste lisible sans distinguer les couleurs. */
 export const SEAT_MARKS = ['●', '▲', '■', '◆'] as const
 const STEP_MS = 115
+/**
+ * Le temps que dure l'impact, avant que le cheval mangé ne rentre.
+ *
+ * Il ne rentre qu'ici, et c'est tout l'objet de ce délai : l'écran plaçait les
+ * chevaux à leur position finale **avant** de faire marcher celui qui avance,
+ * si bien que la victime rentrait à l'écurie pendant que son bourreau était
+ * encore à quatre cases de là. On savait qu'on allait se faire manger une
+ * seconde avant de l'être — la seule chose que le jeu n'avait pas à dire.
+ */
+const STRUCK_MS = 200
+/**
+ * Le temps d'arrêt sur la case pouvoir, avant que la carte ne pousse le cheval.
+ *
+ * Sans lui, le cheval avance de six et recule de trois d'un seul élan : on lit
+ * un déplacement de trois, et la case pouvoir n'a l'air de rien avoir fait.
+ * C'est ce battement qui sépare « je suis arrivé ici » de « et voilà ce que la
+ * case m'a fait ».
+ */
+const POWER_HOLD_MS = 420
 const key = (c: Cell) => `${c.col.toFixed(3)},${c.row.toFixed(3)}`
 
 /** Angle, en degrés depuis le haut et dans le sens horaire, de `from` vers `to`. */
@@ -39,9 +58,14 @@ export class BoardView {
   private previous = new Map<string, number>()
   private animating = false
   private pending: (() => void) | null = null
+  /** Ce qui attend que le plateau ait fini de bouger. Voir `settled`. */
+  private settlers: (() => void)[] = []
   private geometry: BoardGeometry
 
+  private root: HTMLElement
+
   constructor(root: HTMLElement, private variant: Variant) {
+    this.root = root
     this.geometry = geometryFor(this.variant)
     root.classList.add('board-wrap')
     root.style.setProperty('--grid', String(this.geometry.grid))
@@ -269,15 +293,47 @@ export class BoardView {
       this.board.classList.toggle(`has-${seat}`, state.players.some((p) => p.seat === seat))
     }
 
-    // Repérer le pion qui a avancé, pour le déplacer case par case.
-    let animated: { id: string; seat: Seat; from: number; to: number } | null = null
+    // Repérer le pion qui a bougé, pour le déplacer case par case.
+    //
+    // `via` est la case où le dé l'avait posé, quand un pouvoir ramassé là l'a
+    // ensuite déplacé (voir `Hop` dans `types.ts`). Sans elle, un six suivi d'un
+    // faux pas se dessinait comme un déplacement de trois cases, et un retour à
+    // l'écurie ne se dessinait pas du tout — le cheval reparaissait chez lui
+    // sans avoir bougé, ce qui se lit comme un bug plutôt que comme un malus.
+    let animated: { id: string; seat: Seat; from: number; to: number; via?: number } | null = null
     for (const p of state.pawns) {
       const before = this.previous.get(p.id)
-      if (before !== undefined && before !== p.steps && p.steps > before) {
+      if (before === undefined || before === p.steps) continue
+      const via = state.hop?.pawnId === p.id ? state.hop.at : null
+      if (via !== null && via > before) {
+        animated = { id: p.id, seat: p.owner, from: before, to: p.steps, via }
+        break
+      }
+      if (p.steps > before) {
         animated = { id: p.id, seat: p.owner, from: before, to: p.steps }
         break
       }
     }
+
+    // Les chevaux que ce déplacement renvoie à l'écurie. Ils restent où ils
+    // sont tant que le cheval qui les mange n'est pas arrivé : une capture se
+    // découvre à l'impact, pas quatre cases avant.
+    //
+    // Celui qui marche est exclu : un « retour à l'écurie » ramassé sur la case
+    // d'arrivée le renvoie chez lui aussi, mais plus tard — après le temps
+    // d'arrêt, et c'est `walk` qui s'en charge. Compté ici, il serait rentré à
+    // l'instant de l'impact, sans qu'on ait vu la case qui l'y envoie.
+    const struck = animated
+      ? state.pawns
+          .filter(
+            (p) =>
+              p.id !== animated!.id &&
+              p.steps === STABLE &&
+              (this.previous.get(p.id) ?? STABLE) >= 0,
+          )
+          .map((p) => ({ id: p.id, seat: p.owner }))
+      : []
+    const held = new Set(struck.map((p) => p.id))
 
     for (const p of state.pawns) {
       const el = this.pawnEl(p.id, p.owner)
@@ -307,39 +363,134 @@ export class BoardView {
         el.onkeydown = null
       }
 
-      if (animated?.id !== p.id) {
+      if (animated?.id !== p.id && !held.has(p.id)) {
         this.place(el, cellOf(this.geometry, p.owner, p.steps, pawnSlot(p.id)), offsets.get(p.id)!)
       }
     }
 
     this.previous = new Map(state.pawns.map((p) => [p.id, p.steps]))
 
-    if (animated) void this.walk(animated, offsets)
+    if (animated) void this.walk(animated, offsets, struck)
   }
 
   private async walk(
-    step: { id: string; seat: Seat; from: number; to: number },
+    step: { id: string; seat: Seat; from: number; to: number; via?: number },
     offsets: Map<string, { x: number; y: number }>,
+    struck: { id: string; seat: Seat }[] = [],
   ): Promise<void> {
     const el = this.pawns.get(step.id)
     if (!el) return
 
     this.animating = true
     el.classList.add('moving')
-    const slot = pawnSlot(step.id)
 
-    for (let s = step.from + 1; s <= step.to; s++) {
-      const last = s === step.to
-      this.place(el, cellOf(this.geometry, step.seat, s, slot), last ? offsets.get(step.id)! : { x: 0, y: 0 })
-      await new Promise((r) => setTimeout(r, STEP_MS))
+    // 1. Le dé : jusqu'à la case où il pose le cheval.
+    const landing = step.via ?? step.to
+    await this.march(el, step, step.from, landing, offsets, step.via === undefined)
+
+    // 2. L'impact : ce qu'on mange se découvre en arrivant, pas avant.
+    await this.sendHome(struck, offsets)
+
+    // 3. La case pouvoir, s'il y en avait une qui déplace. Un temps d'arrêt
+    //    d'abord : on doit voir qu'on est arrivé là avant d'en être chassé.
+    if (step.via !== undefined) {
+      await new Promise((r) => setTimeout(r, POWER_HOLD_MS))
+      if (step.to === STABLE) await this.sendHome([{ id: step.id, seat: step.seat }], offsets)
+      else await this.march(el, step, step.via, step.to, offsets, true)
     }
 
     el.classList.remove('moving')
     this.animating = false
+    this.release()
 
     const next = this.pending
     this.pending = null
     next?.()
+  }
+
+  /**
+   * Un cheval qui parcourt les cases une à une, en avant ou en arrière.
+   *
+   * En arrière n'est pas un détail : le faux pas recule de trois, et un cheval
+   * qui saute sa nouvelle place d'un coup ne montre pas qu'il a reculé — il a
+   * juste changé d'endroit. `last` dit s'il s'agit du dernier tronçon, celui au
+   * bout duquel le cheval prend son décalage de case partagée.
+   */
+  private async march(
+    el: HTMLElement,
+    step: { id: string; seat: Seat },
+    from: number,
+    to: number,
+    offsets: Map<string, { x: number; y: number }>,
+    last: boolean,
+  ): Promise<void> {
+    const slot = pawnSlot(step.id)
+    const way = to > from ? 1 : -1
+    for (let s = from + way; way > 0 ? s <= to : s >= to; s += way) {
+      const settled = s === to && last
+      this.place(
+        el,
+        cellOf(this.geometry, step.seat, s, slot),
+        settled ? (offsets.get(step.id) ?? { x: 0, y: 0 }) : { x: 0, y: 0 },
+      )
+      await new Promise((r) => setTimeout(r, STEP_MS))
+    }
+  }
+
+  /**
+   * Le plateau désigne une cible de carte, et non des coups à jouer.
+   *
+   * Les deux se disaient du même anneau d'encre : une rangée de chevaux tous
+   * cerclés pareil, et rien pour dire si les toucher joue un coup ou vise une
+   * carte. Le vert est celui de la carte armée et du cheval déjà désigné —
+   * une couleur, un geste.
+   */
+  setAiming(on: boolean): void {
+    this.root.classList.toggle('aiming', on)
+  }
+
+  /**
+   * Se résout quand plus rien ne bouge sur le plateau — tout de suite si rien
+   * ne bougeait.
+   *
+   * Sert aux nouvelles du haut de l'écran : annoncer une capture pendant que le
+   * cheval qui mange marche encore, c'est la dire une seconde avant qu'elle
+   * n'arrive. Une nouvelle qui devance ce qu'elle raconte gâche les deux.
+   */
+  settled(): Promise<void> {
+    if (!this.animating) return Promise.resolve()
+    return new Promise((resolve) => this.settlers.push(resolve))
+  }
+
+  private release(): void {
+    const waiting = this.settlers
+    this.settlers = []
+    for (const done of waiting) done()
+  }
+
+  /**
+   * L'impact, puis le retour à l'écurie.
+   *
+   * Tenu à l'intérieur de `walk`, donc pendant que `animating` est encore vrai :
+   * un état reçu entre-temps attend son tour au lieu de reposer les chevaux à
+   * leur place finale au milieu du choc.
+   */
+  private async sendHome(
+    struck: { id: string; seat: Seat }[],
+    offsets: Map<string, { x: number; y: number }>,
+  ): Promise<void> {
+    if (struck.length === 0) return
+
+    for (const p of struck) this.pawns.get(p.id)?.classList.add('struck')
+    await new Promise((r) => setTimeout(r, STRUCK_MS))
+
+    for (const p of struck) {
+      const el = this.pawns.get(p.id)
+      if (!el) continue
+      el.classList.remove('struck')
+      const slot = pawnSlot(p.id)
+      this.place(el, cellOf(this.geometry, p.seat, STABLE, slot), offsets.get(p.id) ?? { x: 0, y: 0 })
+    }
   }
 
   /** Repart d'une page blanche entre deux manches. */
@@ -349,5 +500,8 @@ export class BoardView {
     this.previous.clear()
     this.animating = false
     this.pending = null
+    // Rien ne bouge plus : ce qui attendait la fin d'un mouvement l'a, sinon il
+    // attendrait la fin d'une manche qui n'existe plus.
+    this.release()
   }
 }

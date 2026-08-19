@@ -462,3 +462,51 @@ describe('feuille de match', () => {
     expect(statsOf(rolled, legacy.turn).rolls).toBe(1)
   })
 })
+
+/**
+ * Le coup se raconte en deux temps, et l'état doit le permettre.
+ *
+ * Un cheval qui s'arrête sur une case pouvoir peut en repartir aussitôt. L'état
+ * ne gardant que sa position finale, l'écran dessinait « six moins trois »
+ * comme un tranquille déplacement de trois cases, et un retour à l'écurie ne se
+ * dessinait pas du tout — le cheval reparaissait chez lui sans avoir bougé.
+ * `hop` note la case où le dé l'avait posé. Du dessin, pas de la règle : le
+ * moteur ne le lit jamais.
+ */
+describe('l’étape intermédiaire d’un coup', () => {
+  const landing = firstPowerStep - 6
+
+  it('note la case pouvoir quand un faux pas en repart', () => {
+    const next = play(about('fauxpas', { at: { [pawnId(0, 0)]: landing }, dice: 6 }))
+    expect(next.hop).toEqual({ pawnId: pawnId(0, 0), at: firstPowerStep })
+    expect(pawnOf(next).steps).toBe(firstPowerStep - 3)
+  })
+
+  it('la note aussi quand le cheval est renvoyé à l’écurie', () => {
+    const next = play(about('ecurie', { at: { [pawnId(0, 0)]: landing }, dice: 6 }))
+    expect(next.hop).toEqual({ pawnId: pawnId(0, 0), at: firstPowerStep })
+    expect(pawnOf(next).steps).toBe(STABLE)
+  })
+
+  // Une carte gardée n'a pas déplacé le cheval : il n'y a pas deux temps à
+  // raconter, et une étape posée là ferait rejouer un détour inexistant.
+  it('ne note rien quand le pouvoir ne déplace pas', () => {
+    const next = play(about('bouclier', { at: { [pawnId(0, 0)]: landing }, dice: 6 }))
+    expect(next.hop).toBeUndefined()
+    expect(pawnOf(next).steps).toBe(firstPowerStep)
+  })
+
+  it('ne note rien sur un coup ordinaire', () => {
+    const next = play(about('fauxpas', { at: { [pawnId(0, 0)]: 2 }, dice: 3 }))
+    expect(next.hop).toBeUndefined()
+  })
+
+  // Elle ne vaut que pour le coup qui vient d'être joué : la laisser traîner
+  // ferait rejouer, au coup suivant du même cheval, un détour d'il y a trois tours.
+  it('s’efface au coup suivant', () => {
+    const detoured = play(about('fauxpas', { at: { [pawnId(0, 0)]: landing }, dice: 6 }))
+    expect(detoured.hop).toBeDefined()
+    const after = play(myTurn(detoured, 2))
+    expect(after.hop).toBeUndefined()
+  })
+})

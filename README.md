@@ -33,7 +33,7 @@ lit (voir `DETOURS` dans `app.ts`).
 | Variante | Plateau | Sortie | Particularités |
 |---|---|---|---|
 | **Petits chevaux** | 56 cases | 6 | Règle française. Une case, un cheval. Seules les cases de départ protègent. |
-| **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, barrages à deux pions, rejeu sur capture et sur arrivée. |
+| **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, deux pions par case, rejeu sur capture et sur arrivée. |
 | **Rapide** | 40 cases | 1 ou 6 | Arrivée sans compte exact. Parties courtes, deux chevaux. |
 
 Les règles sont des **données**, pas du code : voir `src/game/variants.ts`. Ajouter
@@ -59,7 +59,7 @@ Même grille de 15×15, mêmes écuries, mêmes escaliers de six marches : quatr
 cases d'écart, et deux jeux différents. `board.test.ts` fixe les deux, coordonnée
 par coordonnée, pour qu'un remaniement de géométrie ne les fasse pas dériver.
 
-### Deux règles qu'on croit interchangeables et qui ne le sont pas
+### Une case, un cheval — et rien qui barre la route
 
 **Une case, un cheval** (français). « Deux chevaux ne peuvent pas occuper la même
 case ; s'il s'agit de vos propres chevaux, l'un reste derrière l'autre. » Un coup
@@ -67,11 +67,14 @@ qui amènerait un cheval sur une case tenue par un cheval qu'il ne peut pas mang
 — le sien, ou un adversaire sur sa case de départ — n'est tout simplement pas
 jouable. L'arrivée fait exception : c'est là que les quatre se rejoignent.
 
-**Les barrages** (Ludo). Deux pions d'une même couleur sur une case forment un
-mur qu'aucun pion **adverse** ne peut franchir ni occuper. Le Ludo ne peut donc
-pas connaître la règle précédente : empiler deux pions est précisément ce qui
-fabrique le barrage. Et un barrage n'arrête jamais son propriétaire — sinon en
-poser un reviendrait à s'enfermer derrière, et personne n'en poserait.
+**Aucun barrage**, nulle part. Le Ludo et la variante rapide laissent deux pions
+d'une même couleur partager une case ; cela ne dresse aucun mur. On franchit une
+pile, on peut s'arrêter dessus, et l'on y mange alors ce qui s'y trouvait.
+
+La règle internationale des barrages a existé ici, et elle a été retirée : deux
+pions qu'on ne peut ni manger ni contourner arrêtent la table entière, et une
+partie arrêtée n'est pas une partie difficile. `engine.test.ts` garde le cas —
+franchir *et* s'arrêter — pour qu'elle ne revienne pas par accident.
 
 ## La forme du plateau
 
@@ -146,9 +149,12 @@ cacher. Mais l'écran, lui, ne montre que la sienne. De celle des autres il ne d
 que le nombre, sur la pastille de leur carte de joueur. Un bouclier qu'on sait
 posé n'en est plus un, et une main qu'on lit fait des tours prévisibles.
 
-**Le dé valide la carte.** Toucher une carte l'arme : elle se pose devant son
-joueur sans partir. Si elle demande un cheval, on le désigne sur le plateau — il
-se cercle de vert. Puis on lance le dé, et c'est le lancer qui la joue. Un seul
+**Le dé valide la carte.** On ouvre sa main, on touche une carte : elle s'arme,
+le tiroir se referme, et elle attend sans partir. Si elle demande un cheval, on
+le désigne sur le plateau — il se cercle de vert. Puis on lance le dé, et c'est
+le lancer qui la joue. Le dé pipé fait bande à part : ce sont ses deux boutons —
+petit nombre, grand nombre — qui le lancent et le dépensent, et c'est là que le
+halo vert se pose ; un lancer nu le gaspillerait, et l'écran le refuse. Un seul
 geste, un seul ordre possible : la carte d'abord, le dé ensuite. Un bouclier posé
 après le lancer arriverait trop tard pour la relance qu'il couvre, et un dé pipé
 rangé après coup ne pencherait plus rien — les deux voyagent donc dans une seule
@@ -157,8 +163,8 @@ qui pourraient arriver en désordre chez l'hôte.
 
 Jouer une carte ne consomme pas le tour : le bouclier posé avant le lancer
 protège dès ce lancer, et le rejeu se joue sur un dé déjà sur la table — on
-touche la carte, puis on retouche le dé. Un second appui sur la carte la range.
-Tant que le dé n'a pas bougé, rien n'est joué.
+touche la carte, puis on retouche le dé. Un second appui sur la carte armée, dans
+le tiroir, la range. Tant que le dé n'a pas bougé, rien n'est joué.
 
 **Un pouvoir peut durer.** Un bouclier tient sur son cheval aussi longtemps que
 personne ne vient le manger — une partie entière, s'il le faut ; un tour sauté
@@ -172,6 +178,97 @@ cette règle, deux cases voisines pourraient se renvoyer la balle sans fin.
 Le catalogue entier se lit **avant** la partie, depuis le salon, exemplaires
 compris. Un bonus qu'on découvre en le ramassant est une surprise ; un malus
 qu'on découvre en le ramassant est une injustice.
+
+**Et il se relit pendant.** L'annonce du ramassage passe et ne revient pas ;
+trois tours plus tard, il ne reste qu'une figure, et « Faux pas » ne dit pas de
+combien on recule. La main s'ouvre donc en tiroir : chaque carte y donne son
+nom, son effet, l'état où elle est — jouable maintenant, ou pas — et un ⓘ qui
+rouvre le catalogue sur elle. Les annonces du haut de l'écran ont le même ⓘ : la
+question qu'une nouvelle laisse derrière elle a besoin d'un endroit où se poser,
+et le malus qu'on vient de subir n'est, lui, jamais passé par la main.
+
+**La main est un bouton, pas une rangée.** Elle a tenu un temps sur une ligne à
+hauteur fixe sous la ligne de tour, gardée même vide pour que rien ne saute à
+l'arrivée de la première carte. Le remède coûtait plus cher que le mal :
+quarante-cinq pixels pris au plateau pendant les trois quarts d'une partie, pour
+un rang qui ne montrait rien — et le plateau se dimensionne sur ce qui reste.
+Rendue à la ligne de tour, qui avait de la largeur à revendre et pas une ligne à
+donner, la main coûte zéro et le plateau gagne 12 à 14 % de côté, soit un bon
+quart de surface.
+
+Le bouton ne porte que les figures des cartes gardées : à cette taille un dessin
+se reconnaît, un mot ne se lit pas. Il se cercle d'encre et bat quand une carte
+est jouable, comme le dé prêt à partir ; il devient plein quand une carte est
+armée. Le tiroir, lui, se referme dès qu'on choisit — le geste suivant est sur
+le plateau ou sur le dé, et un panneau resté ouvert les cacherait tous les deux.
+
+**Rien ne se subit.** Une annonce, un message, une bulle de chat s'en vont
+d'eux-mêmes au bout de quelques secondes — et ces secondes sont exactement le
+problème : on a lu, on a compris, et il faut attendre que ça veuille bien
+partir. Attendre quelque chose qu'on a fini de lire est la forme la plus bête
+d'attente qu'une interface puisse imposer. Un appui suffit donc, ou un geste
+vers le haut ou vers le bas : le flottant suit le doigt, pâlit à mesure qu'il
+s'en va, et part au relâchement — ou revient se poser si le geste était trop
+court. Les seuils vivent dans `swipe.ts`, avec leurs tests : quarante-quatre
+pixels, ou une chiquenaude sèche de vingt, parce que ne garder que la distance
+exclut la moitié des gens.
+
+Les feuilles se poussent de la même façon, mais par leur poignée seulement — la
+barrette qui les coiffe. Leur corps défile, et un doigt qui descend dedans doit
+faire défiler, pas emporter la feuille au premier geste de lecture.
+
+**Une feuille se ferme par sa croix.** En haut à droite, au même endroit quel
+que soit l'endroit où l'on a défilé : c'est le corps de la feuille qui défile,
+pas la feuille. Un bouton « Fermer » posé sous le contenu demandait un écran et
+demi de défilement pour refermer un catalogue qu'on était venu lire trois
+secondes.
+
+## Ce que l'écran dit, et quand il le dit
+
+Le moteur est juste ; c'est l'affichage qui décide si la table le croit.
+
+**Rien avant l'heure.** Les chevaux étaient posés à leur position finale avant
+que celui qui avance n'ait fait un pas : la victime rentrait à son écurie
+pendant que son bourreau était encore à quatre cases de là, et l'on savait
+qu'on allait se faire manger une seconde avant de l'être. Le cheval mangé reste
+donc en place jusqu'à l'impact, et les nouvelles du haut d'écran attendent que
+le plateau ait fini de bouger — une annonce qui devance ce qu'elle raconte
+gâche les deux.
+
+**Et un coup peut avoir deux temps.** Un cheval qui s'arrête sur une case
+pouvoir peut en repartir aussitôt : le faux pas le recule de trois, le retour à
+l'écurie le renvoie chez lui. L'état ne garde que sa position finale, si bien
+qu'un six suivi d'un faux pas se dessinait comme un tranquille déplacement de
+trois cases — et un retour à l'écurie ne se dessinait pas du tout, le cheval
+reparaissant chez lui sans avoir bougé. On perdait les deux moitiés de ce qui
+venait d'arriver, et il ne restait qu'un résultat inexplicable.
+
+L'état note donc l'étape intermédiaire — la case où le dé avait posé le cheval
+(`hop` dans `types.ts`) — et l'écran raconte le coup en trois battements : la
+marche du dé, l'arrivée qu'on laisse voir un instant, puis ce que la carte en
+fait. C'est du **dessin, pas de la règle** : le moteur pose ce champ et ne le
+lit jamais, et `powers.test.ts` fixe les deux cas où il est écrit comme celui
+où il doit rester vide.
+
+**Les nouvelles s'empilent, elles ne se chassent pas.** Trois au plus, et de
+quatre à six secondes et demie selon ce qu'elles annoncent : un malus reste plus
+longtemps qu'un bonus, parce qu'un malus qu'on n'a pas eu le temps de lire se
+lit comme un bug le tour suivant, quand son effet se manifeste. Un tour de bot
+qui joue une carte, lance, avance et mange produisait quatre annonces dont on ne
+lisait aucune.
+
+**Un bot prend son temps.** Il ne réfléchit pas, et le tour d'un bot ne compte
+pas dans le temps de réflexion : son délai n'existe que pour ceux qui regardent.
+À sept dixièmes de seconde, ses trois gestes se confondaient en un clignement et
+une table de bots devenait un défilé.
+
+**Un coup sans choix se joue tout seul.** Un seul coup possible, ou aucun, et le
+tour part de lui-même après un temps de lecture. Une carte jouable en main
+allonge ce délai — de huit dixièmes à trois secondes deux — mais ne le supprime
+plus : elle le supprimait, et il suffisait d'un bonus ramassé pour que chaque
+tour à coup unique redemande une confirmation jusqu'à la fin de la partie. Le
+cas qui fixe la durée est « rien à jouer, mais un rejeu en main » : il faut lire
+la ligne, comprendre qu'on peut relancer, et atteindre la carte.
 
 ## La feuille de match
 

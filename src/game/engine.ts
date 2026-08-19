@@ -168,34 +168,6 @@ function pawnsOnTrackIndex(state: GameState, index: number, exceptId?: string): 
 }
 
 /**
- * Un barrage adverse (2+ pions d'un même joueur) occupe-t-il cette case ?
- *
- * « Adverse » n'est pas un détail : un barrage est un mur dressé contre les
- * autres, pas une case qu'on se condamne à soi-même. Ses propres pions le
- * franchissent librement — sans quoi poser un barrage reviendrait à s'enfermer
- * derrière, et personne n'en poserait jamais.
- */
-function isBlockaded(state: GameState, index: number, mover: Pawn): boolean {
-  const perOwner = new Map<Seat, number>()
-  for (const p of pawnsOnTrackIndex(state, index, mover.id)) {
-    if (p.owner === mover.owner) continue
-    perOwner.set(p.owner, (perOwner.get(p.owner) ?? 0) + 1)
-  }
-  return [...perOwner.values()].some((n) => n >= 2)
-}
-
-/** Le trajet `from → to` traverse-t-il un barrage ? La case d'arrivée compte. */
-function pathIsBlocked(state: GameState, pawn: Pawn, from: number, to: number): boolean {
-  const geometry = geometryFor(state.variant)
-  for (let s = from + 1; s <= to; s++) {
-    if (!isOnTrack(geometry, s)) continue
-    const index = trackIndexOf(geometry, pawn.owner, s)
-    if (index !== null && isBlockaded(state, index, pawn)) return true
-  }
-  return false
-}
-
-/**
  * Les chevaux déjà posés sur la case où ce coup mènerait — les siens comme
  * ceux des autres. Le circuit est commun et se compte en cases absolues ;
  * l'escalier est privé, et seuls les chevaux du même siège peuvent s'y trouver.
@@ -234,7 +206,6 @@ export function legalMoves(state: GameState): Move[] {
     }
 
     const from = exits ? STABLE : pawn.steps
-    if (variant.blockades && pathIsBlocked(state, pawn, exits ? -1 : from, to)) continue
 
     // Capture : uniquement sur le circuit, et jamais sur une case protégée.
     // Un cheval au bouclier reste sur la case : le coup est légal, il n'est
@@ -287,15 +258,20 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
   if (state.phase === 'finished') return { state, error: 'finished' }
   if (actor !== state.turn) return { state, error: 'notYourTurn' }
 
+  // L'étape intermédiaire ne vaut que pour le coup qui vient d'être joué. La
+  // laisser traîner ferait rejouer, au coup suivant du même cheval, un détour
+  // d'il y a trois tours.
+  const fresh = state.hop === undefined ? state : { ...state, hop: undefined }
+
   switch (action.type) {
     case 'roll':
-      return applyRoll(state, action)
+      return applyRoll(fresh, action)
     case 'move':
-      return applyMove(state, action.pawnId)
+      return applyMove(fresh, action.pawnId)
     case 'pass':
-      return applyPass(state)
+      return applyPass(fresh)
     case 'power':
-      return applyHeldPower(state, action.power, action.pawnId)
+      return applyHeldPower(fresh, action.power, action.pawnId)
   }
 }
 
@@ -422,6 +398,14 @@ function applyMove(state: GameState, id: string): ApplyResult {
   const geometry = geometryFor(next.variant)
   const landed = next.pawns.find((p) => p.id === move.pawnId)!
   const settled: Move = { ...move, to: landed.steps, finishes: hasFinished(geometry, landed.steps) }
+
+  // Le cheval est reparti de la case où le dé l'avait posé : un faux pas l'a
+  // reculé, un retour à l'écurie l'a renvoyé chez lui. L'état ne garde que la
+  // position finale, et l'écran, qui ne voit que des positions, dessinait « six
+  // moins trois » comme un tranquille déplacement de trois cases — ou ne
+  // dessinait rien et retrouvait le cheval à l'écurie. On note donc l'étape,
+  // pour que le coup puisse se raconter en deux temps.
+  if (landed.steps !== move.to) next = { ...next, hop: { pawnId: move.pawnId, at: move.to } }
 
   return { state: endTurn(next, settled, power.replay) }
 }
@@ -671,7 +655,14 @@ export function forceSkipTurn(state: GameState, seat: Seat): GameState {
   // Le dé est effacé AVANT de clore le tour : un 6 resté sur la table vaut
   // rejeu (voir `endTurn`), et le tour qu'on voulait sauter reviendrait au même
   // joueur — indéfiniment, s'il est parti.
-  const cleared = { ...state, seq: state.seq + 1, dice: null, consecutiveSixes: 0, voided: false }
+  const cleared = {
+    ...state,
+    seq: state.seq + 1,
+    dice: null,
+    consecutiveSixes: 0,
+    voided: false,
+    hop: undefined,
+  }
   return endTurn(addLog(cleared, seat, { kind: 'timeout' }), null)
 }
 

@@ -96,13 +96,6 @@ export type Variant = {
   /** Les 4 cases de départ protègent de la capture. */
   startSquaresAreSafe: boolean
   /**
-   * Deux pions d'un même joueur sur une case forment un barrage : aucun pion
-   * **adverse** ne peut s'y arrêter ni le franchir. Le barrage n'arrête jamais
-   * son propriétaire — c'est un mur qu'on dresse contre les autres, pas une
-   * case qu'on se condamne à soi-même.
-   */
-  blockades: boolean
-  /**
    * Une case, un cheval.
    *
    * La règle française : « deux chevaux ne peuvent pas occuper la même case ;
@@ -112,8 +105,8 @@ export type Variant = {
    *
    * L'arrivée fait exception, évidemment : c'est là que les quatre se rejoignent.
    *
-   * Le Ludo ne connaît pas cette règle, et ne peut pas la connaître : empiler
-   * deux pions d'une même couleur est exactement ce qui y forme un barrage.
+   * Le Ludo, lui, laisse deux pions d'une même couleur partager une case : on
+   * y avance en file plutôt que de rester coincé derrière les siens.
    */
   onePerSquare: boolean
   /** L'entrée à l'arrivée exige le compte exact (sinon le coup est illégal). */
@@ -130,6 +123,22 @@ export type Variant = {
    */
   numberedHome: boolean
 }
+
+/**
+ * L'étape intermédiaire du dernier déplacement.
+ *
+ * Un cheval qui s'arrête sur une case pouvoir peut en repartir aussitôt : le
+ * faux pas le recule de trois, le retour à l'écurie le renvoie chez lui. L'état
+ * ne garde alors que sa position **finale**, et l'écran, qui ne voit que des
+ * positions, dessinait un cheval avançant de trois cases après un six — ou ne
+ * dessinait rien du tout et le retrouvait à l'écurie. Le joueur y perdait les
+ * deux moitiés de ce qui venait de lui arriver.
+ *
+ * `at` est la case où le dé l'avait posé. C'est du **dessin, pas de la règle** :
+ * le moteur ne lit jamais ce champ, il ne fait que le poser pour que l'écran
+ * puisse raconter le coup en deux temps.
+ */
+export type Hop = { pawnId: string; at: number }
 
 export type Phase = 'rolling' | 'moving' | 'finished'
 
@@ -251,6 +260,11 @@ export type GameState = {
   hands?: PowerId[][]
   /** Ce que chaque siège a fait de sa partie. L'indice est le siège. */
   stats?: SeatStats[]
+  /**
+   * Où le dé avait posé le cheval, quand un pouvoir ramassé là l'a ensuite
+   * déplacé. Du dessin, pas de la règle : voir `Hop`. Absent le reste du temps.
+   */
+  hop?: Hop
   log: LogEntry[]
   /** Compteur monotone : sert à départager deux états lors d'un changement d'hôte. */
   seq: number
