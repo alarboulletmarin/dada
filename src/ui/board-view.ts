@@ -53,7 +53,10 @@ export class BoardView {
   private settlers: (() => void)[] = []
   private geometry: BoardGeometry
 
+  private root: HTMLElement
+
   constructor(root: HTMLElement, private variant: Variant) {
+    this.root = root
     this.geometry = geometryFor(this.variant)
     root.classList.add('board-wrap')
     root.style.setProperty('--grid', String(this.geometry.grid))
@@ -366,6 +369,18 @@ export class BoardView {
     const next = this.pending
     this.pending = null
     next?.()
+  }
+
+  /**
+   * Le plateau désigne une cible de carte, et non des coups à jouer.
+   *
+   * Les deux se disaient du même anneau d'encre : une rangée de chevaux tous
+   * cerclés pareil, et rien pour dire si les toucher joue un coup ou vise une
+   * carte. Le vert est celui de la carte armée et du cheval déjà désigné —
+   * une couleur, un geste.
+   */
+  setAiming(on: boolean): void {
+    this.root.classList.toggle('aiming', on)
   }
 
   /**

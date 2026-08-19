@@ -1712,8 +1712,10 @@ export class App {
     //
     // Une carte qui ne vise personne, elle, laisse le plateau tranquille : ses
     // coups restent jouables, et le joueur garde le droit de changer d'avis.
-    if (this.armed !== null && needsPawn(this.armed.power)) {
-      const aimed = this.armed.pawnId
+    const aiming = this.armed !== null && needsPawn(this.armed.power)
+    this.board!.setAiming(aiming)
+    if (aiming) {
+      const aimed = this.armed!.pawnId
       this.board!.render(
         state,
         aimTargets.map((pawnId) => aimMove(state, pawnId)),
@@ -2196,16 +2198,11 @@ export class App {
     }
 
     const armed = this.armed
-    // Ce qu'il reste à faire, dans l'ordre où il faut le faire. Le dé pipé a sa
-    // phrase à lui : lui « lancer le dé » ne veut rien dire, puisque ce sont ses
-    // deux boutons — petit nombre, grand nombre — qui le lancent et le dépensent.
-    const hint = !armed
-      ? t('hand.count', { n: cards.length, max: HAND_LIMIT })
-      : needsPawn(armed.power) && armed.pawnId === undefined
-        ? t('hand.aim')
-        : armed.power === 'des'
-          ? t('hand.roll.boost')
-          : t('hand.roll')
+    // Le compte, et rien d'autre. Ce qu'il reste à faire est dit juste au-dessus,
+    // dans la ligne de tour (voir `armedDetail`) : le répéter ici donnait
+    // « choisissez un cheval · choisissez un cheval » sur deux lignes qui se
+    // touchent, et une consigne écrite deux fois se lit comme deux consignes.
+    const hint = t('hand.count', { n: cards.length, max: HAND_LIMIT })
 
     fill(
       host,
@@ -2289,18 +2286,14 @@ export class App {
       // tout seul, il part tout seul mais laisse le temps d'une carte, ou il
       // attend un geste. Trois situations, trois phrases.
       detail = !this.canAutoPlay(state, moveCount)
-        ? this.armed
-          ? t('play.armed')
-          : t('play.nothing.pass')
+        ? t('play.nothing.pass')
         : this.autoDelay() > AUTO_MS
           ? t('play.nothing.card')
           : t('play.nothing.hint')
     } else if (mine && moveCount === 1) {
       title = t('play.youRolled', { dice: state.dice ?? '' })
       detail = !this.canAutoPlay(state, moveCount)
-        ? this.armed
-          ? t('play.armed')
-          : t('play.pickOne.tap')
+        ? t('play.pickOne.tap')
         : this.autoDelay() > AUTO_MS
           ? t('play.pickOne.card')
           : t('play.pickOne')
@@ -2319,9 +2312,7 @@ export class App {
     // d'une main qui réclame un cheval, ce sont deux consignes qui se
     // contredisent — et la rangée de cartes, à trois cartes sur un petit
     // écran, n'a plus la place d'en porter une (voir `.hand__hint`).
-    if (mine && !finished && this.armed) {
-      detail = this.armedReady() ? t('play.armed') : t('hand.aim')
-    }
+    if (mine && !finished && this.armed) detail = this.armedDetail()
 
     const clock = h('span', { class: 'turnline__clock' })
     this.turnClock = clock
@@ -2429,6 +2420,20 @@ export class App {
   /** Une carte est armée et ne lui manque plus rien : le dé peut la lâcher. */
   private armedReady(): boolean {
     return armedReady(this.armed)
+  }
+
+  /**
+   * Le geste qui manque à la carte armée, en une ligne.
+   *
+   * Le dé pipé a sa phrase à lui : lui dire « lancez le dé » ne veut rien dire,
+   * puisque ce sont ses deux boutons — petit nombre, grand nombre — qui le
+   * lancent et le dépensent d'un même geste.
+   */
+  private armedDetail(): string {
+    const armed = this.armed
+    if (!armed) return ''
+    if (!armedReady(armed)) return t('hand.aim')
+    return armed.power === 'des' ? t('hand.roll.boost') : t('hand.roll')
   }
 
   // ─────────────────────────── le temps de réflexion ───────────────────────────

@@ -1714,6 +1714,26 @@ input:disabled {
     0 0 0 4px var(--ink), 0 0 0 7px var(--card), 0 0 0 9px var(--ink);
 }
 
+/* Le plateau en visée : on ne joue plus un coup, on désigne le cheval d'une
+   carte. L'anneau prend le vert de la carte armée — sans quoi la rangée de
+   chevaux cerclés d'encre dit exactement la même chose dans les deux cas, et
+   l'on ne sait pas si toucher joue ou désigne. */
+.board-wrap.aiming .pawn.playable i {
+  animation: aimed 1.2s ease-in-out infinite;
+}
+
+@keyframes aimed {
+  0%,
+  100% {
+    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
+      0 0 0 6px var(--green);
+  }
+  50% {
+    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 4px var(--card),
+      0 0 0 9px var(--green);
+  }
+}
+
 @keyframes circled {
   0%,
   100% {
@@ -1735,6 +1755,11 @@ input:disabled {
     animation: none;
     box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
       0 0 0 6px var(--ink);
+  }
+  .board-wrap.aiming .pawn.playable i {
+    animation: none;
+    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
+      0 0 0 6px var(--green);
   }
   /* Le choc perd sa culbute, pas son temps : le délai reste, parce qu'il ne
      sert pas à animer mais à ne pas annoncer la capture d'avance. */
@@ -2603,7 +2628,7 @@ input:disabled {
   z-index: 35;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   align-items: stretch;
   width: max-content;
   max-width: min(92vw, 340px);
@@ -2680,6 +2705,15 @@ input:disabled {
   font-size: 15px;
   font-weight: 800;
   line-height: 1.15;
+}
+
+/* Seule la dernière nouvelle porte son explication. Trois nouvelles complètes
+   font deux cent cinquante pixels : elles couvriraient la rangée des joueurs et
+   le haut du plateau, c'est-à-dire ce qu'elles sont censées expliquer. Les
+   précédentes se replient sur leur nom — on les a déjà lues, elles ne sont plus
+   là que pour dire dans quel ordre les choses sont arrivées. */
+.cardnote:not(:last-child) .cardnote__desc {
+  display: none;
 }
 
 /* Deux lignes au plus : la description explique, elle ne raconte pas. */
