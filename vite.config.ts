@@ -81,7 +81,14 @@ export default defineConfig({
       // Le script que le plugin injecte d'office referait le travail sans rien
       // à quoi s'accrocher.
       injectRegister: null,
-      includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
+      includeAssets: [
+        'icon.svg',
+        'icon-32.png',
+        'icon-192.png',
+        'icon-512.png',
+        'icon-maskable-512.png',
+        'apple-touch-icon.png',
+      ],
       workbox: {
         // Tout l'applicatif est mis en cache : le jeu doit démarrer hors-ligne.
         // `txt` pour la notice des licences tierces : elle couvre les deux
@@ -129,11 +136,21 @@ export default defineConfig({
         background_color: '#FBF2DF',
         theme_color: '#FBF2DF',
         categories: ['games'],
+        /*
+         * `any` et `maskable` sont deux dessins, pas deux usages du même.
+         *
+         * Un système qui applique son gabarit rogne jusqu'au cercle inscrit à
+         * 80 % du côté : servir l'icône `any` en maskable, comme on le faisait,
+         * c'était lui laisser mordre le dé. Le fichier `-maskable` reprend le
+         * même dé, plus petit et à bord perdu, pour que le rognage ne tombe que
+         * sur de l'encre. L'`any` garde ses coins arrondis, pour les systèmes
+         * qui affichent le fichier tel quel.
+         */
         icons: [
-          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml' },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       /*

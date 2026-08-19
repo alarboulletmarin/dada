@@ -541,6 +541,35 @@ input:disabled {
   transform: rotate(-9deg);
 }
 
+/* Les quatre pastilles du dé crème sont les quatre sièges, dans l'ordre où ils
+   tournent autour du plateau : vert en haut à gauche, puis horaire. La face 4
+   les place aux quatre coins — l'ordre du DOM les prend ligne par ligne, d'où
+   le rouge (bas gauche) avant le bleu (bas droite).
+
+   Elles débordent leur case : sur une face 4 la ligne et la colonne du milieu
+   sont vides, et à la taille des autres dés ces quatre points seraient des
+   miettes. Là, ce sont quatre pions vus de haut — la marque, exactement. */
+.dice-pair .face:first-child b {
+  width: 112%;
+  max-width: 19px;
+}
+
+.dice-pair .face:first-child b:nth-child(1) {
+  background: var(--seat-0);
+}
+
+.dice-pair .face:first-child b:nth-child(2) {
+  background: var(--seat-1);
+}
+
+.dice-pair .face:first-child b:nth-child(3) {
+  background: var(--seat-3);
+}
+
+.dice-pair .face:first-child b:nth-child(4) {
+  background: var(--seat-2);
+}
+
 .dice-pair .face:last-child {
   background: var(--yellow);
   transform: rotate(8deg);
