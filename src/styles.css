@@ -2287,7 +2287,18 @@ input:disabled {
   gap: 12px;
 }
 
+/* `flex: none` n'est pas une précaution, c'est le correctif d'un bug de mise en
+   page bien réel. L'écran est une colonne flexible qui défile, et un enfant de
+   colonne flexible refuse normalement de descendre sous la hauteur de son
+   contenu — sa « taille minimale automatique ». Mais cette protection saute dès
+   que l'enfant porte un `overflow` autre que `visible`, et celui-ci en porte un,
+   pour que le texte ne dépasse pas des coins arrondis. Résultat : au lieu de
+   pousser l'écran à défiler, un bloc déplié se faisait comprimer — 238 px
+   affichés pour 747 px de texte — et les blocs voisins, restés fermés,
+   tombaient de 62 à 23 px, leur titre coupé net. Trois pastilles vides et un
+   texte illisible. */
 .about__block {
+  flex: none;
   border: var(--bw) solid var(--ink);
   border-radius: 22px;
   background: var(--card);
