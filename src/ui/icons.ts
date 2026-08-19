@@ -41,6 +41,8 @@ const ICONS = {
   star: '<path d="M12 2.4c.7 4.6 2.6 6.5 7.2 7.2-4.6.7-6.5 2.6-7.2 7.2-.7-4.6-2.6-6.5-7.2-7.2 4.6-.7 6.5-2.6 7.2-7.2Z" fill="currentColor" stroke-linejoin="round" transform="translate(0 2.4)"/>',
   /** La bulle de chat : un rectangle arrondi et sa pointe. */
   chat: '<rect x="3.5" y="4.5" width="17" height="11" rx="4"/><path d="M8 15.5v3.6l4-3.6"/>',
+  /** Envoyer : l'avion de papier, plié en deux traits. */
+  send: '<path d="M20.6 3.4 3.9 9.7a.6.6 0 0 0 0 1.1l6.7 2.6 2.6 6.7a.6.6 0 0 0 1.1 0Z"/><path d="M10.6 13.4 20.6 3.4"/>',
 } as const
 
 export type IconName = keyof typeof ICONS

@@ -40,13 +40,29 @@ const BADGES: Record<string, 'die' | 'pawn' | 'bolt'> = {
   rapide: 'bolt',
 }
 
-/** Le picker du chat : une poignée d'expressions, pas une bibliothèque entière. */
+/** Les réactions du chat : une poignée d'expressions, pas une bibliothèque
+ *  entière. Un appui envoie — c'est tout l'intérêt d'une réaction : on ne
+ *  compose pas un message avec, on répond du tac au tac pendant son tour. */
 const EMOJI = ['😀', '😂', '😍', '😮', '😢', '😡', '👍', '👎', '🙌', '🎉', '🔥', '❤️', '🐴', '🎲', '⭐', '💀']
 /** Durée d'affichage de la bulle sur la carte du joueur. */
 const CHAT_BUBBLE_MS = 4000
 /** Au-delà, la bulle coupe : `-webkit-line-clamp` s'en charge visuellement,
  *  ceci n'est qu'un filet contre un pavé de texte collé sans espaces. */
 const CHAT_BUBBLE_MAX = 200
+/** Deux messages du même auteur à moins d'une minute d'écart forment un bloc :
+ *  un seul nom, des bulles serrées. Au-delà, la conversation a repris. */
+const CHAT_GROUP_MS = 60_000
+
+/** Contient au moins un pictogramme et rien d'autre : une réaction, pas une
+ *  phrase. Ces messages-là s'affichent en grand et sans cartouche — un pouce
+ *  levé perdu dans une bulle de 13 px ne se lit pas de l'autre bout de la
+ *  table. Chiffres et lettres disqualifient (`\p{N}` couvre « 1️⃣ », tant pis :
+ *  se tromper vers la petite taille est sans conséquence). */
+function emojiOnly(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed || [...trimmed].length > 8) return false
+  return /\p{Extended_Pictographic}/u.test(trimmed) && !/[\p{L}\p{N}]/u.test(trimmed)
+}
 
 const variantName = (id: string) => t(`variant.${id}.name` as Key)
 
@@ -75,9 +91,10 @@ export class App {
     turn: HTMLElement
     dieBtn: HTMLButtonElement
     die: HTMLElement
+    diceRow: HTMLElement
     boostLowBtn: HTMLButtonElement
     boostHighBtn: HTMLButtonElement
-    boostCount: HTMLElement
+    boostCounts: HTMLElement[]
   } | null = null
   private name = localStorage.getItem(NAME_KEY) ?? ''
   /** Ce qu'on fera de la variante choisie sur l'écran « on joue à quoi ? ». */
@@ -883,26 +900,26 @@ export class App {
     )
 
     // Chaque bouton lance le dé ET applique le bonus en un seul geste, comme
-    // le bouton du dé lui-même.
-    const boostLowBtn = h('button', {
-      class: 'btn small',
-      text: t('play.boost.low'),
-      attrs: { 'aria-label': t('play.boost.low') },
-      on: { click: () => this.session!.dispatch({ type: 'roll', boost: 'low' }) },
-    })
-    const boostHighBtn = h('button', {
-      class: 'btn small',
-      text: t('play.boost.high'),
-      attrs: { 'aria-label': t('play.boost.high') },
-      on: { click: () => this.session!.dispatch({ type: 'roll', boost: 'high' }) },
-    })
-    const boostCount = h('p', { class: 'hint center' })
-    const boostRow = h(
-      'div',
-      { class: 'stack boost-row' },
-      h('div', { class: 'row' }, boostLowBtn, boostHighBtn),
-      boostCount,
-    )
+    // le bouton du dé lui-même. Ils encadrent le dé au lieu de s'empiler
+    // dessous : la réserve de bonus est commune, elle se lit sur la pastille
+    // que chaque bouton porte, et la ligne entière ne coûte que la hauteur du
+    // dé — celle qu'elle occupait déjà. Ce qui est gagné là revient au plateau.
+    const boost = (side: 'low' | 'high') => {
+      const count = h('span', { class: 'boost__n' })
+      const btn = h(
+        'button',
+        {
+          class: `boost boost--${side}`,
+          on: { click: () => this.session!.dispatch({ type: 'roll', boost: side }) },
+        },
+        h('span', { class: 'boost__label', text: t(side === 'low' ? 'play.boost.low' : 'play.boost.high') }),
+        count,
+      )
+      return { btn, count }
+    }
+    const low = boost('low')
+    const high = boost('high')
+    const diceRow = h('div', { class: 'dice-row' }, low.btn, dieBtn, high.btn)
 
     fill(
       this.root,
@@ -933,13 +950,21 @@ export class App {
         h('div', { class: 'board-slot' }, boardHost),
         bottom,
         turn,
-        dieBtn,
-        boostRow,
+        diceRow,
       ),
     )
 
     this.board = new BoardView(boardHost, this.session!.game!.variant)
-    this.mounts = { players: [top, bottom], turn, dieBtn, die, boostLowBtn, boostHighBtn, boostCount }
+    this.mounts = {
+      players: [top, bottom],
+      turn,
+      dieBtn,
+      die,
+      diceRow,
+      boostLowBtn: low.btn,
+      boostHighBtn: high.btn,
+      boostCounts: [low.count, high.count],
+    }
     this.shownDice = null
     this.tumbling = false
     this.autoAt = -1
@@ -955,7 +980,17 @@ export class App {
     const canBoost = session.myTurn && state.phase === 'rolling' && state.diceBoosts > 0
     mounts.boostLowBtn.disabled = !canBoost
     mounts.boostHighBtn.disabled = !canBoost
-    mounts.boostCount.textContent = t('play.boost.remaining', { n: state.diceBoosts })
+    // Réserve épuisée : les boutons s'effacent au lieu de rester grisés à vie.
+    // Le dé garde sa place, la ligne garde sa hauteur — rien ne bouge sous le
+    // plateau, et l'écran ne se réorganise pas au dernier bonus dépensé.
+    mounts.diceRow.classList.toggle('spent', state.diceBoosts === 0)
+    const remaining = t(state.diceBoosts === 1 ? 'play.boost.remaining.one' : 'play.boost.remaining', {
+      n: state.diceBoosts,
+    })
+    for (const el of mounts.boostCounts) el.textContent = String(state.diceBoosts)
+    // La pastille ne porte qu'un chiffre : la phrase entière est pour qui écoute.
+    mounts.boostLowBtn.setAttribute('aria-label', `${t('play.boost.low')} · ${remaining}`)
+    mounts.boostHighBtn.setAttribute('aria-label', `${t('play.boost.high')} · ${remaining}`)
 
     // Un dé qui apparaît, c'est quelqu'un — moi, un pair ou un bot — qui vient
     // de lancer : on le fait rouler pour tout le monde de la même façon.
@@ -1051,7 +1086,16 @@ export class App {
                 : meta,
           }),
         ),
-        bubble ? h('div', { class: 'pcard__bubble', text: bubble.text }) : null,
+        // Le texte a son propre nœud : c'est LUI qu'on tronque à trois lignes,
+        // et une troncature demande `overflow: hidden` — posée sur la bulle,
+        // elle rognait la pointe, qui vit hors de ses bords.
+        bubble
+          ? h(
+              'div',
+              { class: `pcard__bubble${emojiOnly(bubble.text) ? ' solo' : ''}` },
+              h('span', { class: 'pcard__bubble-text', text: bubble.text }),
+            )
+          : null,
       )
     }
 
@@ -1343,6 +1387,11 @@ export class App {
     document.querySelector('.overlay.chat')?.remove()
   }
 
+  /**
+   * Le chat s'ouvre en feuille par le bas plutôt qu'en boîte centrée : le
+   * pouce est là, le plateau reste visible au-dessus, et le clavier qui monte
+   * pousse la feuille au lieu de la couper en deux.
+   */
   private renderChat(): void {
     if (document.querySelector('.overlay.chat')) return
     const session = this.session!
@@ -1350,14 +1399,9 @@ export class App {
     this.chatUnread = 0
     this.updateChatBadge()
 
-    const list = h(
-      'div',
-      { class: 'chat__list', attrs: { 'aria-live': 'polite' } },
-      ...(session.chatLog.length
-        ? session.chatLog.map((m) => this.chatBubble(m))
-        : [h('p', { class: 'hint center', text: t('chat.empty') })]),
-    )
+    const list = h('div', { class: 'chat__list', attrs: { 'aria-live': 'polite' } })
     this.chatList = list
+    this.paintChatLog()
 
     const input = h('input', {
       attrs: { type: 'text', placeholder: t('chat.placeholder'), maxlength: '240', autocomplete: 'off' },
@@ -1383,9 +1427,12 @@ export class App {
       h(
         'div',
         { class: 'sheet chat__sheet' },
+        // La poignée dit « ceci est une feuille » avant même qu'on ait lu le
+        // titre ; elle ne se touche pas, le fond et la croix ferment.
+        h('span', { class: 'chat__grip' }),
         h(
           'div',
-          { class: 'topbar' },
+          { class: 'topbar chat__head' },
           h('h2', { text: t('chat.title') }),
           h('span', { style: { flex: '1' } }),
           h(
@@ -1395,22 +1442,26 @@ export class App {
           ),
         ),
         list,
+        // Une réaction part d'un seul appui : pas de composition, pas de
+        // validation. Toutes tiennent à l'écran — une rangée qui défile
+        // horizontalement cachait la moitié du choix derrière un geste que
+        // rien n'annonçait.
         h(
           'div',
-          { class: 'chat__emoji' },
+          { class: 'chat__emoji', attrs: { role: 'group', 'aria-label': t('chat.reactions') } },
           ...EMOJI.map((e) =>
             h('button', {
               class: 'chat__emoji-btn',
               text: e,
               attrs: { type: 'button', 'aria-label': e },
-              on: { click: () => (input.value += e) },
+              on: { click: () => session.sendChat(e) },
             }),
           ),
         ),
         h(
           'form',
           {
-            class: 'row chat__row',
+            class: 'chat__row',
             on: {
               submit: (ev) => {
                 ev.preventDefault()
@@ -1419,7 +1470,13 @@ export class App {
             },
           },
           input,
-          h('button', { class: 'btn small', text: t('chat.send'), attrs: { type: 'submit' } }),
+          // Bouton icône et non libellé : « Envoyer » mangeait la moitié de la
+          // ligne, et le champ à côté n'affichait plus que « Écrire un mes ».
+          h(
+            'button',
+            { class: 'icon-btn chat__send', attrs: { type: 'submit', 'aria-label': t('chat.send') } },
+            icon('send', 22),
+          ),
         ),
       ),
     )
@@ -1430,18 +1487,48 @@ export class App {
     list.scrollTop = list.scrollHeight
   }
 
-  private chatBubble(message: ChatMessage): HTMLElement {
-    const mine = message.clientId === this.session?.self
+  /** Redessine la liste entière : le groupage dépend du message précédent, un
+   *  ajout isolé ne suffit donc pas à l'ouverture. */
+  private paintChatLog(): void {
+    const list = this.chatList
+    const log = this.session?.chatLog ?? []
+    if (!list) return
+    if (!log.length) {
+      fill(
+        list,
+        h('div', { class: 'chat__empty' }, icon('chat', 40), h('p', { class: 'hint center', text: t('chat.empty') })),
+      )
+      return
+    }
+    fill(list, ...log.map((m, i) => this.chatRow(m, log[i - 1])))
+  }
+
+  /**
+   * Une ligne de conversation : le nom une seule fois par bloc, la bulle, et
+   * l'heure posée dans un coin. Le nom prend la couleur du siège de son auteur —
+   * c'est déjà comme ça que le plateau et les cartes désignent les joueurs.
+   */
+  private chatRow(message: ChatMessage, previous?: ChatMessage): HTMLElement {
+    const session = this.session
+    const mine = message.clientId === session?.self
+    const seat = session?.lobby.players.find((p) => p.clientId === message.clientId)?.seat
+    const grouped =
+      previous !== undefined && previous.clientId === message.clientId && message.at - previous.at < CHAT_GROUP_MS
+    const solo = emojiOnly(message.text)
+
     return h(
       'div',
-      { class: `chat__msg${mine ? ' mine' : ''}` },
+      {
+        class: `chat__msg${mine ? ' mine' : ''}${grouped ? ' grouped' : ''}${solo ? ' solo' : ''}`,
+        style: seat === undefined ? {} : this.seatVars(seat),
+      },
+      grouped || mine ? null : h('span', { class: 'chat__author', text: message.name }),
       h(
         'div',
-        { class: 'chat__meta' },
-        h('span', { class: 'chat__author', text: message.name }),
+        { class: 'chat__bubble' },
+        h('span', { class: 'chat__text', text: message.text }),
         h('span', { class: 'chat__time', text: this.formatChatTime(message.at) }),
       ),
-      h('div', { class: 'chat__text', text: message.text }),
     )
   }
 
@@ -1450,10 +1537,14 @@ export class App {
   }
 
   private appendChatMessage(message: ChatMessage): void {
-    if (!this.chatList) return
-    if (!this.chatList.querySelector('.chat__msg')) this.chatList.replaceChildren()
-    this.chatList.append(this.chatBubble(message))
-    this.chatList.scrollTop = this.chatList.scrollHeight
+    const list = this.chatList
+    if (!list) return
+    const log = this.session?.chatLog ?? []
+    // L'état vide n'est pas une ligne de conversation : il part au premier mot.
+    if (list.querySelector('.chat__empty')) list.replaceChildren()
+    // `log` contient déjà `message` : le précédent est l'avant-dernier.
+    list.append(this.chatRow(message, log[log.length - 2]))
+    list.scrollTop = list.scrollHeight
   }
 
   // ─────────────────────────── divers ───────────────────────────
