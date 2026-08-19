@@ -1216,6 +1216,40 @@ input:disabled {
   white-space: nowrap;
 }
 
+/* Ce qui pèse encore sur un siège : cartes gardées, tours à sauter.
+   Un pouvoir peut durer toute la partie — un bouclier tant que personne ne vient
+   manger le cheval, un tour sauté jusqu'à ce qu'il tombe — et un effet qui dure
+   sans se voir se lit comme un bug le jour où il se manifeste. Le bouclier se
+   voit sur le cheval ; ceci dit le reste. Des cartes des autres, on ne montre
+   que le nombre : leur nom leur appartient. */
+.pcard__marks {
+  flex: none;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.pcard__mark {
+  display: grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--card);
+  font-family: var(--title);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pcard__mark--skip {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 .pcard.out {
   opacity: 0.5;
 }
@@ -1249,12 +1283,22 @@ input:disabled {
 }
 
 /* Discret : le joueur actif se lit d'abord au liseré de la carte (`.pcard.active`),
-   pas à ce texte — qui reste là pour l'info, pas pour l'emphase. */
+   pas à ce texte — qui reste là pour l'info, pas pour l'emphase.
+
+   Une seule ligne, coupée à l'ellipse comme le nom au-dessus. Sans cela la carte
+   grandissait d'une ligne dès que le texte devenait trop long pour sa largeur —
+   « vous · tenu par un bot · 2 en piste », ou simplement une pastille d'effet en
+   plus qui rognait quelques pixels — et le plateau, qui se dimensionne sur la
+   hauteur restante, reculait d'autant. Une carte de joueur doit avoir la même
+   hauteur du début à la fin de la partie. */
 .pcard .meta {
+  overflow: hidden;
   font-size: clamp(10px, 1.5svh, 11.5px);
   font-weight: 700;
   color: var(--muted);
   opacity: 0.85;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Une rangée sans joueur ne doit pas voler d'espace au plateau. */
@@ -1547,6 +1591,17 @@ input:disabled {
 
 .pawn.moving i {
   transform: scale(1.16);
+}
+
+/* Le cheval désigné par une carte armée : l'anneau ne bat plus, il est posé.
+   Une carte se joue en deux temps — désigner, puis lancer le dé — et sans cette
+   marque on relit une rangée de chevaux tous cerclés pareil sans savoir sur
+   lequel on a appuyé. */
+.pawn.chosen i {
+  animation: none;
+  border-width: 3px;
+  box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
+    0 0 0 7px var(--green);
 }
 
 /* Le cheval au bouclier porte un anneau d'encre doublé de sa couleur. Ni icône
@@ -2396,6 +2451,90 @@ input:disabled {
   }
 }
 
+/* ─────────────────────────── la carte ramassée ───────────────────────────
+   Une nouvelle, pas un élément d'interface.
+
+   Elle flotte au-dessus de tout, en haut de l'écran, et ne prend aucune place
+   dans la colonne : le plateau ne se redimensionne pas derrière elle. C'était
+   tout le problème de l'ancienne version — l'annonce partageait le bandeau du
+   bas, posé sur le dé, seul moyen de jouer, et la rangée de cartes poussait le
+   plateau en même temps. On lisait sa carte en regardant l'écran se réorganiser.
+
+   `pointer-events: none` n'est pas un détail : le dé reste jouable pendant les
+   trois secondes d'affichage. Une information discrète ne bloque rien. */
+.cardnote {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 35;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  width: max-content;
+  max-width: min(92vw, 340px);
+  padding: 9px 14px;
+  border: 2.5px solid var(--ink);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 4px 0 var(--shade);
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: cardnote-in 0.2s ease-out;
+}
+
+.cardnote .power-mark {
+  margin-top: 4px;
+}
+
+.cardnote__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cardnote__who {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cardnote__name {
+  font-family: var(--title);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+/* Deux lignes au plus : la description explique, elle ne raconte pas. */
+.cardnote__desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+@keyframes cardnote-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardnote {
+    animation-duration: 0.01ms;
+  }
+}
+
 /* ─────────────────────────── à propos ─────────────────────────── */
 
 /* Écran de lecture : les blocs se touchent presque, l'écart de 20 px des autres
@@ -2584,7 +2723,7 @@ input:disabled {
   .play {
     display: grid;
     grid-template-columns: auto minmax(210px, 1fr);
-    grid-template-rows: auto auto 1fr auto auto;
+    grid-template-rows: auto auto 1fr auto auto auto;
     align-content: center;
     column-gap: 16px;
     row-gap: 8px;
@@ -2604,8 +2743,16 @@ input:disabled {
   .play > .turnline {
     grid-area: 4 / 2;
   }
-  .play > .dice-row {
+  /* Sa propre ligne, nommée. Sans elle la rangée de cartes se faisait placer
+     automatiquement — donc dans une sixième ligne inventée par la grille — et
+     toute la colonne de droite se réorganisait à l'arrivée de la première
+     carte. Une ligne oubliée dans un gabarit explicite, c'est un écran qui
+     bouge. */
+  .play > .hand {
     grid-area: 5 / 2;
+  }
+  .play > .dice-row {
+    grid-area: 6 / 2;
   }
 
   /* La colonne de droite fait 210 px : le dé et ses deux bonus n'y tiennent
@@ -2844,6 +2991,12 @@ input:disabled {
   background: var(--red);
 }
 
+/* La carte d'un autre joueur : on sait qu'elle existe, pas ce qu'elle est.
+   Une pastille vide dit exactement cela. */
+.power-mark--neutral {
+  background: var(--line);
+}
+
 .power-text {
   flex: 1;
   display: grid;
@@ -2870,15 +3023,24 @@ input:disabled {
    conséquence du lancer.
 
    La rangée garde sa hauteur même vide, comme la ligne de tour : rien ne doit
-   sauter sous le plateau au moment où la première carte arrive. */
+   sauter sous le plateau au moment où la première carte arrive.
+
+   `height` et non `min-height`, et `nowrap` et non `wrap` : c'était le bug. Le
+   plateau se dimensionne sur la hauteur qui RESTE sous lui (voir `.board-slot`),
+   si bien qu'une rangée qui grandissait d'une ligne rétrécissait le plateau —
+   l'écran entier bougeait à l'instant où l'on ramassait une carte, exactement
+   quand on avait besoin de le lire. La rangée a désormais une hauteur fixe : les
+   cartes ne passent jamais à la ligne, et c'est l'indication qui se tronque. */
 .hand {
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  height: 34px;
   padding: 0 4px;
+  overflow: hidden;
 }
 
 .hand.empty::after {
@@ -2945,6 +3107,14 @@ input:disabled {
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Le dé en validateur : une carte est armée et n'attend plus que lui. Le halo
+   dit où appuyer — sans lui, la carte choisie attend un geste que rien ne
+   désigne, et l'on cherche un bouton « jouer » qui n'existe pas. */
+.dice-row.validating .dice {
+  border-color: var(--ink);
+  box-shadow: 0 6px 0 var(--shade), 0 0 0 3px var(--card), 0 0 0 6px var(--green);
 }
 
 .hand.aiming .hand__hint {

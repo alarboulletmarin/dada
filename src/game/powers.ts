@@ -84,9 +84,12 @@ export const POWERS: Record<PowerId, Power> = {
   bouclier: { id: 'bouclier', kind: 'bonus', copies: 3, steps: 0, held: true, target: 'cheval' },
   galop: { id: 'galop', kind: 'bonus', copies: 3, steps: 3, held: true, target: 'cheval' },
   rejeu: { id: 'rejeu', kind: 'bonus', copies: 2, steps: 0, held: true, target: 'aucune' },
-  // Le dé pipé ne se garde pas : il ne rejoint pas une main, il rejoint le
-  // budget de bonus de dé de la table, qui est déjà une réserve qu'on garde.
-  des: { id: 'des', kind: 'bonus', copies: 2, steps: 0, held: false, target: 'aucune' },
+  // Le dé pipé se garde comme les autres bonus. Il rejoignait autrefois la
+  // réserve de la table à la seconde où on le ramassait — un bonus qui se joue
+  // tout seul, c'est-à-dire un bonus dont on ne décide rien. Gardé en main, il
+  // se dépense au moment choisi : on l'arme, on demande son petit ou son grand
+  // nombre, et le même geste range la carte et penche le dé.
+  des: { id: 'des', kind: 'bonus', copies: 2, steps: 0, held: true, target: 'aucune' },
   fauxpas: { id: 'fauxpas', kind: 'malus', copies: 3, steps: 3, held: false, target: 'aucune' },
   saute: { id: 'saute', kind: 'malus', copies: 2, steps: 0, held: false, target: 'aucune' },
   ecurie: { id: 'ecurie', kind: 'malus', copies: 1, steps: 0, held: false, target: 'aucune' },

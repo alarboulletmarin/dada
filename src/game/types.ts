@@ -257,13 +257,28 @@ export type GameState = {
 }
 
 export type Action =
-  | { type: 'roll'; boost?: 'low' | 'high' }
+  /**
+   * Lancer le dé — et, le cas échéant, jouer d'abord la carte armée.
+   *
+   * **Le lancer est le validateur d'une carte.** Choisir une carte ne la joue
+   * pas : elle reste armée devant soi, avec son cheval désigné s'il en faut un,
+   * et c'est le dé qui la déclenche. Les deux voyagent donc ensemble dans une
+   * seule action : deux intentions envoyées à la suite pourraient s'appliquer
+   * dans l'ordre inverse chez l'hôte, et la carte jouerait après le dé qu'elle
+   * devait piper.
+   */
+  | { type: 'roll'; boost?: 'low' | 'high'; power?: PowerId; pawnId?: string }
   | { type: 'move'; pawnId: string }
   /** Aucun coup possible : passe la main. */
   | { type: 'pass' }
   /**
-   * Jouer une carte gardée en main. `pawnId` désigne le cheval visé pour les
-   * cartes qui en demandent un. Jouer une carte ne consomme pas le tour.
+   * Jouer une carte gardée en main, sans lancer le dé. `pawnId` désigne le
+   * cheval visé pour les cartes qui en demandent un. Jouer une carte ne consomme
+   * pas le tour.
+   *
+   * L'écran passe par `roll` : c'est le lancer qui valide une carte armée. Cette
+   * action-ci reste la primitive — celle dont se sert le bot, et celle qui joue
+   * une carte quand le dé est déjà sur la table.
    */
   | { type: 'power'; power: PowerId; pawnId?: string }
 

@@ -8,7 +8,15 @@
 
 import { BOARD_SHAPES, geometryFor, isBoardShape, type BoardShape } from '../game/board.ts'
 import { mercyOf, pawnsOf, statsOf } from '../game/engine.ts'
-import { bonusCount, DECK_SIZE, HAND_LIMIT, POWERS, POWER_LIST, type PowerId } from '../game/powers.ts'
+import {
+  bonusCount,
+  DECK_SIZE,
+  HAND_LIMIT,
+  POWERS,
+  POWER_LIST,
+  type PowerId,
+  type PowerKind,
+} from '../game/powers.ts'
 import { STABLE, type GameState, type Move, type Seat, type SeatStats, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { makeCode, type ChatMessage } from '../net/room.ts'
@@ -106,6 +114,8 @@ const BADGES: Record<string, 'die' | 'pawn' | 'bolt'> = {
  *  entière. Un appui envoie — c'est tout l'intérêt d'une réaction : on ne
  *  compose pas un message avec, on répond du tac au tac pendant son tour. */
 const EMOJI = ['😀', '😂', '😍', '😮', '😢', '😡', '👍', '👎', '🙌', '🎉', '🔥', '❤️', '🐴', '🎲', '⭐', '💀']
+/** Durée d'affichage de la carte ramassée, en haut de l'écran. */
+const CARD_NOTE_MS = 3400
 /** Durée d'affichage de la bulle sur la carte du joueur. */
 const CHAT_BUBBLE_MS = 4000
 /** Au-delà, la bulle coupe : `-webkit-line-clamp` s'en charge visuellement,
@@ -192,10 +202,14 @@ export class App {
   /** Dernier événement du journal déjà annoncé — voir `announce`. */
   private announced = -1
   /**
-   * La carte qu'on vient de choisir et dont on désigne la cible sur le plateau.
-   * Null le reste du temps. Voir `renderHand`.
+   * La carte armée : choisie, posée devant soi, pas encore jouée.
+   *
+   * **Choisir n'est pas jouer.** La carte attend son cheval s'il en faut un
+   * (`pawnId`), puis attend le dé : c'est le lancer qui la valide. Rien ne part
+   * tant que le joueur n'a pas touché le dé — un bonus qui se déclencherait au
+   * moment où on le regarde n'est pas un bonus, c'est un tirage au sort.
    */
-  private aiming: PowerId | null = null
+  private armed: { power: PowerId; pawnId?: string } | null = null
   /** Dernier résultat de dé connu : le dé du bas garde toujours une face visible. */
   private lastDie: number | null = null
   /** Valeur déjà affichée, pour repérer le lancer qui vient d'arriver. */
@@ -279,6 +293,10 @@ export class App {
     if (this.autoTimer) clearTimeout(this.autoTimer)
     this.autoTimer = null
     this.autoAt = -1
+    if (this.cardTimer) clearTimeout(this.cardTimer)
+    this.cardTimer = null
+    document.querySelector('.cardnote')?.remove()
+    this.armed = null
     this.closeChat()
     this.chatUnread = 0
     this.chatBubbles.forEach((b) => clearTimeout(b.timer))
@@ -1356,13 +1374,7 @@ export class App {
       {
         class: 'dice',
         attrs: { 'aria-label': t('play.roll') },
-        on: {
-          click: () => {
-            const game = this.session?.game
-            if (!game || !this.session!.myTurn || game.phase !== 'rolling') return
-            this.session!.dispatch({ type: 'roll' })
-          },
-        },
+        on: { click: () => this.throwDie() },
       },
       die,
     )
@@ -1378,7 +1390,7 @@ export class App {
         'button',
         {
           class: `boost boost--${side}`,
-          on: { click: () => this.session!.dispatch({ type: 'roll', boost: side }) },
+          on: { click: () => this.throwDie(side) },
         },
         h('span', { class: 'boost__label', text: t(side === 'low' ? 'play.boost.low' : 'play.boost.high') }),
         count,
@@ -1439,7 +1451,7 @@ export class App {
       boostCounts: [low.count, high.count],
       hand,
     }
-    this.aiming = null
+    this.armed = null
     this.shownDice = null
     this.tumbling = false
     this.autoAt = -1
@@ -1454,17 +1466,31 @@ export class App {
     const moves = session.moves()
     if (state.dice !== null) this.lastDie = state.dice
 
-    const canBoost = session.myTurn && state.phase === 'rolling' && state.diceBoosts > 0
+    // La carte armée est vérifiée d'abord : le tour a pu passer, le cheval
+    // désigné rentrer ou se faire manger. Une carte qui ne mène plus à rien se
+    // range, et une désignation périmée s'oublie — sinon le reste de la passe
+    // dessine un état qui n'existe plus.
+    const aimTargets = this.armed ? session.targetsFor(this.armed.power) : []
+    if (this.armed && aimTargets.length === 0) this.armed = null
+    if (this.armed?.pawnId !== undefined && !aimTargets.includes(this.armed.pawnId)) {
+      this.armed = { power: this.armed.power }
+    }
+
+    // Un dé pipé armé compte déjà : il garnit la réserve au moment où le lancer
+    // le valide, si bien qu'un même geste peut ranger la carte et pencher le dé.
+    // Sans ce +1, les boutons restaient éteints devant la carte qui les allume.
+    const boosts = state.diceBoosts + (this.armed?.power === 'des' ? 1 : 0)
+    const canBoost = session.myTurn && state.phase === 'rolling' && boosts > 0
     mounts.boostLowBtn.disabled = !canBoost
     mounts.boostHighBtn.disabled = !canBoost
     // Réserve épuisée : les boutons s'effacent au lieu de rester grisés à vie.
     // Le dé garde sa place, la ligne garde sa hauteur — rien ne bouge sous le
     // plateau, et l'écran ne se réorganise pas au dernier bonus dépensé.
-    mounts.diceRow.classList.toggle('spent', state.diceBoosts === 0)
-    const remaining = t(state.diceBoosts === 1 ? 'play.boost.remaining.one' : 'play.boost.remaining', {
-      n: state.diceBoosts,
+    mounts.diceRow.classList.toggle('spent', boosts === 0)
+    const remaining = t(boosts === 1 ? 'play.boost.remaining.one' : 'play.boost.remaining', {
+      n: boosts,
     })
-    for (const el of mounts.boostCounts) el.textContent = String(state.diceBoosts)
+    for (const el of mounts.boostCounts) el.textContent = String(boosts)
     // La pastille ne porte qu'un chiffre : la phrase entière est pour qui écoute.
     mounts.boostLowBtn.setAttribute('aria-label', `${t('play.boost.low')} · ${remaining}`)
     mounts.boostHighBtn.setAttribute('aria-label', `${t('play.boost.high')} · ${remaining}`)
@@ -1485,26 +1511,32 @@ export class App {
     // dessus, ni les chevaux cerclés. Le rendu complet reprend à la réception.
     if (this.tumbling) return this.renderTurn(mounts.turn, state, moves.length)
 
-    // En visée, le plateau ne montre plus les coups mais les cibles de la carte,
-    // et un clic la joue au lieu de bouger le cheval.
-    const aimTargets = this.aiming ? session.targetsFor(this.aiming) : []
-    if (this.aiming && aimTargets.length === 0) this.aiming = null
-
-    if (this.aiming) {
-      const power = this.aiming
-      this.board!.render(state, aimTargets.map((pawnId) => aimMove(state, pawnId)), (pawnId) => {
-        this.aiming = null
-        session.dispatch({ type: 'power', power, pawnId })
-      })
+    // Carte armée : le plateau ne montre plus les coups mais les chevaux que la
+    // carte peut viser, et un appui **désigne** le cheval — il ne joue rien. La
+    // carte part au lancer du dé, jamais avant.
+    if (this.armed) {
+      const aimed = this.armed.pawnId
+      this.board!.render(
+        state,
+        aimTargets.map((pawnId) => aimMove(state, pawnId)),
+        (pawnId) => {
+          // Retoucher le cheval désigné le désigne à nouveau : sans effet, et
+          // c'est bien — le seul geste qui joue la carte est le dé.
+          this.armed = { power: this.armed!.power, pawnId }
+          this.update()
+        },
+        aimed,
+      )
     } else {
       this.board!.render(state, moves, (pawnId) => session.dispatch({ type: 'move', pawnId }))
     }
     this.renderHand(mounts.hand)
     this.renderPlayers(mounts.players, state)
     this.renderTurn(mounts.turn, state, moves.length)
-    // Un coup évident ne doit pas se jouer tout seul pendant qu'on désigne la
-    // cible d'une carte : le doigt est sur le plateau, pas sur le dé.
-    if (!this.aiming) this.scheduleObvious(state, moves)
+    this.paintValidator(state, moves.length)
+    // Un coup évident ne doit pas se jouer tout seul pendant qu'on choisit une
+    // carte : le doigt est sur le plateau, pas sur le dé.
+    this.scheduleObvious(state, moves)
 
     this.announce(state)
 
@@ -1516,40 +1548,92 @@ export class App {
    *
    * Le plateau montre où sont les chevaux, pas pourquoi ils y sont : un cheval
    * qui recule de trois cases sans explication ressemble à un bug. Les
-   * événements de pouvoir sont donc annoncés au passage, une fois, à tout le
-   * monde — c'est la seule chose que le joueur ne peut pas déduire de l'écran.
+   * événements de pouvoir sont donc annoncés au passage, une fois.
+   *
+   * **À qui, en revanche, dépend de la carte.** Un malus s'abat sur le plateau,
+   * tout le monde le voit et tout le monde doit savoir lequel. Un bonus rejoint
+   * une main : l'annoncer à la table revenait à retourner les cartes de son
+   * voisin — un bouclier qu'on sait posé n'en est plus un. Les autres apprennent
+   * donc qu'une carte a été ramassée, pas laquelle.
    */
   private announce(state: GameState): void {
     const fresh = state.log.filter((entry) => entry.seq > this.announced)
     if (state.log.length > 0) this.announced = state.log[state.log.length - 1]!.seq
+    const session = this.session
+    const mine = (seat: Seat) => session?.controls(seat) === true
 
-    // Un seul bandeau : deux toasts qui se chassent ne se lisent ni l'un ni
-    // l'autre. Le dernier événement est celui qui explique l'écran actuel.
+    // Une seule annonce : deux nouvelles qui se chassent ne se lisent ni l'une
+    // ni l'autre. Le dernier événement est celui qui explique l'écran actuel.
     for (const entry of [...fresh].reverse()) {
       const { event } = entry
       if (event.kind === 'power') {
-        return this.notify('toast.power', {
-          name: entry.actor,
-          power: t(`power.${event.power}` as Key),
-          desc: t(`power.${event.power}.desc` as Key),
-        })
+        const spec = POWERS[event.power]
+        // Sa propre carte, ou un malus qui s'abat à la vue de tous : on la nomme.
+        if (!spec.held || mine(entry.seat)) return this.powerNote(event.power, entry.actor)
+        // Celle d'un autre : on dit qu'elle existe, pas ce qu'elle est.
+        return this.note('neutral', entry.actor, t('toast.drew.title'))
       }
+      // La carte perdue est une mauvaise nouvelle personnelle : elle n'a pas à
+      // s'afficher chez les autres, qui la lisaient comme la leur.
       if (event.kind === 'handFull') {
-        return this.notify('toast.handFull', { power: t(`power.${event.power}` as Key) })
+        if (!mine(entry.seat)) continue
+        return this.note('malus', entry.actor, t(`power.${event.power}` as Key), t('hand.full'))
       }
       if (event.kind === 'shielded') {
-        return this.notify('toast.shielded', { pawn: event.pawn, owner: event.owner })
+        return this.note(
+          'bonus',
+          event.owner,
+          t('power.bouclier'),
+          t('toast.shielded', { pawn: event.pawn, owner: event.owner }),
+        )
       }
-      if (event.kind === 'skipped') return this.notify('toast.skipped', { name: entry.actor })
+      if (event.kind === 'skipped') {
+        return this.note('malus', entry.actor, t('power.saute'), t('power.saute.desc'))
+      }
       // Une carte jouée par soi n'a pas besoin d'être annoncée : on vient de la
       // taper. Celles des autres, si — c'est la seule trace qu'il en reste.
-      if (event.kind === 'played' && entry.seat !== this.session?.game?.turn) {
-        return this.notify('toast.played', {
-          name: entry.actor,
-          power: t(`power.${event.power}` as Key),
-        })
+      //
+      // La comparaison se fait avec SON siège, et non avec le siège courant :
+      // jouer une carte ne rend pas la main, si bien que `entry.seat` valait
+      // toujours `state.turn` et que l'annonce ne sortait jamais.
+      if (event.kind === 'played' && !mine(entry.seat)) {
+        return this.powerNote(event.power, entry.actor)
       }
     }
+  }
+
+  /** Une carte nommée : son mot, sa couleur de bonus ou de malus, son effet. */
+  private powerNote(power: PowerId, actor: string): void {
+    const spec = POWERS[power]
+    this.note(spec.kind, actor, t(`power.${power}` as Key), t(`power.${power}.desc` as Key))
+  }
+
+  /**
+   * Une nouvelle de pouvoir, montrée sans déranger la partie.
+   *
+   * Discrète, visible, et **par-dessus** le reste : c'est une nouvelle, pas un
+   * élément d'interface. Elle flotte en position fixe en haut de l'écran, ne
+   * prend aucune place dans la colonne — le plateau ne se redimensionne pas
+   * derrière elle, l'écran ne bouge plus — et ne capte aucun appui : le dé reste
+   * jouable pendant qu'on la lit. L'ancien bandeau, lui, se posait sur le dé.
+   */
+  private note(kind: PowerKind | 'neutral', who: string, title: string, desc?: string): void {
+    document.querySelector('.cardnote')?.remove()
+    const el = h(
+      'div',
+      { class: `cardnote cardnote--${kind}`, attrs: { role: 'status', 'aria-live': 'polite' } },
+      h('span', { class: `power-mark power-mark--${kind}` }),
+      h(
+        'div',
+        { class: 'cardnote__text' },
+        who ? h('span', { class: 'cardnote__who', text: who }) : null,
+        h('strong', { class: 'cardnote__name', text: title }),
+        desc ? h('span', { class: 'cardnote__desc', text: desc }) : null,
+      ),
+    )
+    document.body.append(el)
+    if (this.cardTimer) clearTimeout(this.cardTimer)
+    this.cardTimer = setTimeout(() => el.remove(), CARD_NOTE_MS)
   }
 
   /**
@@ -1617,6 +1701,47 @@ export class App {
 
       const bubble = this.chatBubbles.get(seat)
 
+      // Ce qui pèse encore sur ce siège, et qui ne se lit pas sur le plateau.
+      //
+      // Un pouvoir peut durer : un bouclier tient tant que personne ne vient
+      // manger le cheval, un tour sauté attend son tour. Le bouclier se voit sur
+      // le cheval ; le reste n'avait aucune trace, et un joueur dont le tour
+      // sautait l'apprenait au moment où il sautait. Des cartes en main, on ne
+      // dit que le nombre — leur nom appartient à leur propriétaire.
+      //
+      // Pas de pastille de cartes sur sa propre carte : la rangée sous le dé
+      // porte déjà les cartes ET leur compte. Une pastille de plus ne dirait
+      // rien et rognerait la ligne d'à côté.
+      const inHand =
+        state.variant.powers === true && !session.controls(seat) ? session.handSize(seat) : 0
+      const owed = session.skipsOwed(seat)
+      const marks =
+        inHand > 0 || owed > 0
+          ? h(
+              'div',
+              { class: 'pcard__marks' },
+              inHand > 0
+                ? h('span', {
+                    class: 'pcard__mark',
+                    text: String(inHand),
+                    attrs: {
+                      title: t('play.cards', { n: inHand }),
+                      'aria-label': t('play.cards', { n: inHand }),
+                    },
+                  })
+                : null,
+              owed > 0
+                ? h('span', {
+                    class: 'pcard__mark pcard__mark--skip',
+                    // Un tour barré, et son compte seulement s'il y en a plusieurs :
+                    // un chiffre nu se lirait comme le compte de cartes d'à côté.
+                    text: owed > 1 ? `—${owed}` : '—',
+                    attrs: { title: t('play.willSkip', { n: owed }), 'aria-label': t('play.willSkip', { n: owed }) },
+                  })
+                : null,
+            )
+          : null
+
       return h(
         'div',
         {
@@ -1630,6 +1755,7 @@ export class App {
           h('span', { class: 'who', text: p.name }),
           h('span', { class: 'meta', text: line.join(' · ') }),
         ),
+        marks,
         // Le bot n'a pris le siège que faute de mieux : un appui le rend.
         held && session.mine(seat)
           ? h('button', {
@@ -1664,49 +1790,128 @@ export class App {
   }
 
   /**
-   * Les cartes gardées par le joueur qui a la main.
+   * Le dé — et, quand une carte est armée, le bouton qui la valide.
+   *
+   * Un seul geste pour jouer une carte et lancer : c'est ce qui rend le choix
+   * lisible. On arme, on désigne, on lance. Le moteur reçoit les deux ensemble
+   * (voir `Action` dans `types.ts`) : deux intentions envoyées à la suite
+   * pourraient s'appliquer dans l'ordre inverse chez l'hôte.
+   */
+  private throwDie(boost?: 'low' | 'high'): void {
+    const session = this.session
+    const game = session?.game
+    if (!session || !game || !session.myTurn) return
+
+    const armed = this.armed
+    if (armed) {
+      // Une carte qui demande un cheval et n'en a pas encore : le lancer ne
+      // part pas, on rappelle simplement ce qui manque.
+      if (POWERS[armed.power].target === 'cheval' && armed.pawnId === undefined) {
+        return this.notify('hand.aim.needed')
+      }
+      this.armed = null
+      if (this.autoTimer) clearTimeout(this.autoTimer)
+      this.autoTimer = null
+      return session.dispatch({ type: 'roll', boost, power: armed.power, pawnId: armed.pawnId })
+    }
+
+    if (game.phase === 'rolling') return session.dispatch({ type: 'roll', boost })
+
+    // Rien à jouer : le dé passe la main. C'est le pendant du garde-fou
+    // ci-dessus — une carte en main suspend le tour automatique, et sans ce
+    // geste-là le joueur qui n'a aucun coup resterait bloqué jusqu'à ce que sa
+    // pendule s'épuise. Le dé est le bouton « j'agis » : il lance, il valide une
+    // carte, et il passe quand il n'y a rien d'autre à faire.
+    if (session.moves().length === 0) session.dispatch({ type: 'pass' })
+  }
+
+  /**
+   * Le tour peut-il se dérouler tout seul ?
+   *
+   * Un coup sans choix n'est pas un choix. Mais **une carte en main est un
+   * choix** : le seul coup possible partait six cents millisecondes après le
+   * lancer, et le rejeu qu'on gardait justement pour un dé mort s'en allait avec
+   * le tour. Tant qu'il reste une carte jouable — ou une carte déjà armée —
+   * l'automatisme se tait et attend le joueur.
+   */
+  private canAutoPlay(state: GameState, moveCount: number): boolean {
+    const session = this.session
+    if (!session?.myTurn || state.phase !== 'moving' || moveCount > 1) return false
+    return this.armed === null && session.hand().playable.length === 0
+  }
+
+  /**
+   * Le dé dit ce qu'il va faire : lancer, valider la carte armée, ou passer.
+   *
+   * Sans ce signal, la carte choisie attend un geste que rien ne désigne — et le
+   * joueur cherche un bouton « jouer » qui n'existe pas.
+   */
+  private paintValidator(state: GameState, moveCount: number): void {
+    const mounts = this.mounts
+    if (!mounts) return
+    const ready = this.armedReady()
+    mounts.diceRow.classList.toggle('validating', ready)
+    // Le dé fait trois choses selon l'instant : il valide une carte armée, il
+    // lance, ou il passe la main. Ce qu'il fait doit se dire, au moins pour qui
+    // écoute l'écran.
+    const label = ready
+      ? t('hand.validate', { power: t(`power.${this.armed!.power}` as Key) })
+      : state.phase === 'moving' && moveCount === 0
+        ? t('play.pass')
+        : t('play.roll')
+    mounts.dieBtn.setAttribute('aria-label', label)
+  }
+
+  /**
+   * Ses propres cartes — jamais celles des autres.
    *
    * Une carte qui ne mène à rien maintenant reste visible mais éteinte : la
-   * retirer ferait croire qu'on l'a perdue. Toucher une carte qui vise un
-   * cheval n'agit pas — elle entre en visée, et c'est le plateau qui reçoit le
-   * coup suivant. Un second appui annule.
+   * retirer ferait croire qu'on l'a perdue. Toucher une carte ne la joue pas :
+   * elle s'arme, on désigne son cheval sur le plateau s'il en faut un, et c'est
+   * le dé qui la lâche. Un second appui la range.
    */
   private renderHand(host: HTMLElement): void {
     const session = this.session!
     const { cards, playable } = session.hand()
 
     host.classList.toggle('empty', cards.length === 0)
-    host.classList.toggle('aiming', this.aiming !== null)
+    host.classList.toggle('aiming', this.armed !== null)
     if (cards.length === 0) {
       fill(host)
       return
     }
 
+    const armed = this.armed
+    const needsPawn = armed !== null && POWERS[armed.power].target === 'cheval'
+    const hint = !armed
+      ? t('hand.count', { n: cards.length, max: HAND_LIMIT })
+      : needsPawn && armed.pawnId === undefined
+        ? t('hand.aim')
+        : t('hand.roll')
+
     fill(
       host,
       ...cards.map((power) => {
-        const spec = POWERS[power]
         const usable = playable.includes(power)
-        const aimed = this.aiming === power
+        const chosen = armed?.power === power
         return h(
           'button',
           {
-            class: `hand__card${usable ? ' on' : ''}${aimed ? ' aimed' : ''}`,
+            class: `hand__card${usable ? ' on' : ''}${chosen ? ' aimed' : ''}`,
             disabled: !usable,
             attrs: {
-              'aria-pressed': String(aimed),
+              'aria-pressed': String(chosen),
               'aria-label': `${t(`power.${power}` as Key)} — ${t(`power.${power}.desc` as Key)}`,
             },
             on: {
               click: () => {
-                if (aimed) {
-                  this.aiming = null
-                  return this.update()
-                }
-                // Une carte sans cible part immédiatement ; les autres passent
-                // la main au plateau.
-                if (spec.target === 'aucune') return session.dispatch({ type: 'power', power })
-                this.aiming = power
+                // Ranger la carte armée, ou en armer une autre. Dans les deux
+                // cas rien n'est joué : c'est le dé qui joue.
+                this.armed = chosen ? null : { power }
+                // Un coup évident déjà programmé ne doit pas passer devant la
+                // carte qu'on vient de choisir.
+                if (this.autoTimer) clearTimeout(this.autoTimer)
+                this.autoTimer = null
                 this.update()
               },
             },
@@ -1716,9 +1921,7 @@ export class App {
           t(`power.${power}` as Key),
         )
       }),
-      this.aiming
-        ? h('span', { class: 'hand__hint', text: t('hand.aim') })
-        : h('span', { class: 'hand__hint', text: t('hand.count', { n: cards.length, max: HAND_LIMIT }) }),
+      h('span', { class: 'hand__hint', text: hint }),
     )
   }
 
@@ -1746,7 +1949,10 @@ export class App {
       detail = mercy >= 1 ? t('play.mercy.sure') : mercy > 0 ? t('play.mercy') : t('play.touchDie')
     } else if (mine && moveCount === 0) {
       title = t('play.nothing')
-      detail = t('play.nothing.hint')
+      // « on passe la main » n'est vrai que si le tour se déroule tout seul. Dès
+      // qu'une carte attend en main, c'est au joueur de trancher — et on lui dit
+      // par quel geste.
+      detail = this.canAutoPlay(state, moveCount) ? t('play.nothing.hint') : t('play.nothing.pass')
     } else if (mine && moveCount === 1) {
       title = t('play.youRolled', { dice: state.dice ?? '' })
       detail = t('play.pickOne')
@@ -1778,11 +1984,28 @@ export class App {
       h('span', { class: 'detail', text: detail ? `· ${detail}` : '' }),
     )
 
-    const canRoll = mine && state.phase === 'rolling' && !finished
+    // Le dé est le bouton « j'agis », et il l'est dans les trois cas : il lance,
+    // il valide une carte armée — même quand un dé est déjà sur la table, car
+    // c'est là qu'on joue un rejeu ou un galop de rattrapage — et il passe la
+    // main quand il n'y a rien à jouer.
+    //
+    // `!this.tumbling` : tant qu'il roule, il n'accepte rien. Un appui pendant
+    // l'animation passerait le tour ou lâcherait une carte avant même qu'on ait
+    // lu le chiffre.
+    const acting = mine && !finished && !this.tumbling
+    const canPass = acting && state.phase === 'moving' && moveCount === 0
+    const canRoll = acting && (state.phase === 'rolling' || this.armedReady() || canPass)
     const die = this.mounts!.dieBtn
     die.disabled = !canRoll
     die.classList.toggle('ready', canRoll)
     this.startClock()
+  }
+
+  /** Une carte est armée et ne lui manque plus rien : le dé peut la lâcher. */
+  private armedReady(): boolean {
+    const armed = this.armed
+    if (!armed) return false
+    return POWERS[armed.power].target !== 'cheval' || armed.pawnId !== undefined
   }
 
   // ─────────────────────────── le temps de réflexion ───────────────────────────
@@ -1836,11 +2059,15 @@ export class App {
    * Un coup sans choix n'est pas un choix : quand il n'y a rien à jouer, ou un
    * seul coup possible, le tour se déroule tout seul après un temps de lecture.
    * Seul l'appareil qui contrôle le siège agit — les autres regardent.
+   *
+   * **Une carte en main est un choix**, et il suffit à annuler l'automatisme :
+   * le seul coup possible était joué six cents millisecondes après le lancer, et
+   * le rejeu qu'on gardait pour un mauvais dé partait avec le tour. Une carte
+   * armée aussi : le doigt est sur le plateau, pas sur le dé.
    */
   private scheduleObvious(state: GameState, moves: Move[]): void {
-    const session = this.session!
     if (this.autoAt === state.seq) return
-    if (!session.myTurn || state.phase !== 'moving' || moves.length > 1) return
+    if (!this.canAutoPlay(state, moves.length)) return
 
     this.autoAt = state.seq
     if (this.autoTimer) clearTimeout(this.autoTimer)
@@ -2298,6 +2525,7 @@ export class App {
   // ─────────────────────────── divers ───────────────────────────
 
   private toastTimer: ReturnType<typeof setTimeout> | null = null
+  private cardTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
    * Un message flottant écrit dans la langue courante.
