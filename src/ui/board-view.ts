@@ -230,11 +230,35 @@ export class BoardView {
     return result
   }
 
-  render(state: GameState, moves: Move[], onPick: (pawnId: string) => void): void {
+  /**
+   * `chosen` : le cheval déjà désigné par une carte armée.
+   *
+   * Une carte se joue en deux temps — on désigne un cheval, puis on lance le dé
+   * — et entre les deux il faut voir lequel on a désigné. Sans cette marque, le
+   * joueur relit une rangée de chevaux tous cerclés pareil et ne sait plus sur
+   * lequel il a appuyé.
+   */
+  render(
+    state: GameState,
+    moves: Move[],
+    onPick: (pawnId: string) => void,
+    chosen?: string,
+  ): void {
     // Un état qui arrive pendant une animation attend son tour, sinon le pion
     // « saute » à sa position finale au milieu du mouvement.
+    //
+    // Mais il ne suffit pas d'attendre : le rendu différé laissait derrière lui
+    // les gestes du rendu PRÉCÉDENT. Un cheval encore cerclé gardait le « joue
+    // ce coup » d'avant, si bien qu'armer une carte puis toucher un cheval
+    // pendant les quelques centaines de millisecondes du déplacement jouait le
+    // coup au lieu de désigner la cible. Les gestes partent donc tout de suite ;
+    // le dessin, lui, attend la fin du mouvement.
     if (this.animating) {
-      this.pending = () => this.render(state, moves, onPick)
+      for (const el of this.pawns.values()) {
+        el.onclick = null
+        el.onkeydown = null
+      }
+      this.pending = () => this.render(state, moves, onPick, chosen)
       return
     }
 
@@ -260,6 +284,7 @@ export class BoardView {
       const move = playable.get(p.id)
 
       el.classList.toggle('playable', move !== undefined)
+      el.classList.toggle('chosen', chosen === p.id)
       el.classList.toggle('shielded', p.shield === true)
       el.onclick = move ? () => onPick(p.id) : null
 

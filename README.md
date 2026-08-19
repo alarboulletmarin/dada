@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 333 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
+npm test         # 341 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
 npm run build    # vérification de types puis build de production
 ```
 
@@ -112,14 +112,15 @@ n'a pas à être corrigée coup par coup.
 **Les bonus se gardent, les malus se subissent.** C'est la règle entière, et
 elle se retient. Un malus s'applique à l'instant ; un bonus rejoint la main, et
 c'est le joueur qui choisit son moment. Un bouclier posé juste avant que
-l'adversaire n'arrive à portée, c'est un coup joué, pas un lot de tombola.
+l'adversaire n'arrive à portée, c'est un coup joué, pas un lot de tombola. Aucun
+bonus ne part tout seul : les quatre se gardent, le dé pipé compris.
 
 | Carte | | Garde | Effet |
 |---|---|---|---|
 | Bouclier | ×3 | main | Le cheval désigné encaisse la prochaine capture sans bouger. Le bouclier se brise à l'impact. |
 | Galop | ×3 | main | Le cheval désigné avance de 3 cases. Jamais au-delà de l'arrivée : gagner par accident serait pire que rien. |
 | Rejeu | ×2 | main | On relance le dé et on rejoue. La chaîne de 6 continue de compter. |
-| Dé pipé | ×2 | — | Un bonus de dé de plus dans le budget commun, qui est déjà l'endroit où l'on garde. |
+| Dé pipé | ×2 | main | Un bonus de dé de plus dans la réserve de la table. Armé, il s'encaisse dans le geste suivant : petit nombre ou grand nombre. |
 | Faux pas | ×3 | — | Le cheval recule de 3 cases, sans jamais repasser par l'écurie. |
 | Tour sauté | ×2 | — | Le prochain tour saute. Un seul. |
 | Retour à l'écurie | ×1 | — | Le cheval rentre. La carte la plus dure, et la seule de son espèce. |
@@ -128,13 +129,33 @@ La main tient **trois cartes**, pas davantage. Sans plafond elle devient un
 magasin : on ramasse sans jamais dépenser, et la fin de partie se joue en vidant
 un stock que personne n'a vu venir. À trois, ramasser une quatrième carte oblige
 à en jouer une — c'est là qu'est la décision. Une carte ramassée main pleine est
-perdue, et le bandeau le dit.
+perdue, et l'annonce le dit — à son propriétaire seul.
 
-Jouer une carte ne consomme pas le tour : on peut poser un bouclier *puis*
-lancer le dé, ou relancer un dé décevant *puis* jouer son coup. C'est tout
-l'intérêt d'une carte qu'on garde — elle sert à choisir l'instant, pas à
-remplacer un tour. Les cartes qui visent un cheval passent la main au plateau :
-on touche la carte, les chevaux éligibles se cerclent, on en touche un.
+**Une main est secrète.** L'état de la partie circule d'un téléphone à l'autre,
+cartes comprises : un jeu pair-à-pair sans serveur n'a pas d'endroit où les
+cacher. Mais l'écran, lui, ne montre que la sienne. De celle des autres il ne dit
+que le nombre, sur la pastille de leur carte de joueur. Un bouclier qu'on sait
+posé n'en est plus un, et une main qu'on lit fait des tours prévisibles.
+
+**Le dé valide la carte.** Toucher une carte l'arme : elle se pose devant son
+joueur sans partir. Si elle demande un cheval, on le désigne sur le plateau — il
+se cercle de vert. Puis on lance le dé, et c'est le lancer qui la joue. Un seul
+geste, un seul ordre possible : la carte d'abord, le dé ensuite. Un bouclier posé
+après le lancer arriverait trop tard pour la relance qu'il couvre, et un dé pipé
+rangé après coup ne pencherait plus rien — les deux voyagent donc dans une seule
+action du moteur (`{ type: 'roll', power, pawnId }`), et non dans deux intentions
+qui pourraient arriver en désordre chez l'hôte.
+
+Jouer une carte ne consomme pas le tour : le bouclier posé avant le lancer
+protège dès ce lancer, et le rejeu se joue sur un dé déjà sur la table — on
+touche la carte, puis on retouche le dé. Un second appui sur la carte la range.
+Tant que le dé n'a pas bougé, rien n'est joué.
+
+**Un pouvoir peut durer.** Un bouclier tient sur son cheval aussi longtemps que
+personne ne vient le manger — une partie entière, s'il le faut ; un tour sauté
+attend son tour. Ce qui dure se voit : l'anneau doublé sur le cheval, et sur la
+carte du joueur une pastille par effet en attente. Un effet qui dure sans se voir
+se lit comme un bug le jour où il se manifeste.
 
 Un pouvoir qui déplace ne redéclenche pas la case où il amène le cheval : sans
 cette règle, deux cases voisines pourraient se renvoyer la balle sans fin.

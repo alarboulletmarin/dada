@@ -289,7 +289,7 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
 
   switch (action.type) {
     case 'roll':
-      return applyRoll(state, action.boost)
+      return applyRoll(state, action)
     case 'move':
       return applyMove(state, action.pawnId)
     case 'pass':
@@ -299,34 +299,67 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
   }
 }
 
-function applyRoll(state: GameState, boost?: 'low' | 'high'): ApplyResult {
-  if (state.phase !== 'rolling') return { state, error: 'alreadyRolled' }
+/**
+ * Lancer le dé — le geste qui valide une carte armée.
+ *
+ * Une carte choisie n'est pas une carte jouée : elle attend devant son joueur,
+ * avec son cheval désigné s'il en faut un, et c'est le lancer qui la déclenche.
+ * L'ordre compte donc, et il est ici : la carte d'abord, le dé ensuite. Un
+ * bouclier posé après le lancer arriverait trop tard pour la relance qu'il
+ * couvre, et un dé pipé rangé après coup ne pencherait plus rien.
+ *
+ * Trois cartes ne rendent pas de dé, et il ne faut pas leur en donner un :
+ *   - `rejeu` **est** le lancer — il a déjà relancé, en relancer un second
+ *     effacerait le résultat que le joueur vient de demander ;
+ *   - une carte jouée alors que le dé est déjà sur la table (un galop pour
+ *     rattraper un mauvais chiffre) ne remet pas le dé en jeu ;
+ *   - un galop qui rentre le dernier cheval clôt le tour, et le siège suivant
+ *     n'a pas à hériter d'un lancer qu'il n'a pas demandé.
+ */
+function applyRoll(
+  state: GameState,
+  opts: { boost?: 'low' | 'high'; power?: PowerId; pawnId?: string },
+): ApplyResult {
+  const { boost } = opts
+  let base = state
+
+  if (opts.power !== undefined) {
+    const played = applyHeldPower(state, opts.power, opts.pawnId)
+    // Une carte refusée annule le geste entier : le dé ne part pas sans elle,
+    // sinon le joueur perdrait son lancer à cause d'un choix invalide.
+    if (played.error) return played
+    base = played.state
+    if (opts.power === 'rejeu') return { state: base }
+    if (base.phase !== 'rolling' || base.turn !== state.turn) return { state: base }
+  } else if (state.phase !== 'rolling') {
+    return { state, error: 'alreadyRolled' }
+  }
 
   // Un boost sans bonus restant (UI périmée par la latence réseau) n'est pas
   // une faute du joueur : le lancer se fait simplement sans biais.
-  const useBoost = boost !== undefined && state.diceBoosts > 0
-  const [rng, dice] = rollDie(state.rng, {
+  const useBoost = boost !== undefined && base.diceBoosts > 0
+  const [rng, dice] = rollDie(base.rng, {
     bias: useBoost ? boost : undefined,
-    exitFaces: state.variant.exitRolls,
-    exitChance: mercyOf(state, state.turn),
+    exitFaces: base.variant.exitRolls,
+    exitChance: mercyOf(base, base.turn),
   })
-  const consecutiveSixes = dice === 6 ? state.consecutiveSixes + 1 : 0
-  const max = state.variant.maxConsecutiveSixes
+  const consecutiveSixes = dice === 6 ? base.consecutiveSixes + 1 : 0
+  const max = base.variant.maxConsecutiveSixes
   const voided = max > 0 && dice === 6 && consecutiveSixes >= max
 
   let next: GameState = {
-    ...state,
+    ...base,
     rng,
     dice,
     consecutiveSixes,
     voided,
     phase: 'moving',
-    diceBoosts: useBoost ? state.diceBoosts - 1 : state.diceBoosts,
-    seq: state.seq + 1,
+    diceBoosts: useBoost ? base.diceBoosts - 1 : base.diceBoosts,
+    seq: base.seq + 1,
   }
-  next = countUp(next, state.turn, { rolls: 1, pips: dice, sixes: dice === 6 ? 1 : 0 })
-  next = addLog(next, state.turn, { kind: 'roll', dice })
-  if (voided) next = addLog(next, state.turn, { kind: 'voided', sixes: max })
+  next = countUp(next, base.turn, { rolls: 1, pips: dice, sixes: dice === 6 ? 1 : 0 })
+  next = addLog(next, base.turn, { kind: 'roll', dice })
+  if (voided) next = addLog(next, base.turn, { kind: 'voided', sixes: max })
 
   return { state: next }
 }
@@ -382,7 +415,7 @@ function applyMove(state: GameState, id: string): ApplyResult {
   }
 
   const power = resolvePower(next, move.pawnId)
-  next = power.state
+  next = settleShields(power.state)
 
   // Le pouvoir a pu déplacer le cheval après coup : c'est sa position finale,
   // et non celle du coup joué, qui dit s'il vient de rentrer.
@@ -457,7 +490,13 @@ function applyHeldPower(state: GameState, power: PowerId, target?: string): Appl
   })
 
   if (power === 'rejeu') return { state: rerollFor(next) }
-  return { state: applyPower(next, target!, power) }
+
+  const played = settleShields(applyPower(next, target, power))
+  // Un galop peut rentrer le dernier cheval. Sans ce passage par `endTurn`, le
+  // siège gagnait sans figurer au classement : la partie continuait autour d'un
+  // joueur qui n'avait plus rien à jouer, et qui passait son tour jusqu'à la fin.
+  if (hasWon(played, played.turn)) return { state: endTurn(played, null) }
+  return { state: played }
 }
 
 /**
@@ -540,9 +579,16 @@ function draw(state: GameState): { state: GameState; power: PowerId } {
   return { state: { ...state, rng, deck: rest }, power }
 }
 
-function applyPower(state: GameState, pawnId: string, power: PowerId): GameState {
+/**
+ * L'effet d'une carte, une fois qu'on a décidé de la jouer.
+ *
+ * `pawnId` peut être absent : les cartes qui ne désignent personne (`rejeu`,
+ * `des`, `saute`) n'en ont pas besoin. Celles qui en ont besoin sont passées par
+ * `canPlayPower`, qui refuse un cheval introuvable.
+ */
+function applyPower(state: GameState, pawnId: string | undefined, power: PowerId): GameState {
   const geometry = geometryFor(state.variant)
-  const pawn = state.pawns.find((p) => p.id === pawnId)!
+  const pawn = state.pawns.find((p) => p.id === pawnId)
   const setPawn = (patch: Partial<Pawn>): GameState => ({
     ...state,
     pawns: state.pawns.map((p) => (p.id === pawnId ? { ...p, ...patch } : p)),
@@ -572,6 +618,7 @@ function applyPower(state: GameState, pawnId: string, power: PowerId): GameState
       // Le galop ne force jamais l'arrivée : sur une variante au compte exact,
       // un cheval qui dépasserait reste où il est. Gagner par accident serait
       // plus frustrant qu'un pouvoir perdu.
+      if (!pawn) return state
       const target = pawn.steps + POWERS.galop.steps
       if (target > geometry.lastStep) return state
       return setPawn({ steps: target })
@@ -580,9 +627,28 @@ function applyPower(state: GameState, pawnId: string, power: PowerId): GameState
     case 'fauxpas': {
       // Le recul s'arrête à la case de départ : un cheval ne retourne pas à
       // l'écurie par un faux pas, c'est le rôle du malus qui porte ce nom.
+      if (!pawn) return state
       const target = Math.max(0, pawn.steps - POWERS.fauxpas.steps)
       return setPawn({ steps: target })
     }
+  }
+}
+
+/**
+ * Un bouclier ne survit pas à l'arrivée.
+ *
+ * Il ne protège plus rien — l'escalier et l'arrivée sont hors d'atteinte — et
+ * s'il restait posé, le cheval rentré porterait sa marque jusqu'à la fin de la
+ * partie, comme si la table lui devait encore une capture.
+ */
+function settleShields(state: GameState): GameState {
+  const geometry = geometryFor(state.variant)
+  if (!state.pawns.some((p) => p.shield && hasFinished(geometry, p.steps))) return state
+  return {
+    ...state,
+    pawns: state.pawns.map((p) =>
+      p.shield && hasFinished(geometry, p.steps) ? { ...p, shield: false } : p,
+    ),
   }
 }
 
@@ -627,7 +693,12 @@ function endTurn(state: GameState, move: Move | null, powerReplay = false): Game
   let next = countPenned(state, state.turn)
 
   // Un joueur qui vient de rentrer son dernier cheval prend place au classement.
-  if (move?.finishes && hasWon(next, next.turn) && !next.ranking.includes(next.turn)) {
+  //
+  // La condition ne regarde plus le coup joué : un cheval peut aussi rentrer par
+  // une carte, et le galop qui rentrait le dernier laissait alors son joueur
+  // hors du classement — vainqueur sans victoire, à passer son tour jusqu'à la
+  // fin de la partie. C'est l'état du plateau qui décide, pas le geste.
+  if (hasWon(next, next.turn) && !next.ranking.includes(next.turn)) {
     next = { ...next, ranking: [...next.ranking, next.turn] }
     // Le nom du joueur est déjà porté par `actor` : l'événement ne le répète pas.
     const place = next.ranking.length

@@ -180,9 +180,16 @@ describe('ramasser une case pouvoir', () => {
     expect(pawnOf(next).shield).toBe(false)
   })
 
-  it('dés — ajoute un bonus de dé au budget commun', () => {
-    const before = about('des', { at: landing })
-    expect(play(before).diceBoosts).toBe(before.diceBoosts + 1)
+  // Le dé pipé rejoignait la réserve à la seconde où on le ramassait : un bonus
+  // qui se joue tout seul, c'est-à-dire un bonus dont on ne décide rien.
+  it('dés — se garde en main, et ne garnit la réserve qu’une fois joué', () => {
+    const drawn = play(about('des', { at: landing }))
+    expect(handOf(drawn, 0)).toEqual(['des'])
+    expect(drawn.diceBoosts).toBe(about('des').diceBoosts)
+
+    const spent = apply(myTurn(drawn), { type: 'power', power: 'des' }, 0).state
+    expect(spent.diceBoosts).toBe(drawn.diceBoosts + 1)
+    expect(handOf(spent, 0)).toEqual([])
   })
 
   it('rejeu — se garde, puis relance le dé sans rendre la main', () => {
@@ -241,6 +248,142 @@ describe('ramasser une case pouvoir', () => {
     const next = play(about('galop', { at: landing }))
     const entry = next.log.find((e) => e.event.kind === 'power')!
     expect(entry.event).toEqual({ kind: 'power', power: 'galop', pawn: 1 })
+  })
+})
+
+
+/**
+ * Le lancer du dé comme validateur d'une carte.
+ *
+ * Choisir une carte ne la joue pas : elle attend son cheval, puis elle attend le
+ * dé. Les deux voyagent dans une seule action — deux intentions envoyées à la
+ * suite pourraient s'appliquer dans l'ordre inverse chez l'hôte, et la carte
+ * jouerait après le dé qu'elle devait pipé.
+ */
+describe('le lancer valide la carte armée', () => {
+  const landing = { [pawnId(0, 0)]: firstPowerStep - 1 }
+
+  it('joue la carte AVANT de lancer, en une seule action', () => {
+    const drawn = play(about('bouclier', { at: landing }))
+    const before: GameState = { ...myTurn(drawn), phase: 'rolling', dice: null }
+
+    const after = apply(before, { type: 'roll', power: 'bouclier', pawnId: pawnId(0, 0) }, 0).state
+    expect(pawnOf(after).shield).toBe(true)
+    expect(handOf(after, 0)).toEqual([])
+    // Le dé est bien parti : la carte ne remplace pas le tour, elle l'ouvre.
+    expect(after.phase).toBe('moving')
+    expect(after.dice).not.toBeNull()
+
+    // L'ordre compte : le bouclier est posé, puis le dé lancé.
+    const seqs = after.log.map((e) => e.event.kind)
+    expect(seqs.indexOf('played')).toBeLessThan(seqs.lastIndexOf('roll'))
+  })
+
+  it('refuse tout le geste quand la carte ne peut pas être jouée — le dé ne part pas', () => {
+    const drawn = play(about('galop', { at: landing }))
+    const before: GameState = { ...myTurn(drawn), phase: 'rolling', dice: null }
+
+    // Le cheval 1 est à l'écurie : le galop n'a rien à pousser.
+    const refused = apply(before, { type: 'roll', power: 'galop', pawnId: pawnId(0, 1) }, 0)
+    expect(refused.error).toBe('powerNotNow')
+    expect(refused.state.dice).toBeNull()
+    expect(handOf(refused.state, 0)).toEqual(['galop'])
+  })
+
+  it('rejeu — relance une seule fois : le lancer EST la carte', () => {
+    const drawn = play(about('rejeu', { at: landing }))
+    const before = myTurn(drawn, 2)
+    const after = apply(before, { type: 'roll', power: 'rejeu' }, 0).state
+
+    expect(handOf(after, 0)).toEqual([])
+    expect(statsOf(after, 0).rolls).toBe(statsOf(before, 0).rolls + 1)
+    expect(after.turn).toBe(0)
+    expect(after.phase).toBe('moving')
+  })
+
+  it('ne rend pas un second dé à une carte jouée après le lancer', () => {
+    const drawn = play(about('bouclier', { at: landing }))
+    const before = myTurn(drawn, 3)
+    const after = apply(before, { type: 'roll', power: 'bouclier', pawnId: pawnId(0, 0) }, 0).state
+
+    expect(pawnOf(after).shield).toBe(true)
+    expect(after.dice).toBe(3)
+    expect(statsOf(after, 0).rolls).toBe(statsOf(before, 0).rolls)
+  })
+
+  it('sans carte armée, reste le lancer d’avant', () => {
+    const fresh = createGame({ players: players([0, 1]), variant: withPowers(), seed: 7 })
+    const rolled = apply(fresh, { type: 'roll' }, 0).state
+    expect(rolled.phase).toBe('moving')
+    expect(apply(rolled, { type: 'roll' }, 0).error).toBe('alreadyRolled')
+  })
+})
+
+/**
+ * Les cartes qui durent.
+ *
+ * Un bouclier tient tant que personne ne vient manger le cheval — une partie
+ * entière, s'il le faut. Un galop, lui, peut rentrer le dernier cheval, et cette
+ * victoire-là doit compter comme les autres.
+ */
+describe('les effets qui durent', () => {
+  const landing = { [pawnId(0, 0)]: firstPowerStep - 1 }
+
+  it('le bouclier tient d’un tour à l’autre tant que rien ne le frappe', () => {
+    const drawn = play(about('bouclier', { at: landing }))
+    let state = apply(myTurn(drawn), { type: 'power', power: 'bouclier', pawnId: pawnId(0, 0) }, 0).state
+    expect(pawnOf(state).shield).toBe(true)
+
+    // Dix tours passent sans que personne n'attaque : le bouclier est toujours là.
+    for (let i = 0; i < 10; i++) {
+      state = apply({ ...state, turn: 0, phase: 'rolling', dice: null, voided: false }, { type: 'roll' }, 0).state
+      state = { ...state, turn: 1, phase: 'rolling', dice: null, voided: false }
+      state = apply(state, { type: 'roll' }, 1).state
+      expect(pawnOf(state).shield).toBe(true)
+    }
+  })
+
+  it('un galop qui rentre le dernier cheval fait gagner la partie', () => {
+    const base = about('galop', { at: landing })
+    const last = GEO.lastStep - POWERS.galop.steps
+    const state: GameState = {
+      ...base,
+      hands: [['galop'], [], [], []],
+      // Un seul cheval encore dehors, à trois cases de l'arrivée ; les autres
+      // sont déjà rentrés.
+      pawns: base.pawns.map((p) =>
+        p.owner !== 0 ? p : p.id === pawnId(0, 0) ? { ...p, steps: last } : { ...p, steps: GEO.lastStep },
+      ),
+      turn: 0,
+      phase: 'rolling',
+      dice: null,
+    }
+
+    const won = apply(state, { type: 'power', power: 'galop', pawnId: pawnId(0, 0) }, 0).state
+    expect(pawnOf(won).steps).toBe(GEO.lastStep)
+    expect(won.ranking[0]).toBe(0)
+    expect(won.log.some((e) => e.event.kind === 'win')).toBe(true)
+    // Deux joueurs seulement : la partie est finie, et le siège 0 ne rejoue pas.
+    expect(won.phase).toBe('finished')
+  })
+
+  it('un bouclier ne survit pas à l’arrivée : le cheval rentré n’en porte plus', () => {
+    const base = about('bouclier', { at: landing })
+    const state: GameState = {
+      ...base,
+      hands: [['galop'], [], [], []],
+      pawns: base.pawns.map((p) =>
+        p.id === pawnId(0, 0)
+          ? { ...p, steps: GEO.lastStep - POWERS.galop.steps, shield: true }
+          : p,
+      ),
+      turn: 0,
+      phase: 'rolling',
+      dice: null,
+    }
+    const home = apply(state, { type: 'power', power: 'galop', pawnId: pawnId(0, 0) }, 0).state
+    expect(pawnOf(home).steps).toBe(GEO.lastStep)
+    expect(pawnOf(home).shield).toBe(false)
   })
 })
 

@@ -258,9 +258,19 @@ const fr: RulesText = {
         {
           title: 'Les bonus se gardent, les malus se subissent',
           body: [
-            "Un malus s'applique immédiatement. Un bonus rejoint votre main, et c'est vous qui choisissez son moment.",
+            "Un malus s'applique immédiatement. Un bonus rejoint votre main, et c'est vous qui choisissez son moment — aucun bonus ne se joue tout seul.",
             "On garde trois cartes au plus. Une carte ramassée alors que la main est pleine est perdue — c'est ce qui pousse à dépenser plutôt qu'à thésauriser.",
-            "Jouer une carte ne consomme pas le tour : on peut poser un bouclier puis lancer le dé, ou relancer un dé décevant puis jouer son coup.",
+            "Votre main n'est qu'à vous : la table voit combien de cartes vous gardez, jamais lesquelles.",
+            "Un pouvoir peut durer : un bouclier tient sur son cheval aussi longtemps que personne ne vient le manger, une partie entière s'il le faut.",
+          ],
+        },
+        {
+          title: 'Le dé valide la carte',
+          body: [
+            "On touche la carte : elle s'arme devant soi, elle ne part pas. Si elle demande un cheval, on le désigne sur le plateau — il se cercle de vert.",
+            "Puis on lance le dé : c'est lui qui joue la carte. Un seul geste, et l'ordre est toujours le même — la carte d'abord, le dé ensuite.",
+            "Toucher la carte une seconde fois la range. Rien n'est joué tant que le dé n'a pas bougé.",
+            "Jouer une carte ne consomme pas le tour : le bouclier posé avant le lancer protège dès ce lancer, et le rejeu se joue sur un dé déjà sur la table — on le touche, puis on retouche le dé.",
           ],
         },
         {
@@ -269,7 +279,7 @@ const fr: RulesText = {
             "Bouclier — le cheval désigné encaisse la prochaine capture sans bouger, et le bouclier se brise. Il se pose sur un cheval en piste : à l'écurie, rien ne peut le manger.",
             "Galop — le cheval désigné avance de trois cases de plus. Il ne dépasse jamais l'arrivée : gagner par accident serait pire que rien.",
             "Rejeu — on relance le dé et on rejoue. Une chaîne de 6 continue de compter : relancer n'efface pas les 6 déjà posés.",
-            "Dé pipé — un bonus de dé de plus dans la réserve commune. Il ne se garde pas en main : la réserve est déjà l'endroit où l'on garde.",
+            "Dé pipé — un bonus de dé de plus dans la réserve de la table. Il se garde en main comme les autres bonus : armez-le, puis demandez votre petit ou votre grand nombre — le même geste range la carte et penche le dé.",
             "Faux pas — votre cheval recule de trois cases. Il ne repasse jamais par l'écurie, et reculer ne mange personne.",
             "Tour sauté — votre prochain tour saute. Un seul.",
             "Retour à l'écurie — votre cheval rentre, bouclier compris. La carte la plus dure, et la seule de son espèce dans le paquet.",
@@ -486,9 +496,19 @@ const en: RulesText = {
         {
           title: 'Bonuses are kept, penalties are suffered',
           body: [
-            'A penalty applies at once. A bonus joins your hand, and you choose its moment.',
+            'A penalty applies at once. A bonus joins your hand, and you choose its moment — no bonus ever plays itself.',
             'You hold three cards at most. A card drawn with a full hand is lost — that is what pushes you to spend rather than hoard.',
-            'Playing a card does not use up your turn: you can shield a horse then roll, or reroll a disappointing die then play your move.',
+            'Your hand is yours alone: the table sees how many cards you hold, never which ones.',
+            'A power can last: a shield stays on its horse as long as nobody comes to eat it — a whole game, if it comes to that.',
+          ],
+        },
+        {
+          title: 'The die validates the card',
+          body: [
+            'Tap the card: it is armed in front of you, it does not go off. If it needs a horse, pick one on the board — it gets a green ring.',
+            'Then roll the die: the roll is what plays the card. One gesture, and always the same order — card first, die second.',
+            'Tapping the card again puts it away. Nothing is played until the die moves.',
+            'Playing a card does not use up your turn: a shield laid before the roll protects from that very roll, and Replay is played on a die already on the table — tap the card, then tap the die again.',
           ],
         },
         {
@@ -497,7 +517,7 @@ const en: RulesText = {
             'Shield — the chosen horse takes the next capture without moving, and the shield breaks. It goes on a horse out on the track: in the stable, nothing can eat it.',
             'Gallop — the chosen horse moves three more squares. It never overshoots the finish: winning by accident would be worse than nothing.',
             'Replay — you roll again and play on. A streak of 6s keeps counting: rerolling does not erase the 6s already rolled.',
-            'Loaded die — one more die bonus in the shared reserve. It is not kept in hand: the reserve is already where you keep things.',
+            'Loaded die — one more die bonus in the table’s reserve. It is kept in hand like the other bonuses: arm it, then ask for your low or high number — the same gesture puts the card away and tilts the die.',
             'Stumble — your horse goes back three squares. It never falls back into the stable, and moving back eats nobody.',
             'Lost turn — your next turn is skipped. Just one.',
             'Back to the stable — your horse goes home, shield included. The harshest card, and the only one of its kind in the deck.',

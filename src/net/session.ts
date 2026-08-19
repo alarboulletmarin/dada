@@ -922,21 +922,54 @@ export class Session {
     return this.game && this.myTurn ? legalMoves(this.game) : []
   }
 
+  /** Les sièges que cet appareil tient, dans l'ordre du plateau. */
+  get mySeats(): Seat[] {
+    return this.lobby.players.filter((p) => this.controls(p.seat)).map((p) => p.seat)
+  }
+
   /**
-   * Les cartes du joueur dont c'est le tour, et celles qui sont jouables tout
-   * de suite.
+   * Le siège dont on montre la main sous le dé, ou null s'il n'y en a pas.
    *
-   * Celles du joueur courant, et non les siennes : la barre est sous le dé, et
-   * le dé appartient à qui joue. Elles ne sont d'ailleurs pas secrètes — elles
-   * voyagent dans l'état de la partie, et voir ce que tient l'adversaire fait
-   * partie du jeu. Seule la possibilité de les jouer dépend du siège.
+   * Le siège courant **quand on le tient** — c'est le cas du téléphone qu'on se
+   * passe, où les quatre mains sont à tour de rôle celle du joueur devant
+   * l'écran. Sinon le sien : en ligne, on garde ses cartes sous les yeux pendant
+   * le tour des autres, sans jamais voir les leurs.
    */
-  hand(): { cards: PowerId[]; playable: PowerId[] } {
-    if (!this.game) return { cards: [], playable: [] }
+  get handSeat(): Seat | null {
+    if (!this.game) return null
+    const mine = this.mySeats
+    if (mine.includes(this.game.turn)) return this.game.turn
+    return mine[0] ?? null
+  }
+
+  /**
+   * Ses propres cartes, et celles qui sont jouables tout de suite.
+   *
+   * **Les siennes, et jamais celles des autres.** Elles voyagent bien dans
+   * l'état de la partie — un jeu pair-à-pair sans serveur n'a pas d'endroit où
+   * les cacher — mais les afficher était un aveu : on lisait la main de
+   * l'adversaire au moment où il prenait la main, et un bouclier annoncé n'est
+   * plus un bouclier. L'écran ne montre donc que ce qu'on a le droit de savoir ;
+   * de la main des autres, il ne dit que le nombre (voir `handSize`).
+   */
+  hand(): { seat: Seat | null; cards: PowerId[]; playable: PowerId[] } {
+    const seat = this.handSeat
+    if (!this.game || seat === null) return { seat: null, cards: [], playable: [] }
     return {
-      cards: handOf(this.game, this.game.turn),
-      playable: this.myTurn ? playablePowers(this.game) : [],
+      seat,
+      cards: handOf(this.game, seat),
+      playable: this.myTurn && seat === this.game.turn ? playablePowers(this.game) : [],
     }
+  }
+
+  /** Combien de cartes ce siège garde devant lui — le nombre, pas lesquelles. */
+  handSize(seat: Seat): number {
+    return this.game ? handOf(this.game, seat).length : 0
+  }
+
+  /** Tours que ce siège doit encore sauter — un malus qui dure. */
+  skipsOwed(seat: Seat): number {
+    return this.game?.skips?.[seat] ?? 0
   }
 
   /** Les chevaux sur lesquels une carte peut se poser. */
