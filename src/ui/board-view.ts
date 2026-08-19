@@ -6,6 +6,12 @@
  * case par case plutôt qu'en ligne droite : c'est ce qui permet de « compter »
  * le dé des yeux et de comprendre ce qui vient de se passer.
  *
+ * **Tout est posé en pourcentage, pas en grille CSS.** L'ancien plateau était
+ * une `grid` de 15×15 et chaque case une cellule ; c'était plus court à écrire,
+ * mais cela interdisait tout ce qui ne tombe pas sur un entier — donc le rond
+ * et le serpent. Une case connaît maintenant son coin haut-gauche en unités de
+ * case, éventuellement flottant, et se pose en `left`/`top`/`width`/`height`.
+ *
  * Le dessin suit la maquette « plateau illustré » : circuit ivoire cerné
  * d'encre, écuries pleines couleur, cœur en moulin à quatre pointes.
  */
@@ -19,7 +25,11 @@ const SEATS: Seat[] = [0, 1, 2, 3]
 /** Une forme par siège : le plateau reste lisible sans distinguer les couleurs. */
 export const SEAT_MARKS = ['●', '▲', '■', '◆'] as const
 const STEP_MS = 115
-const key = (c: Cell) => `${c.col},${c.row}`
+const key = (c: Cell) => `${c.col.toFixed(3)},${c.row.toFixed(3)}`
+
+/** Angle, en degrés depuis le haut et dans le sens horaire, de `from` vers `to`. */
+const headingBetween = (from: Cell, to: Cell): number =>
+  (Math.atan2(to.col - from.col, from.row - to.row) * 180) / Math.PI
 
 export class BoardView {
   private board: HTMLElement
@@ -42,115 +52,133 @@ export class BoardView {
     root.append(this.layer)
   }
 
+  /**
+   * Pose un élément sur le plateau. `col`/`row` sont le coin haut-gauche en
+   * unités de case, `w`/`h` la taille dans la même unité — tous flottants.
+   */
+  private at(
+    className: string,
+    col: number,
+    row: number,
+    w = 1,
+    h = 1,
+    seat: Seat | null = null,
+    rot = 0,
+  ): HTMLElement {
+    const grid = this.geometry.grid
+    const el = document.createElement('div')
+    el.className = className
+    const pc = (n: number) => `${(n / grid) * 100}%`
+    el.style.left = pc(col)
+    el.style.top = pc(row)
+    el.style.width = pc(w)
+    el.style.height = pc(h)
+    if (rot) el.style.setProperty('--tilt', `${rot}deg`)
+    if (seat !== null) {
+      el.style.setProperty('--seat', `var(--seat-${seat})`)
+      el.style.setProperty('--on', `var(--on-${seat})`)
+      el.dataset.seat = String(seat)
+    }
+    this.board.append(el)
+    return el
+  }
+
   private buildGrid(): HTMLElement {
     const board = document.createElement('div')
-    board.className = 'board'
-
-    /** Place un élément sur la grille 15×15, en cases (1-indexées côté CSS). */
-    const at = (
-      className: string,
-      col: number,
-      row: number,
-      width = 1,
-      height = 1,
-      seat: Seat | null = null,
-    ): HTMLElement => {
-      const el = document.createElement('div')
-      el.className = className
-      el.style.gridArea = `${row + 1} / ${col + 1} / span ${height} / span ${width}`
-      if (seat !== null) {
-        el.style.setProperty('--seat', `var(--seat-${seat})`)
-        el.style.setProperty('--on', `var(--on-${seat})`)
-        el.dataset.seat = String(seat)
-      }
-      board.append(el)
-      return el
-    }
+    board.className = `board shape-${this.geometry.shape}`
+    this.board = board
 
     // Le plateau ne doit annoncer que les règles réellement appliquées : une
     // étoile dessinée là où rien ne protège est un mensonge.
-    const safeStars = this.variant.starSquaresAreSafe
     const geo = this.geometry
+    const safeStars = this.variant.starSquaresAreSafe
     const starts = new Map(SEATS.map((s) => [geo.startIndex[s], s]))
     // Chaque case étoile est le relais d'un camp : elle en prend la couleur.
-    const starOwner = new Map<number, Seat>(
-      geo.starIndices.flatMap((i) => {
-        const seat = SEATS.find(
-          (s) => (i - geo.startIndex[s] + geo.track.length) % geo.track.length === geo.stableSize + 2,
-        )
-        return seat === undefined ? [] : [[i, seat] as [number, Seat]]
-      }),
-    )
+    // `starIndices` est construit siège par siège, dans l'ordre des sièges.
+    const starOwner = new Map(geo.starIndices.map((index, seat) => [index, seat as Seat]))
 
     // 1. Le circuit commun : trait fin entre deux cases, trait d'encre sur les
-    //    cases qui comptent (départ, étoile).
+    //    cases qui comptent (départ, étoile, pouvoir).
     geo.track.forEach((c, i) => {
+      const next = geo.track[(i + 1) % geo.track.length]!
+      const heading = headingBetween(c, next)
       const startSeat = starts.get(i)
+
       if (startSeat !== undefined) {
-        const cell = at('cell start', c.col, c.row, 1, 1, startSeat)
         // Une flèche dans le sens de la marche : le plateau explique lui-même
         // par où l'on part et dans quel sens on tourne.
-        const next = geo.track[(i + 1) % geo.track.length]!
-        const angle = next.col > c.col ? 0 : next.row > c.row ? 90 : next.col < c.col ? 180 : 270
+        const cell = this.at('cell start', c.col, c.row, 1, 1, startSeat, c.rot ?? 0)
         const arrow = document.createElement('i')
-        arrow.style.setProperty('--rot', `${angle}deg`)
+        // La flèche est dessinée pointe à droite ; `heading` compte depuis le
+        // haut. Sur un plateau courbe, la case est déjà inclinée : on retire
+        // son inclinaison pour ne pas la compter deux fois.
+        arrow.style.setProperty('--rot', `${heading - 90 - (c.rot ?? 0)}deg`)
         cell.append(arrow)
       } else if (safeStars && starOwner.has(i)) {
-        at('cell safe', c.col, c.row, 1, 1, starOwner.get(i)!)
-      } else at('cell', c.col, c.row)
+        this.at('cell safe', c.col, c.row, 1, 1, starOwner.get(i)!, c.rot ?? 0)
+      } else if (geo.powerIndexSet.has(i)) {
+        this.at('cell power', c.col, c.row, 1, 1, null, c.rot ?? 0).append(
+          document.createElement('i'),
+        )
+      } else this.at('cell', c.col, c.row, 1, 1, null, c.rot ?? 0)
     })
 
-    // 2. Les écuries : bloc plein, enclos ivoire, quatre emplacements pointillés.
+    // 2. Les écuries : bloc plein, enclos ivoire, emplacements pointillés.
+    //    Le retrait de l'enclos est une fraction du bloc et non une case
+    //    pleine : les écuries d'un plateau rond tiennent dans un coin de trois
+    //    cases et demie, où un retrait fixe ne laisserait plus d'enclos du tout.
     for (const seat of SEATS) {
-      const o = geo.stableOrigin[seat]
-      at('deco stable', o.col, o.row, geo.stableSize, geo.stableSize, seat)
-      at('deco pen', o.col + 1, o.row + 1, geo.stableSize - 2, geo.stableSize - 2, seat)
-      for (const slot of geo.stableSlots[seat]) at('deco slot', slot.col, slot.row, 1, 1, seat)
+      const box = geo.stableBox[seat]
+      const inset = box.size * 0.16
+      this.at('deco stable', box.col, box.row, box.size, box.size, seat)
+      this.at('deco pen', box.col + inset, box.row + inset, box.size - 2 * inset, box.size - 2 * inset, seat)
+      for (const slot of geo.stableSlots[seat]) this.at('deco slot', slot.col, slot.row, 1, 1, seat)
     }
 
-    // 3. Les escaliers : une barre pleine par siège plutôt que six cases isolées,
-    //    pour qu'on voie d'un coup où mène chaque couloir.
+    // 3. Le cœur, posé AVANT les escaliers : sur les plateaux où les angles du
+    //    carré central sont libres, il occupe trois cases sur trois, et les
+    //    dernières marches des escaliers viennent alors se poser dessus. Une
+    //    pointe par camp, tournée vers le couloir d'où il arrive.
+    const size = geo.centerSize
+    const center = this.at(
+      'deco center',
+      geo.center.col - (size - 1) / 2,
+      geo.center.row - (size - 1) / 2,
+      size,
+      size,
+    )
     for (const seat of SEATS) {
       const path = geo.homePath[seat]
-      const first = path[0]!
-      const last = path[path.length - 1]!
-      const horizontal = first.row === last.row
-      const side = this.sideOf(seat)
-      const col = Math.min(first.col, last.col)
-      const row = Math.min(first.row, last.row)
-      at(
-        `deco lane ${horizontal ? 'lane-h' : 'lane-v'} end-${side}`,
-        col,
-        row,
-        horizontal ? path.length : 1,
-        horizontal ? 1 : path.length,
-        seat,
-      )
-    }
-
-    // 4. Le cœur : une seule case, et pas trois sur trois. Les quatre angles du
-    //    carré central appartiennent au circuit — c'est même ce qui rend le
-    //    tracé continu — donc un bloc 3×3 les recouvrirait, et un cheval qui
-    //    passe par là semblerait déjà arrivé.
-    const center = at('deco center', geo.center.col, geo.center.row)
-    for (const seat of SEATS) {
       const tri = document.createElement('i')
-      tri.className = `side-${this.sideOf(seat)}`
+      tri.style.setProperty('--rot', `${headingBetween(geo.center, path[path.length - 1]!)}deg`)
       tri.style.setProperty('--seat', `var(--seat-${seat})`)
       tri.dataset.seat = String(seat)
       center.append(tri)
     }
 
-    return board
-  }
+    // 4. Les escaliers, marche par marche.
+    //
+    //    L'ancien dessin en posait un seul bloc plein par siège. C'était plus
+    //    net, mais cela supposait un escalier droit — impossible sur un plateau
+    //    rond.
+    //
+    //    Les numéros, eux, ne sont pas décoratifs : ils sont imprimés sur le
+    //    plateau français, dont la règle stricte demande le chiffre exact de la
+    //    marche visée. Le couloir d'arrivée du Ludo est une bande de couleur, et
+    //    le numéroter reviendrait à dessiner un plateau qui n'existe pas.
+    const numbered = this.variant.numberedHome
+    for (const seat of SEATS) {
+      geo.homePath[seat].forEach((c, i) => {
+        const step = this.at('cell home', c.col, c.row, 1, 1, seat, c.rot ?? 0)
+        if (!numbered) return
+        const label = document.createElement('b')
+        label.textContent = String(i + 1)
+        label.style.setProperty('--rot', `${-(c.rot ?? 0)}deg`)
+        step.append(label)
+      })
+    }
 
-  /** De quel côté du plateau l'escalier d'un siège rejoint le cœur. */
-  private sideOf(seat: Seat): 'left' | 'right' | 'top' | 'bottom' {
-    const path = this.geometry.homePath[seat]
-    const first = path[0]!
-    const last = path[path.length - 1]!
-    if (first.row === last.row) return first.col < last.col ? 'left' : 'right'
-    return first.row < last.row ? 'top' : 'bottom'
+    return board
   }
 
   // ─────────────────────────── pions ───────────────────────────
@@ -232,6 +260,7 @@ export class BoardView {
       const move = playable.get(p.id)
 
       el.classList.toggle('playable', move !== undefined)
+      el.classList.toggle('shielded', p.shield === true)
       el.onclick = move ? () => onPick(p.id) : null
 
       // Un cheval jouable devient un vrai bouton : atteignable au clavier et

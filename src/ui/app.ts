@@ -6,8 +6,9 @@
  * avec un détour possible par « rejoindre » et par les règles.
  */
 
-import { geometryFor } from '../game/board.ts'
+import { BOARD_SHAPES, geometryFor, isBoardShape, type BoardShape } from '../game/board.ts'
 import { mercyOf, pawnsOf } from '../game/engine.ts'
+import { bonusCount, DECK_SIZE, POWER_LIST } from '../game/powers.ts'
 import { STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { makeCode, type ChatMessage } from '../net/room.ts'
@@ -31,6 +32,39 @@ const PIPS: Record<number, number[]> = {
   4: [1, 3, 7, 9],
   5: [1, 3, 5, 7, 9],
   6: [1, 3, 4, 6, 7, 9],
+}
+
+/**
+ * La vignette d'une forme de plateau : le contour du circuit, en un tracé.
+ *
+ * Un nom seul ne dit rien — « serpent » peut vouloir dire n'importe quoi. Le
+ * dessin, lui, montre exactement ce qu'on obtient, et tient dans un bouton.
+ */
+function shapeGlyph(shape: BoardShape): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('fill', 'none')
+  svg.setAttribute('stroke', 'currentColor')
+  svg.setAttribute('stroke-width', '2')
+  svg.setAttribute('stroke-linejoin', 'round')
+  svg.setAttribute('stroke-linecap', 'round')
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute('d', SHAPE_PATHS[shape])
+  svg.append(path)
+  return svg
+}
+
+/** Les quatre contours, sur une grille de 24. */
+const SHAPE_PATHS: Record<BoardShape, string> = {
+  croix: 'M9 3h6v6h6v6h-6v6H9v-6H3V9h6Z',
+  carre: 'M3.5 3.5h17v17h-17Z',
+  rond: 'M12 3.2a8.8 8.8 0 1 0 0 17.6 8.8 8.8 0 0 0 0-17.6Z',
+  // Un cercle qui ondule : quatre bosses lues d'un coup, là où le plateau en
+  // porte huit. Une vignette n'a pas à être une maquette, elle a à être lisible.
+  serpent:
+    'M12 3.2c2 2 5.6.4 7 1.8s-.2 5 1.8 7c-2 2-.4 5.6-1.8 7s-5-.2-7 1.8c-2-2-5.6-.4-7-1.8s.2-5-1.8-7c2-2 .4-5.6 1.8-7s5 .2 7-1.8Z',
 }
 
 /** Pastille de chaque variante : de la présentation, pas des règles. */
@@ -124,6 +158,8 @@ export class App {
   /** Ce qu'on fera de la variante choisie sur l'écran « on joue à quoi ? ». */
   private picking: 'online' | 'local' | 'change' = 'online'
   private variantId = VARIANTS[0]!.id
+  /** Dernier événement du journal déjà annoncé — voir `announce`. */
+  private announced = -1
   /** Dernier résultat de dé connu : le dé du bas garde toujours une face visible. */
   private lastDie: number | null = null
   /** Valeur déjà affichée, pour repérer le lancer qui vient d'arriver. */
@@ -845,6 +881,8 @@ export class App {
             : null,
         ),
 
+        this.tableCard(session),
+
         h(
           'div',
           { class: 'stack push' },
@@ -950,6 +988,7 @@ export class App {
       [t('chip.capture'), true],
       [t('chip.star'), v.starSquaresAreSafe],
       [t('chip.exact'), v.exactFinish],
+      [t('chip.single'), v.onePerSquare],
       [t('chip.blockade'), v.blockades],
       [t('chip.bonus'), v.extraTurnOnCapture],
     ]
@@ -960,6 +999,147 @@ export class App {
         h('span', { class: `chip${on ? ' on' : ''}` }, text, on ? icon('check', 15) : null),
       ),
     )
+  }
+
+  /**
+   * Les réglages de table : la forme du plateau et les cases pouvoir.
+   *
+   * Ils sont dans le salon et pas dans l'écran « on joue à quoi ? » parce
+   * qu'ils ne changent pas de jeu — ils changent de soirée. On les voit tous
+   * les deux d'un coup d'œil, y compris quand on n'est pas l'hôte et qu'on ne
+   * peut rien y toucher : savoir sur quoi on s'apprête à jouer vaut mieux que
+   * de le découvrir au premier tour.
+   */
+  private tableCard(session: Session): HTMLElement {
+    const host = session.isHost && !session.lobby.started
+    const shape = isBoardShape(session.lobby.shape) ? session.lobby.shape : 'croix'
+    const powers = session.lobby.powers === true
+
+    const shapes = h(
+      'div',
+      { class: 'shapes' },
+      ...BOARD_SHAPES.map((id) =>
+        h(
+          'button',
+          {
+            class: `shape-btn${id === shape ? ' on' : ''}`,
+            disabled: !host,
+            attrs: { 'aria-pressed': String(id === shape), title: t(`shape.${id}.desc` as Key) },
+            on: { click: () => session.setShape(id) },
+          },
+          shapeGlyph(id),
+          h('span', { text: t(`shape.${id}` as Key) }),
+        ),
+      ),
+    )
+
+    return h(
+      'div',
+      { class: 'stack' },
+      h('span', { class: 'label', text: t('table.title') }),
+      h(
+        'div',
+        { class: 'card table-card' },
+        h('strong', { text: t('table.shape') }),
+        shapes,
+        h('p', { class: 'hint', text: t(`shape.${shape}.desc` as Key) }),
+        h('hr'),
+        h(
+          'div',
+          { class: 'row row--split' },
+          h('strong', { text: t('table.powers') }),
+          h('button', {
+            class: `toggle${powers ? ' on' : ''}`,
+            disabled: !host,
+            attrs: { role: 'switch', 'aria-checked': String(powers), 'aria-label': t('table.powers') },
+            text: t(powers ? 'table.powers.on' : 'table.powers.off'),
+            on: { click: () => session.setPowers(!powers) },
+          }),
+        ),
+        h('p', { class: 'hint', text: t('table.powers.hint') }),
+        h('button', {
+          class: 'btn small',
+          text: t('table.powers.see', { n: POWER_LIST.length }),
+          on: { click: () => this.showPowers() },
+        }),
+      ),
+    )
+  }
+
+  /**
+   * Le catalogue des pouvoirs, en entier.
+   *
+   * Un bonus qu'on découvre en le ramassant est une surprise ; un malus qu'on
+   * découvre en le ramassant est une injustice. Les sept cartes sont donc
+   * lisibles avant la partie, avec le nombre d'exemplaires de chacune — c'est
+   * ce nombre, et non une promesse, qui dit à quel point le paquet est équitable.
+   */
+  private showPowers(): void {
+    if (document.querySelector('.overlay.powers')) return
+
+    const close = (): void => {
+      removeEventListener('keydown', onKey)
+      overlay.remove()
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') close()
+    }
+
+    const group = (kind: 'bonus' | 'malus') =>
+      h(
+        'div',
+        { class: `powers-group powers-group--${kind}` },
+        h('span', { class: 'label', text: t(kind === 'bonus' ? 'powers.bonus' : 'powers.malus') }),
+        ...POWER_LIST.filter((p) => p.kind === kind).map((p) =>
+          h(
+            'div',
+            { class: 'power-row' },
+            h('span', { class: `power-mark power-mark--${p.kind}` }),
+            h(
+              'div',
+              { class: 'power-text' },
+              h('strong', { text: t(`power.${p.id}` as Key) }),
+              h('span', { class: 'desc', text: t(`power.${p.id}.desc` as Key) }),
+            ),
+            h('span', { class: 'power-copies', text: t('powers.copies', { n: p.copies }) }),
+          ),
+        ),
+      )
+
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay powers',
+        attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('powers.title') },
+        on: {
+          click: (ev) => {
+            if (ev.target === overlay) close()
+          },
+        },
+      },
+      h(
+        'div',
+        { class: 'sheet powers__sheet' },
+        h(
+          'div',
+          { class: 'card' },
+          h('h2', { style: { textAlign: 'center' }, text: t('powers.title') }),
+          h('p', {
+            class: 'hint center',
+            text: t('table.powers.fair', {
+              n: DECK_SIZE,
+              bonus: bonusCount,
+              malus: DECK_SIZE - bonusCount,
+            }),
+          }),
+          group('bonus'),
+          group('malus'),
+        ),
+        h('button', { class: 'btn', text: t('common.close'), on: { click: () => close() } }),
+      ),
+    )
+    addEventListener('keydown', onKey)
+    document.body.append(overlay)
   }
 
   private linkFor(code: string): string {
@@ -1000,7 +1180,7 @@ export class App {
         h(
           'div',
           { class: 'steps' },
-          ...[1, 2, 3, 4, 5, 6, 7].map((n) =>
+          ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) =>
             h(
               'div',
               { class: 'step', style: this.seatVars(((n - 1) % 4) as Seat) },
@@ -1118,6 +1298,8 @@ export class App {
     this.shownDice = null
     this.tumbling = false
     this.autoAt = -1
+    // Une manche qui commence ne rejoue pas les annonces de la précédente.
+    this.announced = this.session!.game!.log[this.session!.game!.log.length - 1]?.seq ?? -1
     this.paintDie(this.lastDie, false)
   }
 
@@ -1163,7 +1345,39 @@ export class App {
     this.renderTurn(mounts.turn, state, moves.length)
     this.scheduleObvious(state, moves)
 
+    this.announce(state)
+
     if (state.phase === 'finished') this.renderPodium(state)
+  }
+
+  /**
+   * Ce qui vient d'arriver et ne se lit nulle part ailleurs.
+   *
+   * Le plateau montre où sont les chevaux, pas pourquoi ils y sont : un cheval
+   * qui recule de trois cases sans explication ressemble à un bug. Les
+   * événements de pouvoir sont donc annoncés au passage, une fois, à tout le
+   * monde — c'est la seule chose que le joueur ne peut pas déduire de l'écran.
+   */
+  private announce(state: GameState): void {
+    const fresh = state.log.filter((entry) => entry.seq > this.announced)
+    if (state.log.length > 0) this.announced = state.log[state.log.length - 1]!.seq
+
+    // Un seul bandeau : deux toasts qui se chassent ne se lisent ni l'un ni
+    // l'autre. Le dernier événement est celui qui explique l'écran actuel.
+    for (const entry of [...fresh].reverse()) {
+      const { event } = entry
+      if (event.kind === 'power') {
+        return this.notify('toast.power', {
+          name: entry.actor,
+          power: t(`power.${event.power}` as Key),
+          desc: t(`power.${event.power}.desc` as Key),
+        })
+      }
+      if (event.kind === 'shielded') {
+        return this.notify('toast.shielded', { pawn: event.pawn, owner: event.owner })
+      }
+      if (event.kind === 'skipped') return this.notify('toast.skipped', { name: entry.actor })
+    }
   }
 
   /**

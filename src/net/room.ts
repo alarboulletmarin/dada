@@ -11,6 +11,7 @@
  */
 
 import { getRelaySockets, joinRoom, selfId } from 'trystero/nostr'
+import type { BoardShape } from '../game/board.ts'
 import type { Action, GameState, Seat } from '../game/types.ts'
 
 /**
@@ -48,6 +49,16 @@ export type Lobby = {
   code: string
   hostClientId: string
   variantId: string
+  /**
+   * Réglages de table, décidés par l'hôte avant le lancement. Ils voyagent avec
+   * le salon plutôt qu'avec la variante : ce ne sont pas des règles de famille,
+   * c'est ce dont la table a envie ce soir.
+   *
+   * Optionnels : un pair resté sur une version d'avant en envoie un salon qui
+   * ne les porte pas, et la partie doit continuer de se lancer.
+   */
+  shape?: BoardShape
+  powers?: boolean
   players: LobbyPlayer[]
   started: boolean
 }

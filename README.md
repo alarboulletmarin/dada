@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 91 tests : géométrie du plateau, règles, dé, présence
+npm test         # 297 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
 npm run build    # vérification de types puis build de production
 ```
 
@@ -21,14 +21,110 @@ npm run build    # vérification de types puis build de production
 
 ## Les trois jeux de règles
 
-| Variante | Sortie | Particularités |
-|---|---|---|
-| **Petits chevaux** | 6 | Règle française. Seules les cases de départ protègent. |
-| **Ludo** | 6 | Cases étoilées sûres, barrages à deux chevaux, rejeu sur capture et sur arrivée. |
-| **Rapide** | 1 ou 6 | Arrivée sans compte exact. Parties courtes. |
+| Variante | Plateau | Sortie | Particularités |
+|---|---|---|---|
+| **Petits chevaux** | 56 cases | 6 | Règle française. Une case, un cheval. Seules les cases de départ protègent. |
+| **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, barrages à deux pions, rejeu sur capture et sur arrivée. |
+| **Rapide** | 40 cases | 1 ou 6 | Arrivée sans compte exact. Parties courtes, deux chevaux. |
 
 Les règles sont des **données**, pas du code : voir `src/game/variants.ts`. Ajouter
-la variante de votre famille tient en un objet de quinze lignes.
+la variante de votre famille tient en un objet de vingt lignes.
+
+### Les deux plateaux officiels
+
+Ce ne sont pas deux réglages du même plateau : ce sont deux objets qui existent,
+imprimés, avec un nombre de cases qu'on peut compter.
+
+Le plateau **français des petits chevaux** compte **56 cases, 14 par quart**. Son
+tracé passe par les quatre angles du carré central, ce qui le rend
+orthogonalement continu — un cheval y avance toujours d'un côté de case à la
+fois. Ses six marches d'escalier portent leur numéro, parce que la règle stricte
+demande le chiffre exact de la marche visée.
+
+Le plateau **international du Ludo** compte **52 cases, 13 par quart**. Il coupe
+ces quatre angles : le pion y tourne en diagonale, exactement comme sur un
+plateau imprimé. Son couloir d'arrivée est une bande de couleur sans numéros, et
+ses cases abritées tombent huit crans après chaque départ.
+
+Même grille de 15×15, mêmes écuries, mêmes escaliers de six marches : quatre
+cases d'écart, et deux jeux différents. `board.test.ts` fixe les deux, coordonnée
+par coordonnée, pour qu'un remaniement de géométrie ne les fasse pas dériver.
+
+### Deux règles qu'on croit interchangeables et qui ne le sont pas
+
+**Une case, un cheval** (français). « Deux chevaux ne peuvent pas occuper la même
+case ; s'il s'agit de vos propres chevaux, l'un reste derrière l'autre. » Un coup
+qui amènerait un cheval sur une case tenue par un cheval qu'il ne peut pas manger
+— le sien, ou un adversaire sur sa case de départ — n'est tout simplement pas
+jouable. L'arrivée fait exception : c'est là que les quatre se rejoignent.
+
+**Les barrages** (Ludo). Deux pions d'une même couleur sur une case forment un
+mur qu'aucun pion **adverse** ne peut franchir ni occuper. Le Ludo ne peut donc
+pas connaître la règle précédente : empiler deux pions est précisément ce qui
+fabrique le barrage. Et un barrage n'arrête jamais son propriétaire — sinon en
+poser un reviendrait à s'enfermer derrière, et personne n'en poserait.
+
+## La forme du plateau
+
+Croix, carré, rond ou serpent — réglé dans le salon, par l'hôte.
+
+C'est **du décor, et rien d'autre**. Les quatre formes partagent le même circuit,
+les mêmes distances, les mêmes cases protégées et les mêmes cases pouvoir : seule
+change la façon de les poser sur l'écran. Deux cents parties simulées le
+vérifient — à graine égale, une partie sur le rond et la même sur la croix se
+déroulent coup pour coup à l'identique.
+
+C'est ce qui permet d'offrir quatre décors sans ré-équilibrer quatre jeux. La
+séparation est portée par le code : une *forme* reçoit la longueur d'un bras et
+rend un dessin ; les index (départs, étoiles, pouvoirs) sont calculés après, à
+partir de la longueur du circuit, et ne la consultent jamais.
+
+Une seule forme corrige les nombres qu'on lui donne : le **carré** exige un bras
+pair, son escalier partant du milieu d'un côté. Un bras impair y est arrondi au
+pair supérieur — le Ludo joué sur un carré tourne donc sur 56 cases et non 52.
+
+Les cases se posent en **pourcentage** et non en cellules de grille CSS, et leurs
+coordonnées sont flottantes. Sans cela, ni le rond ni le serpent ne seraient
+dessinables. Le serpent, d'ailleurs, répartit ses cases à **longueur d'arc
+constante** et non à angle constant : sur une courbe qui ondule, l'angle
+constant les écarte sur les bosses et les entasse dans les creux, et le plateau
+se lit alors comme un défaut d'impression.
+
+## Les cases pouvoir
+
+Optionnelles, activées dans le salon. Huit cases marquées sur le circuit ;
+s'arrêter dessus fait piocher une carte — bonus ou malus — comme une case
+« Chance » au Monopoly.
+
+**Un paquet, pas un dé.** Tirer chaque pouvoir indépendamment serait injuste à
+l'échelle d'une partie : sur douze cases ramassées, il n'est pas rare qu'un
+joueur n'ait vu que des malus et un autre que des bonus. Les pouvoirs sont donc
+un paquet de seize cartes — dix bonus, six malus — mélangé une fois avec la
+graine de la partie, partagé par toute la table, consommé par le haut et
+remélangé quand il est vide. Le hasard décide de l'ordre, jamais des proportions.
+
+**Des cases symétriques.** Elles sont posées à un décalage fixe du départ de
+*chaque* siège. Le motif se répète donc à l'identique tous les quarts de tour :
+chaque joueur croise le même nombre de cases, aux mêmes distances de chez lui.
+Personne n'a « le bon coin du plateau ». L'équité est dans la géométrie ; elle
+n'a pas à être corrigée coup par coup.
+
+| Carte | | Effet |
+|---|---|---|
+| Bouclier | ×3 | Le cheval encaisse la prochaine capture sans bouger. Le bouclier se brise à l'impact. |
+| Galop | ×3 | Le cheval avance de 3 cases de plus. Jamais au-delà de l'arrivée : gagner par accident serait pire que rien. |
+| Rejeu | ×2 | On relance le dé et on rejoue. |
+| Dé pipé | ×2 | Un bonus de dé de plus dans le budget commun. |
+| Faux pas | ×3 | Le cheval recule de 3 cases, sans jamais repasser par l'écurie. |
+| Tour sauté | ×2 | Le prochain tour saute. Un seul. |
+| Retour à l'écurie | ×1 | Le cheval rentre. La carte la plus dure, et la seule de son espèce. |
+
+Un pouvoir qui déplace ne redéclenche pas la case où il amène le cheval : sans
+cette règle, deux cases voisines pourraient se renvoyer la balle sans fin.
+
+Le catalogue entier se lit **avant** la partie, depuis le salon, exemplaires
+compris. Un bonus qu'on découvre en le ramassant est une surprise ; un malus
+qu'on découvre en le ramassant est une injustice.
 
 ### Sortir de l'écurie sans y passer la soirée
 
@@ -48,11 +144,12 @@ garde un dé entièrement franc.
 
 ```
 src/game/     moteur pur — (état, action) → état. Aucun DOM, aucun réseau.
-  board.ts      géométrie : circuit de 56 cases, escaliers, écuries
+  board.ts      géométrie : les nombres du circuit, et les quatre formes
   engine.ts     règles, coups légaux, enchaînement des tours
   variants.ts   les jeux de règles
+  powers.ts     le paquet de bonus et de malus
   bot.ts        adversaire artificiel
-  rng.ts        aléatoire déterministe (mulberry32)
+  rng.ts        aléatoire déterministe (mulberry32), mélange compris
 src/net/      transport pair-à-pair et orchestration de la partie
   room.ts       canaux WebRTC, code de partie, identité de l'appareil
   session.ts    salon, arbitrage, minuterie de tour, relève des absents

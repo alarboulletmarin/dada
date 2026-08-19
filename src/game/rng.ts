@@ -88,6 +88,23 @@ function weigh({ bias, exitFaces, exitChance = 0 }: RollOptions): number[] {
   return weights.map((w, i) => (isExit(i + 1) ? (w / exit) * wanted : (w / (total - exit)) * (1 - wanted)))
 }
 
+/**
+ * Mélange de Fisher-Yates, déterministe : retourne le prochain état et une
+ * copie mélangée. Le tableau d'entrée n'est pas touché — l'état de la partie
+ * est une valeur, pas un objet qu'on remue en place.
+ */
+export function shuffle<T>(state: number, items: readonly T[]): [number, T[]] {
+  const out = [...items]
+  let rng = state
+  for (let i = out.length - 1; i > 0; i--) {
+    const [next, f] = nextFloat(rng)
+    rng = next
+    const j = Math.floor(f * (i + 1))
+    ;[out[i], out[j]] = [out[j]!, out[i]!]
+  }
+  return [rng, out]
+}
+
 /** Graine à partir d'une chaîne (le code de partie), pour que tous partent du même point. */
 export function seedFrom(text: string): number {
   let h = 2166136261

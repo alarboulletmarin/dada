@@ -10,9 +10,11 @@
  * sans aucun pair, qui contrôle tous les sièges. Une seule logique à maintenir.
  */
 
+import { isBoardShape, type BoardShape } from '../game/board.ts'
 import { chooseMove } from '../game/bot.ts'
 import { apply, createGame, forceSkipTurn, legalMoves } from '../game/engine.ts'
 import { seedFrom } from '../game/rng.ts'
+import type { Variant } from '../game/types.ts'
 import { variantById } from '../game/variants.ts'
 import type { Action, GameError, GameState, Seat } from '../game/types.ts'
 import {
@@ -25,6 +27,24 @@ import {
 } from './presence.ts'
 import { clientId, joinGameRoom, type ChatMessage, type Lobby, type LobbyPlayer, type Room } from './room.ts'
 import { clearInvite, clearSave, writeInvite, writeSave, type Save } from './save.ts'
+
+/**
+ * Les règles de la variante, plus les réglages que la table s'est donnés.
+ *
+ * Forme et pouvoirs ne sont pas des règles de famille : ils vivent dans le
+ * salon. Mais le moteur ne connaît qu'un objet `Variant`, et c'est bien lui
+ * qui doit les porter — sinon chaque appel de géométrie devrait aller
+ * redemander au salon ce que le plateau est censé être, jusque dans les tests.
+ * Ils sont donc recopiés ici, une fois, au moment du lancement.
+ */
+export function tableVariant(lobby: Lobby): Variant {
+  const base = variantById(lobby.variantId)
+  return {
+    ...base,
+    shape: isBoardShape(lobby.shape) ? lobby.shape : 'croix',
+    powers: lobby.powers === true,
+  }
+}
 
 const MAX_SEATS = 4
 const BOT_DELAY = 700
@@ -445,6 +465,22 @@ export class Session {
     this.listeners.onChange()
   }
 
+  /** Le décor du plateau. Ne change aucune règle ni aucune distance. */
+  setShape(shape: BoardShape): void {
+    if (!this.isHost || this.lobby.started) return
+    this.lobby.shape = shape
+    this.publishLobby()
+    this.listeners.onChange()
+  }
+
+  /** Les cases pouvoir sont-elles de la partie ? */
+  setPowers(on: boolean): void {
+    if (!this.isHost || this.lobby.started) return
+    this.lobby.powers = on
+    this.publishLobby()
+    this.listeners.onChange()
+  }
+
   rename(seat: Seat, name: string): void {
     const player = this.lobby.players.find((p) => p.seat === seat)
     if (!player) return
@@ -489,7 +525,7 @@ export class Session {
         peerId: p.peerId,
         connected: p.connected,
       })),
-      variant: variantById(this.lobby.variantId),
+      variant: tableVariant(this.lobby),
       seed: seedFrom(`${this.lobby.code}:${Date.now()}`),
     })
 
