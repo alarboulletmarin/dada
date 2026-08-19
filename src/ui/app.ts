@@ -537,7 +537,10 @@ export class App {
           ...['D', 'A', 'D', 'A'].map((c) => h('span', { text: c })),
         ),
         h('p', { class: 'tagline', text: t('app.tagline') }),
-        h('div', { class: 'dice-pair' }, this.face(5), this.face(6)),
+        // Le dé crème porte la marque de l'application : un 4, une pastille par
+        // siège. C'est l'icône installée sur l'écran d'accueil, posée ici parmi
+        // les dés — la même image des deux côtés du lancement.
+        h('div', { class: 'dice-pair' }, this.face(4), this.face(6)),
         h('div', { class: 'field' }, h('span', { class: 'label', text: t('home.name') }), nameInput),
         h(
           'div',

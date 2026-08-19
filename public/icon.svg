@@ -1,16 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Dada">
-  <rect width="512" height="512" rx="112" fill="#12131a" />
-  <!-- La croix du plateau, ramenée à l'essentiel. Le motif reste dans la zone
-       centrale sûre pour supporter le rognage des icônes « maskable ». -->
-  <g fill="#2b3049">
-    <rect x="196" y="120" width="120" height="272" rx="16" />
-    <rect x="120" y="196" width="272" height="120" rx="16" />
+  <title>Dada</title>
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="#3b2a1e" />
+  <!-- Le dé, penché comme celui qu'on vient de lâcher, et son ombre portée. -->
+  <g transform="rotate(-6 256 256)">
+    <rect x="95" y="111" width="322" height="322" rx="74" fill="#2a1e15" />
+    <rect x="95" y="95" width="322" height="322" rx="74" fill="#fff7e6" />
+    <circle cx="172" cy="172" r="40" fill="#57b26a" />
+    <circle cx="340" cy="172" r="40" fill="#f4c43c" />
+    <circle cx="340" cy="340" r="40" fill="#4c93d8" />
+    <circle cx="172" cy="340" r="40" fill="#e9564b" />
   </g>
-  <g>
-    <circle cx="168" cy="168" r="46" fill="#e5484d" />
-    <circle cx="344" cy="168" r="46" fill="#4a8dff" />
-    <circle cx="344" cy="344" r="46" fill="#2fb47c" />
-    <circle cx="168" cy="344" r="46" fill="#f0b429" />
-  </g>
-  <circle cx="256" cy="256" r="38" fill="#e9eaf2" />
 </svg>

@@ -26,7 +26,19 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Dada" />
+    <!--
+      La marque : un dé qui vient de tomber, ses quatre pastilles aux couleurs
+      des quatre sièges du plateau. Elle se fabrique par `npm run icons` depuis
+      `scripts/icon.mjs` — le dessin y est décrit une fois, le SVG et les PNG
+      en sortent ensemble.
+
+      Le SVG d'abord : c'est lui qui reste net quand l'onglet est affiché sur un
+      écran dense. Le PNG de 32 px derrière, pour les navigateurs qui ignorent
+      encore les favicons vectorielles ; sans lui ils iraient chercher un
+      `/favicon.ico` qui n'existe pas et n'afficheraient rien.
+    -->
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./icon-32.png" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>Dada</title>
   </head>
