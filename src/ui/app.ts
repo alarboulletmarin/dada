@@ -45,8 +45,12 @@ const AUTO_MS = 800
  * garde justement pour un dé mort n'a aucune raison de partir avec le tour. On
  * ne supprime donc pas l'automatisme : on lui laisse le temps qu'il faut pour
  * qu'un doigt arrive avant lui. Toucher une carte annule le coup programmé.
+ *
+ * Trois secondes deux, et non deux : le cas qui compte est « rien à jouer, mais
+ * un rejeu en main ». Il faut lire la ligne, comprendre qu'on peut relancer, et
+ * atteindre la carte — et la main se perd si l'on n'y arrive pas.
  */
-const AUTO_HOLD_MS = 2600
+const AUTO_HOLD_MS = 3200
 /**
  * Longueur du code de partie. Voir `makeCode` dans `room.ts` : c'est une mesure
  * de sécurité avant d'être un réglage de confort.

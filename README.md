@@ -210,9 +210,11 @@ une table de bots devenait un défilé.
 
 **Un coup sans choix se joue tout seul.** Un seul coup possible, ou aucun, et le
 tour part de lui-même après un temps de lecture. Une carte jouable en main
-allonge ce délai — de huit dixièmes à deux secondes six — mais ne le supprime
+allonge ce délai — de huit dixièmes à trois secondes deux — mais ne le supprime
 plus : elle le supprimait, et il suffisait d'un bonus ramassé pour que chaque
-tour à coup unique redemande une confirmation jusqu'à la fin de la partie.
+tour à coup unique redemande une confirmation jusqu'à la fin de la partie. Le
+cas qui fixe la durée est « rien à jouer, mais un rejeu en main » : il faut lire
+la ligne, comprendre qu'on peut relancer, et atteindre la carte.
 
 ## La feuille de match
 
