@@ -188,6 +188,11 @@ button {
   color: inherit;
   cursor: pointer;
   border: none;
+  /* Le navigateur pose de lui-même un `padding: 1px 6px` sur les boutons. Sans
+     cette remise à zéro, chaque bouton qui ne redéclare pas le sien traîne une
+     marge intérieure invisible et asymétrique — six pixels de large contre un
+     de haut — qui rogne la place de son contenu. */
+  padding: 0;
   background: none;
 }
 
@@ -953,10 +958,15 @@ input:disabled {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* Les écarts se compriment sur les écrans courts au lieu de rogner le
+     plateau : c'est lui la pièce maîtresse, tout le reste est du décor. */
+  gap: clamp(5px, 1.1svh, 16px);
   width: min(100%, 480px);
   margin: 0 auto;
-  padding: 10px 16px 12px;
+  /* La réserve du bas n'est pas décorative : le dé penche de 7° et porte une
+     ombre de 6 px, les deux débordent de sa boîte. Sans elle, `overflow: hidden`
+     lui coupe les pieds. */
+  padding: clamp(6px, 1.2svh, 12px) 16px clamp(12px, 1.8svh, 18px);
   overflow: hidden;
 }
 
@@ -964,7 +974,13 @@ input:disabled {
   gap: 10px;
 }
 
+/* `position` et `z-index` : les bulles de chat sortent des cartes et doivent
+   passer AU-DESSUS du plateau. Sans calque posé ici, la carte du joueur actif —
+   qui porte un `transform` — enferme sa bulle dans son propre contexte
+   d'empilement, et le plateau, plus bas dans le DOM, la recouvre. */
 .players {
+  position: relative;
+  z-index: 3;
   display: flex;
   gap: 10px;
   flex: none;
@@ -977,42 +993,131 @@ input:disabled {
   gap: 10px;
   flex: 1;
   min-width: 0;
-  padding: 7px 12px;
+  padding: clamp(5px, 0.85svh, 8px) 12px;
   border: var(--bw) solid var(--ink);
   border-radius: 20px;
   background: var(--card);
   box-shadow: 0 4px 0 var(--shade);
 }
 
-/* Un message envoyé s'affiche brièvement à même la carte de son auteur — pas
-   besoin d'ouvrir le chat pour le voir passer. Recouvre la carte plutôt que
-   de flotter au-dessus ou en dessous : les cartes du haut n'ont pas de place
-   pour déborder sans se faire couper par `.play { overflow: hidden }`. */
+/* La bulle de bande dessinée : un message s'affiche brièvement à côté de la
+   carte de son auteur, avec une pointe qui la désigne — pas besoin d'ouvrir le
+   chat pour le voir passer.
+
+   Elle FLOTTE au lieu de recouvrir la carte : la version précédente se posait
+   en `inset: 0` et effaçait le nom, la couleur et l'état du joueur pendant
+   quatre secondes — on lisait le message sans plus savoir de qui il venait.
+   Elle sort donc du côté du plateau (vers le bas pour la rangée du haut, vers
+   le haut pour celle du bas), là où il y a la place : `.play` reste en
+   `overflow: hidden`, mais le plateau est à l'intérieur, rien n'est coupé. */
 .pcard__bubble {
+  /* Où la pointe rejoint la carte, mesuré depuis le bord gauche de la bulle.
+     Calé sur la pastille du joueur : la pointe désigne la couleur, pas le vide. */
+  --tail: 30px;
   position: absolute;
-  inset: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-box-pack: center;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  padding: 6px 10px;
+  left: 0;
+  z-index: 4;
+  width: max-content;
+  max-width: min(230px, 78vw);
+  padding: 7px 13px;
   border: var(--bw) solid var(--ink);
-  border-radius: 20px;
+  border-radius: 16px;
   background: var(--card);
   box-shadow: 0 4px 0 var(--shade);
   color: var(--ink);
   text-align: center;
-  overflow-wrap: anywhere;
+  font-family: var(--title);
   font-weight: 700;
-  font-size: 12.5px;
+  font-size: 13.5px;
   line-height: 1.25;
-  animation: bubble-pop 0.15s ease-out;
+  animation: bubble-pop 0.18s cubic-bezier(0.2, 1.5, 0.4, 1);
 }
 
+/* Trois lignes au plus : au-delà, la bulle couvrirait le plateau. La coupe vit
+   ici et non sur la bulle, car `overflow: hidden` emporterait la pointe avec. */
+.pcard__bubble-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* La bulle s'accroche au bord EXTÉRIEUR de sa carte, pas à son milieu. Centrée,
+   celle de la carte de droite débordait de l'écran et `.play { overflow: hidden }`
+   la coupait net — on lisait une demi-phrase. Accrochée, elle reste toujours
+   dans la largeur de l'écran, quelle que soit la longueur du message. */
+.pcard:last-child .pcard__bubble {
+  --tail: calc(100% - 30px);
+  left: auto;
+  right: 0;
+}
+
+/* Une réaction n'est pas une phrase : elle se lit de l'autre bout de la table,
+   pas dans un cartouche de 13 px. */
+.pcard__bubble.solo {
+  padding: 2px 14px 4px;
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+/* La pointe, en deux triangles superposés : le grand fait le trait d'encre, le
+   petit rend le fond de la bulle par-dessus. C'est la seule façon de border un
+   triangle en CSS. */
+.pcard__bubble::before,
+.pcard__bubble::after {
+  content: '';
+  position: absolute;
+  left: var(--tail);
+  width: 0;
+  height: 0;
+  border: 0 solid transparent;
+}
+
+/* Rangée du haut : la bulle descend, la pointe remonte vers la carte. */
+.players--top .pcard__bubble {
+  top: calc(100% + 11px);
+  transform-origin: var(--tail) top;
+}
+
+.players--top .pcard__bubble::before {
+  bottom: 100%;
+  margin-left: -12px;
+  border-width: 0 12px 12px;
+  border-bottom-color: var(--ink);
+}
+
+.players--top .pcard__bubble::after {
+  bottom: calc(100% - var(--bw));
+  margin-left: -8px;
+  border-width: 0 8px 8px;
+  border-bottom-color: var(--card);
+}
+
+/* Rangée du bas : la bulle monte, la pointe redescend. */
+.players--bottom .pcard__bubble {
+  bottom: calc(100% + 11px);
+  transform-origin: var(--tail) bottom;
+}
+
+.players--bottom .pcard__bubble::before {
+  top: 100%;
+  margin-left: -12px;
+  border-width: 12px 12px 0;
+  border-top-color: var(--ink);
+}
+
+.players--bottom .pcard__bubble::after {
+  top: calc(100% - var(--bw));
+  margin-left: -8px;
+  border-width: 8px 8px 0;
+  border-top-color: var(--card);
+}
+
+/* Elle sort de la pointe, pas de son centre : c'est la carte qui parle. */
 @keyframes bubble-pop {
   from {
-    transform: scale(0.85);
+    transform: scale(0.8);
     opacity: 0;
   }
   to {
@@ -1042,8 +1147,8 @@ input:disabled {
 }
 
 .pcard .token {
-  width: 28px;
-  height: 28px;
+  width: clamp(24px, 3.4svh, 28px);
+  height: clamp(24px, 3.4svh, 28px);
   border-width: 2.5px;
   font-size: 13px;
 }
@@ -1058,7 +1163,7 @@ input:disabled {
   overflow: hidden;
   font-family: var(--title);
   font-weight: 700;
-  font-size: 16px;
+  font-size: clamp(14px, 2.1svh, 16.5px);
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1067,7 +1172,7 @@ input:disabled {
 /* Discret : le joueur actif se lit d'abord au liseré de la carte (`.pcard.active`),
    pas à ce texte — qui reste là pour l'info, pas pour l'emphase. */
 .pcard .meta {
-  font-size: 11px;
+  font-size: clamp(10px, 1.5svh, 11.5px);
   font-weight: 700;
   color: var(--muted);
   opacity: 0.85;
@@ -1121,21 +1226,17 @@ input:disabled {
    permet, et rétrécit seulement quand elle ne le permet plus. `100cqw` est la
    largeur bord à bord, `100cqh` la hauteur qui reste après l'en-tête, les
    cartes des joueurs, la ligne de tour et le dé ; le plus petit des deux gagne.
-   Les deux épaisseurs de trait sont retranchées de la seconde et d'elle seule :
-   les traits sont en haut et en bas, ils coûtent de la hauteur, pas de la
-   largeur.
-   `content-box` est la seule exception au modèle de boîte du projet, et elle se
-   justifie : c'est la GRILLE qui doit être carrée, pas la boîte qui la porte. En
-   border-box, `aspect-ratio: 1` rend une boîte carrée dont l'intérieur est plus
-   court de la hauteur des deux traits — les cases mesuraient 27,60 × 27,07, et
-   un plateau de petits chevaux à cases rectangulaires se voit. */
+
+   Plus de trait d'encre autour : il ne courait qu'en haut et en bas — sur les
+   côtés le plateau file jusqu'aux bords de l'écran — et cette barre à deux
+   côtés se lisait comme un défaut plutôt que comme un cadre. Elle coûtait en
+   prime huit pixels de hauteur, c'est-à-dire huit pixels de plateau. Les coins
+   arrondis suffisent à poser l'objet ; le quadrillage des cases fait le reste. */
 .board-wrap {
   position: relative;
-  box-sizing: content-box;
-  width: min(100cqw, calc(100cqh - 2 * var(--bw-thick)));
+  width: min(100cqw, 100cqh);
   aspect-ratio: 1;
-  border-top: var(--bw-thick) solid var(--ink);
-  border-bottom: var(--bw-thick) solid var(--ink);
+  border-radius: clamp(12px, 3.5cqw, 22px);
   background: var(--card);
   overflow: hidden;
 }
@@ -1407,7 +1508,7 @@ input:disabled {
   gap: 2px;
   flex: none;
   width: 100%;
-  height: 52px;
+  height: clamp(42px, 6.2svh, 54px);
   text-align: center;
 }
 
@@ -1421,8 +1522,8 @@ input:disabled {
 }
 
 .turnline .token {
-  width: 26px;
-  height: 26px;
+  width: clamp(22px, 3.2svh, 26px);
+  height: clamp(22px, 3.2svh, 26px);
   border-width: 2.5px;
   font-size: 12px;
 }
@@ -1435,28 +1536,116 @@ input:disabled {
   text-overflow: ellipsis;
   font-family: var(--title);
   font-weight: 700;
-  font-size: 19px;
+  font-size: clamp(16.5px, 2.5svh, 19px);
 }
 
 .turnline .detail {
   display: block;
   max-width: 100%;
-  min-height: 21px;
+  min-height: clamp(17px, 2.5svh, 21px);
   padding: 0 8px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 15px;
+  font-size: clamp(13px, 2svh, 15px);
   font-weight: 700;
   color: var(--muted);
 }
 
+/* Le dé et ses deux bonus tiennent sur une seule ligne. Empilés — les boutons
+   d'abord, le compteur en dessous, le dé au-dessus — ils mangeaient quatre-vingts
+   pixels de haut, autant de moins pour le plateau. Les boutons sont plus courts
+   que le dé : les mettre à ses côtés ne coûte rien du tout, la ligne fait la
+   hauteur du dé, celle qu'elle occupait déjà. */
+.dice-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2.6vw, 16px);
+  flex: none;
+}
+
+/* Réserve épuisée : les bonus s'effacent sans rendre leur place. Le dé ne
+   glisse pas d'un côté au dernier bonus dépensé, et rien ne se réorganise
+   sous le plateau. */
+.dice-row.spent .boost {
+  visibility: hidden;
+}
+
+.boost {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 1 1 0;
+  max-width: 132px;
+  min-height: var(--tap);
+  padding: 8px 10px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 5px 0 var(--shade);
+  color: var(--ink);
+  font-family: var(--title);
+  font-weight: 700;
+  /* Plafond calé sur « Grand nombre », le plus long des deux libellés : au-delà
+     il passait à la ligne quand « Petit nombre » n'en prenait qu'une, et les
+     deux boutons n'avaient plus l'air d'aller ensemble. */
+  font-size: clamp(13px, 1.9svh, 14.5px);
+  line-height: 1.15;
+  text-align: center;
+  text-wrap: balance;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.boost:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 var(--shade);
+}
+
+/* La réserve est commune à la table : la même pastille sur les deux boutons dit
+   « trois lancers à orienter, sur l'un ou sur l'autre ». La phrase entière est
+   dans l'`aria-label`, où elle ne coûte pas de place. */
+.boost__n {
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 5px;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--on-1);
+  font-family: var(--body);
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Même partition que `.btn:disabled` : l'ombre s'aplatit, le trait s'éclaircit —
+   « pas maintenant », et non « cassé ». */
+.boost:disabled {
+  cursor: default;
+  color: rgba(var(--ink-rgb), 0.4);
+  border-color: rgba(var(--ink-rgb), 0.3);
+  box-shadow: 0 3px 0 rgba(var(--ink-rgb), 0.2);
+}
+
+.boost:disabled .boost__n {
+  border-color: rgba(var(--ink-rgb), 0.3);
+  background: var(--paper-deep);
+  color: var(--muted);
+}
+
+/* `margin: auto` consommerait l'espace libre de la ligne avant que les boutons
+   n'aient pu grandir : le dé se centre par la ligne, pas par ses marges. */
 .dice {
   display: grid;
   place-items: center;
-  width: 88px;
-  height: 88px;
-  margin: 0 auto;
+  width: clamp(72px, 11svh, 92px);
+  height: clamp(72px, 11svh, 92px);
   flex: none;
   padding: 0;
   border: var(--bw-thick) solid var(--ink);
@@ -1470,7 +1659,7 @@ input:disabled {
 .dice .face {
   width: 100%;
   height: 100%;
-  padding: 14px;
+  padding: 16%;
 }
 
 /* Dé au repos : un point d'interrogation plutôt qu'une face, pour ne pas faire
@@ -1483,7 +1672,7 @@ input:disabled {
 .dice .face.waiting span {
   font-family: var(--title);
   font-weight: 800;
-  font-size: 38px;
+  font-size: clamp(30px, 4.8svh, 40px);
   line-height: 1;
   color: rgba(var(--ink-rgb), 0.45);
 }
@@ -1733,12 +1922,47 @@ input:disabled {
   display: block;
 }
 
-/* Le panneau garde une hauteur fixe : la liste défile, le reste ne bouge pas. */
-/* `max-height`, pas `height` : le panneau prend la place qu'il faut jusqu'à
-   ce plafond plutôt que de l'imposer — sur un petit écran ou un clavier
-   ouvert, il se resserre au lieu de déborder. */
+/* Le chat s'ouvre en feuille par le bas, pas en boîte au milieu. Sur un
+   téléphone c'est là qu'est le pouce, le plateau reste visible au-dessus, et le
+   clavier qui monte pousse la feuille au lieu de la couper en deux. */
+.overlay.chat {
+  align-items: safe flex-end;
+  padding: 0;
+}
+
+/* `max-height`, pas `height` : la feuille prend la place qu'il faut jusqu'à ce
+   plafond plutôt que de l'imposer. `min-height` en face, pour qu'elle ne se
+   recroqueville pas sur un seul message — un panneau qui change de taille à
+   chaque envoi donne le mal de mer. */
 .chat__sheet {
-  max-height: min(80svh, 620px);
+  width: min(100%, 560px);
+  min-height: min(54svh, 430px);
+  max-height: min(84svh, 660px);
+  gap: 12px;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+  border-bottom: none;
+  border-radius: 30px 30px 0 0;
+  background: var(--paper);
+  box-shadow: none;
+}
+
+/* Dit « ceci est une feuille » avant même qu'on ait lu le titre. Décorative :
+   c'est le fond et la croix qui ferment. */
+.chat__grip {
+  flex: none;
+  width: 44px;
+  height: 5px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.22);
+}
+
+.chat__head {
+  gap: 8px;
+}
+
+.chat__head h2 {
+  font-size: clamp(20px, 3svh, 24px);
 }
 
 .chat__list {
@@ -1746,89 +1970,174 @@ input:disabled {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 2px 2px 4px;
+}
+
+/* Rien n'a encore été dit : une bulle en filigrane vaut mieux qu'une ligne de
+   gris perdue en haut d'un panneau vide. */
+.chat__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: rgba(var(--ink-rgb), 0.28);
+}
+
+.chat__empty .hint {
+  margin: 0;
 }
 
 .chat__msg {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  max-width: 82%;
-  padding: 8px 12px;
-  border: var(--bw) solid var(--ink);
-  border-radius: 18px 18px 18px 4px;
-  background: var(--card);
-  box-shadow: 0 3px 0 var(--shade);
+  max-width: 84%;
   align-self: flex-start;
 }
 
 .chat__msg.mine {
-  border-radius: 18px 18px 4px 18px;
-  background: var(--green);
-  color: var(--on-0);
   align-self: flex-end;
+  align-items: flex-end;
 }
 
-.chat__meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+/* Deux messages d'affilée du même auteur : un seul nom, et les bulles se
+   serrent pour se lire comme un bloc. */
+.chat__msg.grouped {
+  margin-top: -5px;
 }
 
+/* Le nom porte la couleur du siège : c'est déjà comme ça que le plateau, les
+   cartes et la ligne de tour désignent les joueurs. En pastille et non en texte
+   coloré — le jaune du siège 1 écrit sur le papier crème du thème clair ne se
+   lisait pas, alors qu'en aplat il porte son encre comme partout ailleurs. */
 .chat__author {
+  align-self: flex-start;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--seat, var(--paper-deep));
+  color: var(--on, var(--muted-strong));
   font-family: var(--title);
-  font-weight: 700;
-  font-size: 13px;
+  font-weight: 800;
+  font-size: 11.5px;
 }
 
-.chat__time {
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.65;
+.chat__bubble {
+  display: flex;
+  align-items: flex-end;
+  gap: 9px;
+  padding: 7px 13px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 18px 18px 18px 6px;
+  background: var(--card);
+  box-shadow: 0 3px 0 var(--shade);
+}
+
+/* Mes messages portent MA couleur, pas un vert générique : dans une partie à
+   quatre, c'est la couleur qui dit qui parle. */
+.chat__msg.mine .chat__bubble {
+  border-radius: 18px 18px 6px 18px;
+  background: var(--seat, var(--green));
+  color: var(--on, var(--on-0));
 }
 
 .chat__text {
+  min-width: 0;
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
-.chat__emoji {
-  display: flex;
+.chat__time {
   flex: none;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 2px;
+  padding-bottom: 2px;
+  font-family: var(--body);
+  font-size: 10.5px;
+  font-weight: 700;
+  opacity: 0.6;
+}
+
+/* Une réaction seule sort de son cartouche et passe en grand : c'est un geste,
+   pas une phrase, et un pouce levé de 16 px ne se voit pas. */
+.chat__msg.solo .chat__bubble {
+  padding: 0 4px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.chat__msg.solo .chat__text {
+  font-size: 38px;
+  line-height: 1.1;
+}
+
+/* Les seize réactions tiennent à l'écran, en deux rangées. La version
+   précédente les alignait dans une bande qui défilait horizontalement : la
+   moitié du choix se cachait derrière un geste que rien n'annonçait, et la
+   dernière visible était coupée en deux. */
+.chat__emoji {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  flex: none;
+  padding: 7px 6px;
+  border: 2px solid var(--line);
+  border-radius: 20px;
+  background: var(--paper-deep);
 }
 
 .chat__emoji-btn {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  border: var(--bw) solid transparent;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 2px solid transparent;
   border-radius: 12px;
   background: none;
-  font-size: 22px;
+  font-size: clamp(17px, 4.6vw, 23px);
   line-height: 1;
-  transition: background 0.08s ease;
+  transition: transform 0.09s ease, background 0.09s ease;
 }
 
 .chat__emoji-btn:active {
-  background: var(--paper-deep);
+  transform: scale(0.86);
   border-color: var(--line);
+  background: var(--card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat__emoji-btn:active {
+    transform: none;
+  }
 }
 
 .chat__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex: none;
 }
 
-.chat__row button {
-  flex: none;
-  width: auto;
-  padding-inline: 22px;
+/* Le champ prend toute la ligne : « Envoyer » écrit en toutes lettres en
+   mangeait la moitié, et le placeholder s'y coupait au milieu d'un mot. */
+.chat__row input {
+  min-height: clamp(46px, 6.6svh, 54px);
+  font-size: clamp(16px, 2.4svh, 18px);
+}
+
+.chat__send {
+  width: clamp(46px, 6.6svh, 54px);
+  height: clamp(46px, 6.6svh, 54px);
+  border-radius: 16px;
+  background: var(--green);
+  color: var(--on-0);
 }
 
 /* Confettis figés : cinq formes de guingois, comme jetées sur la page. */
@@ -1978,7 +2287,18 @@ input:disabled {
   gap: 12px;
 }
 
+/* `flex: none` n'est pas une précaution, c'est le correctif d'un bug de mise en
+   page bien réel. L'écran est une colonne flexible qui défile, et un enfant de
+   colonne flexible refuse normalement de descendre sous la hauteur de son
+   contenu — sa « taille minimale automatique ». Mais cette protection saute dès
+   que l'enfant porte un `overflow` autre que `visible`, et celui-ci en porte un,
+   pour que le texte ne dépasse pas des coins arrondis. Résultat : au lieu de
+   pousser l'écran à défiler, un bloc déplié se faisait comprimer — 238 px
+   affichés pour 747 px de texte — et les blocs voisins, restés fermés,
+   tombaient de 62 à 23 px, leur titre coupé net. Trois pastilles vides et un
+   texte illisible. */
 .about__block {
+  flex: none;
   border: var(--bw) solid var(--ink);
   border-radius: 22px;
   background: var(--card);
@@ -2147,7 +2467,7 @@ input:disabled {
   .play {
     display: grid;
     grid-template-columns: auto minmax(210px, 1fr);
-    grid-template-rows: auto auto 1fr auto auto auto;
+    grid-template-rows: auto auto 1fr auto auto;
     align-content: center;
     column-gap: 16px;
     row-gap: 8px;
@@ -2167,11 +2487,45 @@ input:disabled {
   .play > .turnline {
     grid-area: 4 / 2;
   }
-  .play > .dice {
+  .play > .dice-row {
     grid-area: 5 / 2;
   }
-  .play > .boost-row {
-    grid-area: 6 / 2;
+
+  /* La colonne de droite fait 210 px : le dé et ses deux bonus n'y tiennent
+     plus côte à côte. Le dé passe au-dessus, les bonus se rangent dessous —
+     la ligne n'a plus de hauteur à économiser ici, c'est la largeur qui manque. */
+  .play > .dice-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'die die'
+      'low high';
+    gap: 8px;
+    justify-items: center;
+  }
+
+  .dice-row .dice {
+    grid-area: die;
+  }
+
+  .boost--low {
+    grid-area: low;
+  }
+
+  .boost--high {
+    grid-area: high;
+  }
+
+  .boost {
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Boutons pleine largeur : la pastille rentre dans le coin au lieu de flotter
+     entre les deux, où elle n'appartenait visuellement à aucun des deux. */
+  .boost__n {
+    top: -8px;
+    right: 10px;
   }
 
   /* Toute la hauteur, à gauche. La largeur est posée en dur — et elle doit
@@ -2186,9 +2540,61 @@ input:disabled {
     margin-inline: -16px 0;
   }
 
-  /* Les cartes des joueurs passent en colonne : côte à côte, dans 210 px, elles
-     n'affichent plus que leur pastille. */
+  /* Les cartes restent côte à côte, comme en portrait. Empilées en colonne,
+     les quatre prenaient plus de deux cents pixels de haut dans une colonne qui
+     n'en compte que 393 : l'en-tête sortait par le haut et les bonus par le bas,
+     coupés net par `overflow: hidden`. La colonne de droite n'est étroite que
+     dans le pire cas — `minmax(210px, 1fr)` lui donne en pratique tout ce que le
+     plateau n'a pas pris, soit plus de quatre cents pixels. */
   .play > .players {
-    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Empilées, les cartes n'ont plus de place au-dessus ni en dessous : la bulle
+     sort par la gauche, au-dessus du plateau, et sa pointe vise la carte. */
+  .pcard:first-child .pcard__bubble,
+  .pcard:last-child .pcard__bubble {
+    top: 50%;
+    bottom: auto;
+    left: auto;
+    right: calc(100% + 11px);
+    transform: translateY(-50%);
+    transform-origin: right center;
+    max-width: min(230px, 40vw);
+  }
+
+  .players--top .pcard__bubble::before,
+  .players--bottom .pcard__bubble::before {
+    top: 50%;
+    bottom: auto;
+    left: 100%;
+    margin: -12px 0 0;
+    border-width: 12px 0 12px 12px;
+    border-color: transparent transparent transparent var(--ink);
+  }
+
+  .players--top .pcard__bubble::after,
+  .players--bottom .pcard__bubble::after {
+    top: 50%;
+    bottom: auto;
+    left: calc(100% - var(--bw));
+    margin: -8px 0 0;
+    border-width: 8px 0 8px 8px;
+    border-color: transparent transparent transparent var(--card);
+  }
+
+  @keyframes bubble-pop-side {
+    from {
+      transform: translateY(-50%) scale(0.8);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(-50%) scale(1);
+      opacity: 1;
+    }
+  }
+
+  .pcard__bubble {
+    animation-name: bubble-pop-side;
   }
 }

@@ -13,6 +13,19 @@
 import { getRelaySockets, joinRoom, selfId } from 'trystero/nostr'
 import type { Action, GameState, Seat } from '../game/types.ts'
 
+/**
+ * Le nom de scène du jeu sur les relais publics : c'est lui qui isole nos
+ * salons de ceux des autres applications qui passent par la même
+ * infrastructure.
+ *
+ * Il garde volontairement l'ancien nom du dépôt. Ce n'est pas un oubli du
+ * renommage : c'est un identifiant qui circule sur le réseau, pas une adresse
+ * de code source. Deux appareils qui n'annoncent pas le même ne se voient
+ * jamais, même avec le bon code de partie — et une PWA déjà installée garde sa
+ * version en cache un moment après une mise en ligne. Le changer ferait donc
+ * échouer les parties entre un ami à jour et un ami qui ne l'est pas encore,
+ * sans que ni l'un ni l'autre ne puisse comprendre pourquoi.
+ */
 export const APP_ID = 'jeu-dada-v1'
 
 export type LobbyPlayer = {

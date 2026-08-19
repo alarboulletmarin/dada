@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * Code source : https://github.com/alarboulletmarin/jeu-dada
+ * Code source : https://github.com/alarboulletmarin/dada
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */

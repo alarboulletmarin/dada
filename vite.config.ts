@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { defineConfig, type Plugin } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// BASE_PATH permet de déployer sous un sous-chemin (GitHub Pages projet : /jeu-dada/).
+// BASE_PATH permet de déployer sous un sous-chemin (GitHub Pages projet : /dada/).
 const base = process.env.BASE_PATH ?? '/'
 
 // Source unique de la version : package.json. La recopier dans le source ferait
@@ -28,7 +28,7 @@ function noticeAGPL(): Plugin {
   const notice = [
     `/*! Dada v${version} — Copyright (C) 2026 Andréa Larboullet Marin`,
     ' * Licence : GNU AGPL-3.0-or-later <https://www.gnu.org/licenses/agpl-3.0.html>',
-    ' * Source complète : https://github.com/alarboulletmarin/jeu-dada',
+    ' * Source complète : https://github.com/alarboulletmarin/dada',
     ' * Fourni SANS AUCUNE GARANTIE, dans les limites permises par la loi. */',
   ].join('\n')
 
