@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 297 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
+npm test         # 307 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
 npm run build    # vérification de types puis build de production
 ```
 
@@ -109,15 +109,32 @@ chaque joueur croise le même nombre de cases, aux mêmes distances de chez lui.
 Personne n'a « le bon coin du plateau ». L'équité est dans la géométrie ; elle
 n'a pas à être corrigée coup par coup.
 
-| Carte | | Effet |
-|---|---|---|
-| Bouclier | ×3 | Le cheval encaisse la prochaine capture sans bouger. Le bouclier se brise à l'impact. |
-| Galop | ×3 | Le cheval avance de 3 cases de plus. Jamais au-delà de l'arrivée : gagner par accident serait pire que rien. |
-| Rejeu | ×2 | On relance le dé et on rejoue. |
-| Dé pipé | ×2 | Un bonus de dé de plus dans le budget commun. |
-| Faux pas | ×3 | Le cheval recule de 3 cases, sans jamais repasser par l'écurie. |
-| Tour sauté | ×2 | Le prochain tour saute. Un seul. |
-| Retour à l'écurie | ×1 | Le cheval rentre. La carte la plus dure, et la seule de son espèce. |
+**Les bonus se gardent, les malus se subissent.** C'est la règle entière, et
+elle se retient. Un malus s'applique à l'instant ; un bonus rejoint la main, et
+c'est le joueur qui choisit son moment. Un bouclier posé juste avant que
+l'adversaire n'arrive à portée, c'est un coup joué, pas un lot de tombola.
+
+| Carte | | Garde | Effet |
+|---|---|---|---|
+| Bouclier | ×3 | main | Le cheval désigné encaisse la prochaine capture sans bouger. Le bouclier se brise à l'impact. |
+| Galop | ×3 | main | Le cheval désigné avance de 3 cases. Jamais au-delà de l'arrivée : gagner par accident serait pire que rien. |
+| Rejeu | ×2 | main | On relance le dé et on rejoue. La chaîne de 6 continue de compter. |
+| Dé pipé | ×2 | — | Un bonus de dé de plus dans le budget commun, qui est déjà l'endroit où l'on garde. |
+| Faux pas | ×3 | — | Le cheval recule de 3 cases, sans jamais repasser par l'écurie. |
+| Tour sauté | ×2 | — | Le prochain tour saute. Un seul. |
+| Retour à l'écurie | ×1 | — | Le cheval rentre. La carte la plus dure, et la seule de son espèce. |
+
+La main tient **trois cartes**, pas davantage. Sans plafond elle devient un
+magasin : on ramasse sans jamais dépenser, et la fin de partie se joue en vidant
+un stock que personne n'a vu venir. À trois, ramasser une quatrième carte oblige
+à en jouer une — c'est là qu'est la décision. Une carte ramassée main pleine est
+perdue, et le bandeau le dit.
+
+Jouer une carte ne consomme pas le tour : on peut poser un bouclier *puis*
+lancer le dé, ou relancer un dé décevant *puis* jouer son coup. C'est tout
+l'intérêt d'une carte qu'on garde — elle sert à choisir l'instant, pas à
+remplacer un tour. Les cartes qui visent un cheval passent la main au plateau :
+on touche la carte, les chevaux éligibles se cerclent, on en touche un.
 
 Un pouvoir qui déplace ne redéclenche pas la case où il amène le cheval : sans
 cette règle, deux cases voisines pourraient se renvoyer la balle sans fin.
@@ -125,6 +142,33 @@ cette règle, deux cases voisines pourraient se renvoyer la balle sans fin.
 Le catalogue entier se lit **avant** la partie, depuis le salon, exemplaires
 compris. Un bonus qu'on découvre en le ramassant est une surprise ; un malus
 qu'on découvre en le ramassant est une injustice.
+
+## La feuille de match
+
+L'écran de fin ne dit pas seulement qui a gagné : il donne, par joueur, les
+cases parcourues, la moyenne au dé, les chevaux mangés et perdus, les 6 obtenus
+et les cartes ramassées. « 4,1 de moyenne et perdu quand même » est la phrase
+qui fait relancer une manche, et elle ne se reconstitue pas depuis l'état final
+— elle se compte pendant la partie, dans le moteur.
+
+Ces compteurs n'entrent dans **aucune** décision de règle. Une colonne qui
+n'apprend rien à cette table-là ne s'affiche pas : celle des cartes sur une
+partie sans pouvoirs serait une colonne de zéros, et une colonne de zéros se lit
+comme une panne.
+
+## Deux écrans de règles, et pourquoi deux
+
+`rules.*` dans `i18n.ts` sert l'écran **« Comment on joue »** : neuf étapes pour
+lancer sa première partie. Il ne dit pas si l'on peut poser deux chevaux sur la
+même case, ni ce qui se passe quand on tombe sur un bouclier.
+
+`rules-text.ts` est le **règlement complet** : un document, comme les textes de
+la page « à propos », et pas de la chaîne d'interface. Chaque règle y dit aussi
+ce qui est *interdit* — c'est ce qu'on vient y chercher — et porte l'étiquette
+des variantes auxquelles elle s'applique, une règle sans étiquette valant pour
+les trois. Allonger le premier écran de quarante paragraphes lui ferait rater
+son travail ; on vient au second plus tard, avec une question précise, souvent
+au milieu d'une dispute.
 
 ### Sortir de l'écurie sans y passer la soirée
 
@@ -155,6 +199,7 @@ src/net/      transport pair-à-pair et orchestration de la partie
   session.ts    salon, arbitrage, minuterie de tour, relève des absents
   presence.ts   les délais : dix secondes pour jouer, quand un bot prend la main
 src/ui/       écrans, plateau, animations
+  rules-text.ts le règlement complet — un document, pas des libellés
 ```
 
 **Un seul arbitre.** L'appareil hôte détient l'état et applique les coups ; les

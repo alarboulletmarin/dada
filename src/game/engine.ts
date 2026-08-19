@@ -7,7 +7,7 @@
  */
 
 import { geometryFor, hasFinished, isOnTrack, trackIndexOf } from './board.ts'
-import { freshDeck, POWERS, type PowerId } from './powers.ts'
+import { freshDeck, HAND_LIMIT, POWERS, type PowerId } from './powers.ts'
 import { rollDie, shuffle } from './rng.ts'
 import {
   DICE_BOOSTS_PER_GAME,
@@ -20,6 +20,7 @@ import {
   type Pawn,
   type Player,
   type Seat,
+  type SeatStats,
   type Variant,
 } from './types.ts'
 
@@ -27,6 +28,45 @@ const LOG_LIMIT = 60
 
 export const pawnId = (seat: Seat, index: number): string => `p${seat}-${index}`
 export const pawnSlot = (id: string): number => Number(id.split('-')[1] ?? 0)
+
+const emptyStats = (): SeatStats => ({
+  rolls: 0,
+  pips: 0,
+  sixes: 0,
+  captures: 0,
+  losses: 0,
+  distance: 0,
+  powers: 0,
+})
+
+/**
+ * Compteurs d'un siège, dans un état qui n'en aurait pas.
+ *
+ * Le `?? ` n'est pas de la timidité : un pair resté sur une version d'avant les
+ * statistiques envoie un état qui n'en porte pas, et la partie doit continuer
+ * plutôt que de tomber sur un `undefined`.
+ */
+export const statsOf = (state: GameState, seat: Seat): SeatStats =>
+  state.stats?.[seat] ?? emptyStats()
+
+/** Applique un delta aux compteurs d'un siège. Sans effet de bord. */
+function countUp(state: GameState, seat: Seat, delta: Partial<SeatStats>): GameState {
+  const stats = [0, 1, 2, 3].map((s) => statsOf(state, s as Seat))
+  const current = stats[seat]!
+  stats[seat] = { ...current }
+  for (const [key, value] of Object.entries(delta) as [keyof SeatStats, number][]) {
+    stats[seat]![key] = current[key] + value
+  }
+  return { ...state, stats }
+}
+
+/** Les cartes gardées par un siège. */
+export const handOf = (state: GameState, seat: Seat): PowerId[] => state.hands?.[seat] ?? []
+
+function setHand(state: GameState, seat: Seat, cards: PowerId[]): GameState {
+  const hands = [0, 1, 2, 3].map((s) => (s === seat ? cards : handOf(state, s as Seat)))
+  return { ...state, hands }
+}
 
 export function createGame(opts: {
   players: Player[]
@@ -62,6 +102,8 @@ export function createGame(opts: {
     stuck: [0, 0, 0, 0],
     deck,
     skips: [0, 0, 0, 0],
+    hands: [[], [], [], []],
+    stats: [emptyStats(), emptyStats(), emptyStats(), emptyStats()],
     log: [
       { seq: 0, seat: players[0]!.seat, actor: '', event: { kind: 'start', variant: opts.variant.id } },
     ],
@@ -252,6 +294,8 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
       return applyMove(state, action.pawnId)
     case 'pass':
       return applyPass(state)
+    case 'power':
+      return applyHeldPower(state, action.power, action.pawnId)
   }
 }
 
@@ -280,6 +324,7 @@ function applyRoll(state: GameState, boost?: 'low' | 'high'): ApplyResult {
     diceBoosts: useBoost ? state.diceBoosts - 1 : state.diceBoosts,
     seq: state.seq + 1,
   }
+  next = countUp(next, state.turn, { rolls: 1, pips: dice, sixes: dice === 6 ? 1 : 0 })
   next = addLog(next, state.turn, { kind: 'roll', dice })
   if (voided) next = addLog(next, state.turn, { kind: 'voided', sixes: max })
 
@@ -326,6 +371,16 @@ function applyMove(state: GameState, id: string): ApplyResult {
     })
   }
 
+  // Le déplacement compte pour la distance parcourue ; la sortie d'écurie ne
+  // vaut aucune case (on passe de « nulle part » à la case de départ).
+  next = countUp(next, state.turn, {
+    distance: move.exits ? 0 : Math.max(0, move.to - move.from),
+    captures: move.captures.length,
+  })
+  for (const captured of move.captures) {
+    next = countUp(next, state.pawns.find((p) => p.id === captured)!.owner, { losses: 1 })
+  }
+
   const power = resolvePower(next, move.pawnId)
   next = power.state
 
@@ -357,13 +412,119 @@ function resolvePower(state: GameState, pawnId: string): { state: GameState; rep
   if (index === null || !geometry.powerIndexSet.has(index)) return { state, replay: false }
 
   const drawn = draw(state)
-  let next = addLog(drawn.state, state.turn, {
+  let next = countUp(drawn.state, state.turn, { powers: 1 })
+  next = addLog(next, state.turn, {
     kind: 'power',
     power: drawn.power,
     pawn: pawnSlot(pawnId) + 1,
   })
-  next = applyPower(next, pawnId, drawn.power)
-  return { state: next, replay: drawn.power === 'rejeu' }
+
+  // Les bonus se gardent, les malus se subissent. Une main pleine refuse la
+  // carte plutôt que d'en pousser une dehors : perdre une carte qu'on avait
+  // choisi de garder serait la pire des surprises.
+  if (POWERS[drawn.power].held) {
+    const hand = handOf(next, next.turn)
+    if (hand.length >= HAND_LIMIT) {
+      return { state: addLog(next, next.turn, { kind: 'handFull', power: drawn.power }), replay: false }
+    }
+    return { state: setHand(next, next.turn, [...hand, drawn.power]), replay: false }
+  }
+
+  return { state: applyPower(next, pawnId, drawn.power), replay: false }
+}
+
+/**
+ * Joue une carte gardée en main.
+ *
+ * Jouer une carte ne consomme pas le tour : on peut poser un bouclier *puis*
+ * lancer le dé, ou relancer un dé décevant *puis* jouer son coup. C'est tout
+ * l'intérêt d'une carte qu'on garde — elle sert à choisir l'instant, pas à
+ * remplacer un tour.
+ */
+function applyHeldPower(state: GameState, power: PowerId, target?: string): ApplyResult {
+  const hand = handOf(state, state.turn)
+  if (!hand.includes(power)) return { state, error: 'noSuchPower' }
+  if (!canPlayPower(state, power, target)) return { state, error: 'powerNotNow' }
+
+  // Un seul exemplaire retiré, et non tous ceux du même nom.
+  const at = hand.indexOf(power)
+  let next = setHand(state, state.turn, [...hand.slice(0, at), ...hand.slice(at + 1)])
+  next = { ...next, seq: next.seq + 1 }
+  next = addLog(next, next.turn, {
+    kind: 'played',
+    power,
+    pawn: target ? pawnSlot(target) + 1 : 0,
+  })
+
+  if (power === 'rejeu') return { state: rerollFor(next) }
+  return { state: applyPower(next, target!, power) }
+}
+
+/**
+ * La carte peut-elle être jouée dans l'état où l'on est ?
+ *
+ * Exportée : l'écran des cartes en main s'en sert pour griser celles qui ne
+ * mènent à rien, plutôt que de laisser le joueur les taper pour rien.
+ */
+export function canPlayPower(state: GameState, power: PowerId, target?: string): boolean {
+  if (state.phase === 'finished') return false
+  const spec = POWERS[power]
+  if (!spec.held) return false
+
+  // Relancer suppose un dé sur la table, et un tour qui n'est pas déjà perdu.
+  if (power === 'rejeu') return state.phase === 'moving' && !state.voided
+
+  if (spec.target === 'cheval') {
+    const geometry = geometryFor(state.variant)
+    const pawn = state.pawns.find((p) => p.id === target && p.owner === state.turn)
+    if (!pawn) return false
+    if (hasFinished(geometry, pawn.steps)) return false
+    // Un bouclier se pose sur un cheval en piste, pas sur un cheval à l'écurie :
+    // à l'écurie, rien ne peut le manger.
+    if (power === 'bouclier') return pawn.steps >= 0 && !pawn.shield
+    // Un galop pousse un cheval déjà sorti, et jamais au-delà de l'arrivée.
+    if (power === 'galop') return pawn.steps >= 0 && pawn.steps + spec.steps <= geometry.lastStep
+  }
+  return true
+}
+
+/** Les cartes de la main jouables tout de suite, cheval visé compris. */
+export function playablePowers(state: GameState): PowerId[] {
+  return [...new Set(handOf(state, state.turn))].filter((power) => {
+    const spec = POWERS[power]
+    if (spec.target === 'aucune') return canPlayPower(state, power)
+    return pawnsOf(state, state.turn).some((p) => canPlayPower(state, power, p.id))
+  })
+}
+
+/** Les chevaux sur lesquels cette carte peut se poser. */
+export function powerTargets(state: GameState, power: PowerId): string[] {
+  if (POWERS[power].target !== 'cheval') return []
+  return pawnsOf(state, state.turn)
+    .filter((p) => canPlayPower(state, power, p.id))
+    .map((p) => p.id)
+}
+
+/**
+ * Relance le dé sans changer de main.
+ *
+ * La chaîne de 6 ne repart pas de zéro : sans cela, relancer serait aussi le
+ * moyen d'effacer deux 6 déjà posés et d'échapper à la règle des trois.
+ */
+function rerollFor(state: GameState): GameState {
+  const [rng, dice] = rollDie(state.rng, {
+    exitFaces: state.variant.exitRolls,
+    exitChance: mercyOf(state, state.turn),
+  })
+  const consecutiveSixes = dice === 6 ? state.consecutiveSixes + 1 : 0
+  const max = state.variant.maxConsecutiveSixes
+  const voided = max > 0 && dice === 6 && consecutiveSixes >= max
+
+  let next: GameState = { ...state, rng, dice, consecutiveSixes, voided, phase: 'moving' }
+  next = countUp(next, state.turn, { rolls: 1, pips: dice, sixes: dice === 6 ? 1 : 0 })
+  next = addLog(next, state.turn, { kind: 'roll', dice })
+  if (voided) next = addLog(next, state.turn, { kind: 'voided', sixes: max })
+  return next
 }
 
 /** Retire la carte du dessus, en remélangeant un paquet neuf s'il est vide. */

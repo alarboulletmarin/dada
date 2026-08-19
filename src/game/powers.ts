@@ -42,6 +42,14 @@ export type PowerId = (typeof POWER_IDS)[number]
 
 export type PowerKind = 'bonus' | 'malus'
 
+/**
+ * Ce qu'il faut désigner pour jouer la carte.
+ *
+ * - `aucune` : elle s'applique toute seule (relancer le dé, garnir le budget).
+ * - `cheval` : elle demande un cheval, qu'on choisit sur le plateau.
+ */
+export type PowerTarget = 'aucune' | 'cheval'
+
 export type Power = {
   id: PowerId
   kind: PowerKind
@@ -49,6 +57,18 @@ export type Power = {
   copies: number
   /** Nombre de cases pour les pouvoirs qui déplacent ; 0 sinon. */
   steps: number
+  /**
+   * La carte se garde-t-elle en main ?
+   *
+   * **Les bonus se gardent, les malus se subissent.** C'est la règle entière,
+   * et elle se retient. Un bonus dont on choisit l'instant vaut bien plus qu'un
+   * bonus qui part tout seul : le bouclier posé juste avant que l'adversaire
+   * n'arrive à portée, c'est un coup joué, pas un lot de tombola. Un malus,
+   * lui, ne se garde pas — sinon personne ne le jouerait jamais.
+   */
+  held: boolean
+  /** Ce que la carte demande de désigner. Sans objet pour un malus. */
+  target: PowerTarget
 }
 
 /**
@@ -61,14 +81,26 @@ export type Power = {
  * décide.
  */
 export const POWERS: Record<PowerId, Power> = {
-  bouclier: { id: 'bouclier', kind: 'bonus', copies: 3, steps: 0 },
-  galop: { id: 'galop', kind: 'bonus', copies: 3, steps: 3 },
-  rejeu: { id: 'rejeu', kind: 'bonus', copies: 2, steps: 0 },
-  des: { id: 'des', kind: 'bonus', copies: 2, steps: 0 },
-  fauxpas: { id: 'fauxpas', kind: 'malus', copies: 3, steps: 3 },
-  saute: { id: 'saute', kind: 'malus', copies: 2, steps: 0 },
-  ecurie: { id: 'ecurie', kind: 'malus', copies: 1, steps: 0 },
+  bouclier: { id: 'bouclier', kind: 'bonus', copies: 3, steps: 0, held: true, target: 'cheval' },
+  galop: { id: 'galop', kind: 'bonus', copies: 3, steps: 3, held: true, target: 'cheval' },
+  rejeu: { id: 'rejeu', kind: 'bonus', copies: 2, steps: 0, held: true, target: 'aucune' },
+  // Le dé pipé ne se garde pas : il ne rejoint pas une main, il rejoint le
+  // budget de bonus de dé de la table, qui est déjà une réserve qu'on garde.
+  des: { id: 'des', kind: 'bonus', copies: 2, steps: 0, held: false, target: 'aucune' },
+  fauxpas: { id: 'fauxpas', kind: 'malus', copies: 3, steps: 3, held: false, target: 'aucune' },
+  saute: { id: 'saute', kind: 'malus', copies: 2, steps: 0, held: false, target: 'aucune' },
+  ecurie: { id: 'ecurie', kind: 'malus', copies: 1, steps: 0, held: false, target: 'aucune' },
 }
+
+/**
+ * Cartes qu'on peut garder devant soi.
+ *
+ * Trois, et pas davantage. Sans plafond, la main devient un magasin : on
+ * ramasse sans jamais dépenser, et la fin de partie se joue en vidant un stock
+ * que personne n'a vu venir. Avec trois, ramasser une quatrième carte oblige à
+ * en jouer une — c'est là qu'est la décision.
+ */
+export const HAND_LIMIT = 3
 
 /** L'ordre d'affichage dans le salon : les bonus d'abord, puis les malus. */
 export const POWER_LIST: Power[] = POWER_IDS.map((id) => POWERS[id])

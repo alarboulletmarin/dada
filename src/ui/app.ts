@@ -7,9 +7,9 @@
  */
 
 import { BOARD_SHAPES, geometryFor, isBoardShape, type BoardShape } from '../game/board.ts'
-import { mercyOf, pawnsOf } from '../game/engine.ts'
-import { bonusCount, DECK_SIZE, POWER_LIST } from '../game/powers.ts'
-import { STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
+import { mercyOf, pawnsOf, statsOf } from '../game/engine.ts'
+import { bonusCount, DECK_SIZE, HAND_LIMIT, POWERS, POWER_LIST, type PowerId } from '../game/powers.ts'
+import { STABLE, type GameState, type Move, type Seat, type SeatStats, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { makeCode, type ChatMessage } from '../net/room.ts'
 import { clearInvite, clearSave, readInvite, readSave } from '../net/save.ts'
@@ -19,6 +19,7 @@ import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
 import { icon } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
+import { renderRulebook } from './rulebook.ts'
 import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
 
 const NAME_KEY = 'dada.name'
@@ -67,6 +68,20 @@ const SHAPE_PATHS: Record<BoardShape, string> = {
     'M12 3.2c2 2 5.6.4 7 1.8s-.2 5 1.8 7c-2 2-.4 5.6-1.8 7s-5-.2-7 1.8c-2-2-5.6-.4-7-1.8s.2-5-1.8-7c2-2 .4-5.6 1.8-7s5 .2 7-1.8Z',
 }
 
+/**
+ * Un « coup » factice servant à faire cercler un cheval par le plateau pendant
+ * qu'on désigne la cible d'une carte.
+ *
+ * `BoardView` ne connaît que des coups : lui apprendre un second mode de
+ * sélection reviendrait à dupliquer tout ce qu'il fait déjà — cercler, rendre
+ * cliquable au doigt et au clavier, annoncer au lecteur d'écran. Un coup qui
+ * ne va nulle part suffit.
+ */
+function aimMove(state: GameState, pawnId: string): Move {
+  const steps = state.pawns.find((p) => p.id === pawnId)?.steps ?? 0
+  return { pawnId, from: steps, to: steps, captures: [], shielded: [], finishes: false, exits: false }
+}
+
 /** Pastille de chaque variante : de la présentation, pas des règles. */
 const BADGES: Record<string, 'die' | 'pawn' | 'bolt'> = {
   'petits-chevaux': 'die',
@@ -103,6 +118,8 @@ const NOTICE_KEY: Record<NoticeCode, Key> = {
   rollFirst: 'error.rollFirst',
   illegal: 'error.illegal',
   nothingToPass: 'error.nothingToPass',
+  noSuchPower: 'error.noSuchPower',
+  powerNotNow: 'error.powerNotNow',
   moveExists: 'error.moveExists',
   linkFailed: 'link.failed',
   linkBlocked: 'link.blocked',
@@ -138,7 +155,7 @@ const turnOf = (name: string): string =>
         : name,
   })
 
-type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'about'
+type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'rulebook' | 'about'
 
 export class App {
   private session: Session | null = null
@@ -153,6 +170,7 @@ export class App {
     boostLowBtn: HTMLButtonElement
     boostHighBtn: HTMLButtonElement
     boostCounts: HTMLElement[]
+    hand: HTMLElement
   } | null = null
   private name = localStorage.getItem(NAME_KEY) ?? ''
   /** Ce qu'on fera de la variante choisie sur l'écran « on joue à quoi ? ». */
@@ -160,6 +178,11 @@ export class App {
   private variantId = VARIANTS[0]!.id
   /** Dernier événement du journal déjà annoncé — voir `announce`. */
   private announced = -1
+  /**
+   * La carte qu'on vient de choisir et dont on désigne la cible sur le plateau.
+   * Null le reste du temps. Voir `renderHand`.
+   */
+  private aiming: PowerId | null = null
   /** Dernier résultat de dé connu : le dé du bas garde toujours une face visible. */
   private lastDie: number | null = null
   /** Valeur déjà affichée, pour repérer le lancer qui vient d'arriver. */
@@ -1194,9 +1217,28 @@ export class App {
             ),
           ),
         ),
+        h('button', {
+          class: 'btn small',
+          text: t('rules.full'),
+          on: { click: () => this.renderRulebook(back) },
+        }),
         h('p', { class: 'hint center push', text: t('rules.footer') }),
       ),
     )
+  }
+
+  /**
+   * Le règlement complet — ce qui est permis, ce qui ne l'est pas, et ce qui
+   * change d'un jeu à l'autre.
+   *
+   * Un second écran plutôt qu'un chapitre de plus dans le premier : « Comment
+   * on joue » sert à lancer sa première partie en neuf étapes, et l'allonger de
+   * quarante paragraphes lui ferait rater ce travail-là. On vient ici plus tard,
+   * avec une question précise, souvent au milieu d'une dispute.
+   */
+  private renderRulebook(back: () => void): void {
+    this.screen = 'rulebook'
+    renderRulebook(this.root, () => this.renderRules(back))
   }
 
   // ─────────────────────────── 06 + 07 · partie ───────────────────────────
@@ -1250,6 +1292,10 @@ export class App {
     const low = boost('low')
     const high = boost('high')
     const diceRow = h('div', { class: 'dice-row' }, low.btn, dieBtn, high.btn)
+    // La main vit au-dessus du dé et non dessous : une carte se joue *avant* de
+    // lancer aussi bien qu'après, et la ranger sous le dé la ferait lire comme
+    // une conséquence du lancer.
+    const hand = h('div', { class: 'hand', attrs: { 'aria-label': t('hand.title') } })
 
     fill(
       this.root,
@@ -1280,6 +1326,7 @@ export class App {
         h('div', { class: 'board-slot' }, boardHost),
         bottom,
         turn,
+        hand,
         diceRow,
       ),
     )
@@ -1294,7 +1341,9 @@ export class App {
       boostLowBtn: low.btn,
       boostHighBtn: high.btn,
       boostCounts: [low.count, high.count],
+      hand,
     }
+    this.aiming = null
     this.shownDice = null
     this.tumbling = false
     this.autoAt = -1
@@ -1340,10 +1389,26 @@ export class App {
     // dessus, ni les chevaux cerclés. Le rendu complet reprend à la réception.
     if (this.tumbling) return this.renderTurn(mounts.turn, state, moves.length)
 
-    this.board!.render(state, moves, (pawnId) => session.dispatch({ type: 'move', pawnId }))
+    // En visée, le plateau ne montre plus les coups mais les cibles de la carte,
+    // et un clic la joue au lieu de bouger le cheval.
+    const aimTargets = this.aiming ? session.targetsFor(this.aiming) : []
+    if (this.aiming && aimTargets.length === 0) this.aiming = null
+
+    if (this.aiming) {
+      const power = this.aiming
+      this.board!.render(state, aimTargets.map((pawnId) => aimMove(state, pawnId)), (pawnId) => {
+        this.aiming = null
+        session.dispatch({ type: 'power', power, pawnId })
+      })
+    } else {
+      this.board!.render(state, moves, (pawnId) => session.dispatch({ type: 'move', pawnId }))
+    }
+    this.renderHand(mounts.hand)
     this.renderPlayers(mounts.players, state)
     this.renderTurn(mounts.turn, state, moves.length)
-    this.scheduleObvious(state, moves)
+    // Un coup évident ne doit pas se jouer tout seul pendant qu'on désigne la
+    // cible d'une carte : le doigt est sur le plateau, pas sur le dé.
+    if (!this.aiming) this.scheduleObvious(state, moves)
 
     this.announce(state)
 
@@ -1373,10 +1438,21 @@ export class App {
           desc: t(`power.${event.power}.desc` as Key),
         })
       }
+      if (event.kind === 'handFull') {
+        return this.notify('toast.handFull', { power: t(`power.${event.power}` as Key) })
+      }
       if (event.kind === 'shielded') {
         return this.notify('toast.shielded', { pawn: event.pawn, owner: event.owner })
       }
       if (event.kind === 'skipped') return this.notify('toast.skipped', { name: entry.actor })
+      // Une carte jouée par soi n'a pas besoin d'être annoncée : on vient de la
+      // taper. Celles des autres, si — c'est la seule trace qu'il en reste.
+      if (event.kind === 'played' && entry.seat !== this.session?.game?.turn) {
+        return this.notify('toast.played', {
+          name: entry.actor,
+          power: t(`power.${event.power}` as Key),
+        })
+      }
     }
   }
 
@@ -1489,6 +1565,65 @@ export class App {
       const used = seats.some((seat) => state.players.some((p) => p.seat === seat))
       fill(host, ...(used ? seats.map(card) : []))
     })
+  }
+
+  /**
+   * Les cartes gardées par le joueur qui a la main.
+   *
+   * Une carte qui ne mène à rien maintenant reste visible mais éteinte : la
+   * retirer ferait croire qu'on l'a perdue. Toucher une carte qui vise un
+   * cheval n'agit pas — elle entre en visée, et c'est le plateau qui reçoit le
+   * coup suivant. Un second appui annule.
+   */
+  private renderHand(host: HTMLElement): void {
+    const session = this.session!
+    const { cards, playable } = session.hand()
+
+    host.classList.toggle('empty', cards.length === 0)
+    host.classList.toggle('aiming', this.aiming !== null)
+    if (cards.length === 0) {
+      fill(host)
+      return
+    }
+
+    fill(
+      host,
+      ...cards.map((power) => {
+        const spec = POWERS[power]
+        const usable = playable.includes(power)
+        const aimed = this.aiming === power
+        return h(
+          'button',
+          {
+            class: `card${usable ? ' on' : ''}${aimed ? ' aimed' : ''}`,
+            disabled: !usable,
+            attrs: {
+              'aria-pressed': String(aimed),
+              'aria-label': `${t(`power.${power}` as Key)} — ${t(`power.${power}.desc` as Key)}`,
+            },
+            on: {
+              click: () => {
+                if (aimed) {
+                  this.aiming = null
+                  return this.update()
+                }
+                // Une carte sans cible part immédiatement ; les autres passent
+                // la main au plateau.
+                if (spec.target === 'aucune') return session.dispatch({ type: 'power', power })
+                this.aiming = power
+                this.update()
+              },
+            },
+          },
+          // Pas de numéro : deux cartes du même nom sont deux boutons du même
+          // nom, et c'est déjà lisible. Le compte est sous la rangée.
+          t(`power.${power}` as Key),
+        )
+      }),
+      this.aiming
+        ? h('span', { class: 'hand__hint', text: t('hand.aim') })
+        : h('span', { class: 'hand__hint', text: t('hand.count', { n: cards.length, max: HAND_LIMIT }) }),
+    )
   }
 
   private renderTurn(host: HTMLElement, state: GameState, moveCount: number): void {
@@ -1682,6 +1817,63 @@ export class App {
 
   // ─────────────────────────── 08 · victoire ───────────────────────────
 
+  /**
+   * La feuille de match.
+   *
+   * Le podium dit qui a gagné ; il ne dit pas pourquoi, ni ce qu'on a failli
+   * faire. « 4,1 de moyenne au dé et perdu quand même » est la phrase qui fait
+   * relancer une manche, et elle ne se reconstitue pas depuis l'état final :
+   * elle se compte pendant la partie, dans le moteur.
+   *
+   * Les colonnes qui n'apprennent rien à cette table-là ne s'affichent pas —
+   * la colonne des pouvoirs sur une partie sans pouvoirs serait une colonne de
+   * zéros, et une colonne de zéros se lit comme une panne.
+   */
+  private statsCard(state: GameState, order: Seat[]): HTMLElement | null {
+    if (!state.stats) return null
+    const rows = order.map((seat) => ({ seat, stats: statsOf(state, seat) }))
+    if (rows.every((r) => r.stats.rolls === 0)) return null
+
+    const average = (s: SeatStats) => (s.rolls === 0 ? '—' : (s.pips / s.rolls).toFixed(1))
+    type Column = { key: Key; value: (s: SeatStats) => string; show: boolean }
+    const columns: Column[] = (
+      [
+        { key: 'stats.distance', value: (s) => String(s.distance), show: true },
+        { key: 'stats.average', value: average, show: true },
+        { key: 'stats.captures', value: (s) => String(s.captures), show: true },
+        { key: 'stats.losses', value: (s) => String(s.losses), show: true },
+        { key: 'stats.sixes', value: (s) => String(s.sixes), show: true },
+        {
+          key: 'stats.powers',
+          value: (s) => String(s.powers),
+          show: rows.some((r) => r.stats.powers > 0),
+        },
+      ] satisfies Column[]
+    ).filter((c) => c.show)
+
+    return h(
+      'div',
+      { class: 'card stats' },
+      h('span', { class: 'label', text: t('stats.title') }),
+      h(
+        'div',
+        { class: 'stats__grid', style: { '--cols': String(columns.length + 1) } as Partial<CSSStyleDeclaration> },
+        // En-tête : le nom du joueur n'a pas d'intitulé, sa colonne se lit seule.
+        h('span', { class: 'stats__head' }),
+        ...columns.map((c) => h('span', { class: 'stats__head', text: t(c.key) })),
+        ...rows.flatMap(({ seat, stats }) => [
+          h(
+            'span',
+            { class: 'stats__who', style: this.seatVars(seat) },
+            h('i'),
+            h('b', { text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
+          ),
+          ...columns.map((c) => h('span', { class: 'stats__cell', text: c.value(stats) })),
+        ]),
+      ),
+    )
+  }
+
   private renderPodium(state: GameState): void {
     if (document.querySelector('.overlay')) return
     const session = this.session!
@@ -1738,6 +1930,7 @@ export class App {
             ),
           ),
         ),
+        this.statsCard(state, order),
         session.isHost
           ? h('button', {
               class: 'btn red',

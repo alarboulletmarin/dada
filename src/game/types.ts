@@ -134,6 +134,30 @@ export type Variant = {
 export type Phase = 'rolling' | 'moving' | 'finished'
 
 /**
+ * Ce qu'un siège a fait de sa partie.
+ *
+ * Rien ici ne sert au moteur : ces compteurs n'entrent dans aucune décision de
+ * règle. Ils existent pour l'écran de fin — « tu as fait 4,1 de moyenne et tu
+ * as perdu quand même » est la phrase qui fait relancer une manche, et on ne
+ * peut pas la reconstituer après coup à partir de l'état final.
+ */
+export type SeatStats = {
+  /** Lancers de dé. */
+  rolls: number
+  /** Somme des faces — la moyenne se calcule à l'affichage. */
+  pips: number
+  sixes: number
+  /** Chevaux adverses renvoyés à l'écurie. */
+  captures: number
+  /** Ses propres chevaux renvoyés à l'écurie. */
+  losses: number
+  /** Cases parcourues vers l'avant, écurie et escalier compris. */
+  distance: number
+  /** Cartes pouvoir ramassées. */
+  powers: number
+}
+
+/**
  * Un événement du journal, sous forme structurée et non de phrase.
  *
  * L'état de la partie circule d'un appareil à l'autre : s'il contenait du texte
@@ -158,6 +182,10 @@ export type LogEvent =
   | { kind: 'shielded'; pawn: number; owner: string }
   /** Un tour sauté par un malus déjà ramassé. */
   | { kind: 'skipped' }
+  /** Une carte gardée vient d'être jouée. `pawn` vaut 0 si elle ne vise personne. */
+  | { kind: 'played'; power: PowerId; pawn: number }
+  /** Une carte bonus perdue faute de place en main. */
+  | { kind: 'handFull'; power: PowerId }
 
 export type LogEntry = {
   seq: number
@@ -176,6 +204,10 @@ export type GameError =
   | 'illegal'
   | 'nothingToPass'
   | 'moveExists'
+  /** Cette carte n'est pas dans votre main. */
+  | 'noSuchPower'
+  /** Cette carte ne peut pas être jouée maintenant. */
+  | 'powerNotNow'
 
 export type GameState = {
   variant: Variant
@@ -212,6 +244,13 @@ export type GameState = {
   deck?: PowerId[]
   /** Tours à sauter, par siège — un malus « tour sauté » déjà ramassé. */
   skips?: number[]
+  /**
+   * Les cartes que chaque siège garde devant lui, dans l'ordre du ramassage.
+   * L'indice est le siège. Trois au plus (voir `HAND_LIMIT`).
+   */
+  hands?: PowerId[][]
+  /** Ce que chaque siège a fait de sa partie. L'indice est le siège. */
+  stats?: SeatStats[]
   log: LogEntry[]
   /** Compteur monotone : sert à départager deux états lors d'un changement d'hôte. */
   seq: number
@@ -222,6 +261,11 @@ export type Action =
   | { type: 'move'; pawnId: string }
   /** Aucun coup possible : passe la main. */
   | { type: 'pass' }
+  /**
+   * Jouer une carte gardée en main. `pawnId` désigne le cheval visé pour les
+   * cartes qui en demandent un. Jouer une carte ne consomme pas le tour.
+   */
+  | { type: 'power'; power: PowerId; pawnId?: string }
 
 /** Un coup légal, précalculé pour l'affichage et pour l'IA. */
 export type Move = {
