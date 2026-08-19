@@ -8,15 +8,15 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 307 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
+npm test         # 333 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
 npm run build    # vérification de types puis build de production
 ```
 
 ## Comment jouer
 
 - **Sur cet appareil** — un seul téléphone qu'on se passe. Aucun réseau requis.
-- **En ligne** — l'un crée une partie, les autres saisissent le code à 5 lettres
-  (ou ouvrent le lien partagé). Jusqu'à 4 joueurs.
+- **En ligne** — l'un crée une partie, les autres saisissent le code à 8 caractères
+  (ou ouvrent le lien partagé) ; l'hôte les accepte à sa table. Jusqu'à 4 joueurs.
 - **Ordinateurs** — l'hôte peut compléter la table quand on n'est que deux ou trois.
 
 ## Les trois jeux de règles
@@ -196,6 +196,7 @@ src/game/     moteur pur — (état, action) → état. Aucun DOM, aucun réseau
   rng.ts        aléatoire déterministe (mulberry32), mélange compris
 src/net/      transport pair-à-pair et orchestration de la partie
   room.ts       canaux WebRTC, code de partie, identité de l'appareil
+  admission.ts  qui entre dans le salon, et à quelles conditions
   session.ts    salon, arbitrage, minuterie de tour, relève des absents
   presence.ts   les délais : dix secondes pour jouer, quand un bot prend la main
 src/ui/       écrans, plateau, animations
@@ -284,13 +285,50 @@ WebRTC a besoin d'un « signaling » pour que deux navigateurs se trouvent.
 Trystero le fait passer par le réseau Nostr : rien à déployer, rien à payer.
 
 Reste le cas du **NAT symétrique**, fréquent en 4G/5G, où deux téléphones
-n'arrivent pas à établir de lien direct. Un relais TURN sert alors de filet.
-Celui configuré par défaut dans `src/net/room.ts` est un service public gratuit,
-**sans garantie de disponibilité**. Si des amis n'arrivent jamais à se connecter
-en mobile, remplacez-le par vos propres identifiants — Cloudflare Calls offre un
-quota gratuit largement suffisant pour des parties entre amis.
+n'arrivent pas à établir de lien direct. Un relais TURN sert alors de filet, et
+**il n'y en a aucun par défaut** : c'est le seul endroit où ce montage aurait
+besoin d'un vrai serveur, et il n'en a pas. Renseignez `VITE_TURN_URLS`,
+`VITE_TURN_USER` et `VITE_TURN_PASS` au build pour en brancher un (voir
+`.env.example`) ; prenez un fournisseur à identifiants statiques, ceux à jetons
+éphémères demandent un serveur pour les signer. Sans TURN, deux amis en données
+mobiles peuvent très bien ne jamais réussir à se joindre — l'app le dit alors
+franchement plutôt que de tourner dans le vide.
 
 En attendant, le mode « sur cet appareil » fonctionne toujours, hors ligne inclus.
+
+## Qui entre dans le salon
+
+Le code de partie servait deux rôles à la fois : désigner le point de rendez-vous
+sur les relais publics, **et** tenir lieu de mot de passe. C'est une casquette de
+trop pour un seul objet. L'identifiant d'app est public — le dépôt est libre —
+donc qui veut peut calculer le sujet correspondant à chaque code possible,
+repérer les salons ouverts et entrer.
+
+Deux mesures, qui ne se remplacent pas l'une l'autre :
+
+**Le code fait huit caractères** sur un alphabet de 32, soit 32⁸ ≈ 10¹²
+possibilités au lieu des 33 millions d'un code à cinq. Précalculer les sujets
+n'en vaut plus la peine. Trois caractères de plus à dicter au téléphone, contre
+un espace de recherche trente mille fois plus grand.
+
+**L'hôte accepte ou refuse.** C'est le vrai verrou, et le seul qui ne dépende
+d'aucun calcul : le code amène jusqu'à la porte, l'hôte l'ouvre. Un code deviné
+ne donne plus une place, seulement une demande à refuser d'un doigt. Un appareil
+refusé est retenu — sans quoi il se representerait à chaque publication du salon,
+et l'hôte passerait sa soirée à refuser le même.
+
+**Ce qui ne demande jamais d'accord**, en revanche : un joueur qui a déjà un
+siège. Rechargement de page, tunnel, batterie — il revient chez lui, et son
+identité d'appareil survit précisément pour ça. Redemander l'accord de l'hôte au
+milieu d'une partie serait une porte qui claque dans le dos. La règle vit dans
+`admission.ts`, à part et pure : une règle de sécurité qu'on ne peut pas tester
+est une règle qu'on espère.
+
+Ce que cela ne protège pas, et qu'il vaut mieux savoir : le **P2P expose les
+adresses IP** entre joueurs — c'est vrai de tout WebRTC sans relais forcé — et
+**l'hôte arbitre**, donc un hôte au client modifié pourrait tricher. Modèle « on
+se fait confiance entre amis », assumé. Le contenu des parties, lui, ne passe
+jamais par les relais : WebRTC chiffre de bout en bout, obligatoirement.
 
 ## Licence
 

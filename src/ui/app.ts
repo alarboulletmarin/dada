@@ -25,7 +25,20 @@ import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
 const NAME_KEY = 'dada.name'
 /** Temps laissé au dé pour retomber avant qu'un coup évident ne se joue seul. */
 const AUTO_MS = 600
-const CODE_LENGTH = 5
+/**
+ * Longueur du code de partie. Voir `makeCode` dans `room.ts` : c'est une mesure
+ * de sécurité avant d'être un réglage de confort.
+ */
+const CODE_LENGTH = 8
+/**
+ * En dessous, le bouton « Rejoindre » reste éteint.
+ *
+ * Cinq et non huit : un ami dont la PWA sert encore une version d'avant
+ * l'allongement produit des codes de cinq caractères, et il doit rester
+ * joignable. Un code trop court ne trouvera simplement aucun salon — ce n'est
+ * pas au champ de saisie de le décréter.
+ */
+const MIN_CODE_LENGTH = 5
 const PIPS: Record<number, number[]> = {
   1: [5],
   2: [1, 9],
@@ -727,12 +740,12 @@ export class App {
           }),
         ),
       )
-      submit.disabled = value.length < 4
+      submit.disabled = value.length < MIN_CODE_LENGTH
     }
     input.addEventListener('input', paint)
 
     const join = () => {
-      if (value.length < 4) return this.notify('join.tooShort')
+      if (value.length < MIN_CODE_LENGTH) return this.notify('join.tooShort')
       this.openOnline(value, false)
     }
     submit.addEventListener('click', join)
@@ -858,6 +871,8 @@ export class App {
         ),
 
         online && session.isHost ? this.codeCard(lobby.code) : null,
+        online && session.isHost ? this.requestsCard(session) : null,
+        online && !session.isHost ? this.askCard(session) : null,
 
         waiting
           ? this.linkCard(session)
@@ -924,6 +939,87 @@ export class App {
       ),
     )
     if (scrollTop) this.root.querySelector('.screen')!.scrollTop = scrollTop
+  }
+
+  /**
+   * « X veut rejoindre. » — la porte, et qui l'ouvre.
+   *
+   * Le code de partie amène jusqu'ici ; il n'ouvre plus. C'est tout l'objet de
+   * cette carte : un code deviné ne donne plus une place, seulement une demande
+   * que l'hôte voit et refuse d'un doigt.
+   */
+  private requestsCard(session: Session): HTMLElement | null {
+    const requests = session.pendingJoins()
+    if (requests.length === 0) return null
+
+    return h(
+      'div',
+      { class: 'stack' },
+      h('span', {
+        class: 'label',
+        text: t(requests.length === 1 ? 'join.asking.one' : 'join.asking', { n: requests.length }),
+      }),
+      ...requests.map((request) =>
+        h(
+          'div',
+          { class: 'card request' },
+          h(
+            'div',
+            { class: 'request__who' },
+            this.token(null, 'ghost'),
+            h('strong', { text: request.name }),
+          ),
+          h(
+            'div',
+            { class: 'row' },
+            h('button', {
+              class: 'btn small green',
+              text: t('join.admit'),
+              attrs: { 'aria-label': t('join.admit.label', { name: request.name }) },
+              on: { click: () => session.admit(request.clientId) },
+            }),
+            h('button', {
+              class: 'btn small',
+              text: t('join.refuse'),
+              attrs: { 'aria-label': t('join.refuse.label', { name: request.name }) },
+              on: { click: () => session.refuse(request.clientId) },
+            }),
+          ),
+        ),
+      ),
+    )
+  }
+
+  /** Côté invité : ce que devient ma demande, tant qu'elle n'a pas de siège. */
+  private askCard(session: Session): HTMLElement | null {
+    if (session.joinStatus === 'unknown') return null
+
+    if (session.joinStatus === 'denied') {
+      return h(
+        'div',
+        { class: 'card' },
+        h('h3', { text: t('join.denied') }),
+        h('p', { class: 'hint', text: t('join.denied.hint') }),
+        h('button', {
+          class: 'btn small',
+          text: t('link.otherCode'),
+          on: {
+            click: () => {
+              this.quit()
+              this.renderJoin('')
+            },
+          },
+        }),
+      )
+    }
+
+    return h(
+      'div',
+      { class: 'card' },
+      h('h3', { text: t('join.pending') }),
+      h('p', { class: 'hint', text: t('join.pending.hint') }),
+      h('div', { class: 'link-dots' }, h('i'), h('i'), h('i')),
+    )
   }
 
   /**

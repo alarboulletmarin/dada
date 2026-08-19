@@ -728,10 +728,13 @@ input:disabled {
 
 /* ─────────────────────────── code de partie ─────────────────────────── */
 
+/* Huit cases, et non cinq : l'écart et le corps du texte se resserrent donc
+   avec la largeur, faute de quoi les huit débordent d'un téléphone étroit et
+   les glyphes sortent de leur case. */
 .code-boxes {
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: clamp(3px, 1.5vw, 8px);
 }
 
 .code-boxes span {
@@ -745,7 +748,7 @@ input:disabled {
   background: var(--paper);
   font-family: var(--title);
   font-weight: 800;
-  font-size: 38px;
+  font-size: clamp(17px, 6.4vw, 38px);
   line-height: 1;
 }
 
@@ -3017,4 +3020,28 @@ input:disabled {
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+
+/* ─────────────────────────── qui frappe à la porte ───────────────────────────
+   Le code de partie amène jusqu'ici ; il n'ouvre plus. Cette carte est le
+   verrou : un code deviné ne donne plus une place, seulement une demande que
+   l'hôte refuse d'un doigt. */
+
+.request {
+  gap: 12px;
+}
+
+.request__who {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.request__who strong {
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
