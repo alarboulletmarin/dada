@@ -1667,6 +1667,28 @@ input:disabled {
   transform: scale(1.16);
 }
 
+/* Le cheval mangé, à l'instant du choc.
+
+   Il encaisse et disparaît ; il ne rentre à l'écurie qu'une fois l'animation
+   passée (voir `sendHome` dans `board-view.ts`). Sans cela le plateau
+   annonçait la capture avant qu'elle n'ait lieu — la victime rentrait chez
+   elle pendant que son bourreau marchait encore vers elle. */
+.pawn.struck i {
+  animation: struck 0.2s ease-in both;
+}
+
+@keyframes struck {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  55% {
+    transform: scale(1.34) rotate(-13deg);
+  }
+  100% {
+    transform: scale(0.5) rotate(9deg);
+  }
+}
+
 /* Le cheval désigné par une carte armée : l'anneau ne bat plus, il est posé.
    Une carte se joue en deux temps — désigner, puis lancer le dé — et sans cette
    marque on relit une rangée de chevaux tous cerclés pareil sans savoir sur
@@ -1713,6 +1735,12 @@ input:disabled {
     animation: none;
     box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
       0 0 0 6px var(--ink);
+  }
+  /* Le choc perd sa culbute, pas son temps : le délai reste, parce qu'il ne
+     sert pas à animer mais à ne pas annoncer la capture d'avance. */
+  .pawn.struck i {
+    animation: none;
+    opacity: 0.35;
   }
 }
 
@@ -2106,7 +2134,11 @@ input:disabled {
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  /* Au-dessus des nouvelles du haut d'écran (35).
+     Une feuille ouverte depuis le ⓘ d'une nouvelle se faisait couvrir par la
+     nouvelle elle-même — et par les deux suivantes, qui continuaient d'arriver
+     pendant qu'on lisait. */
+  z-index: 36;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2527,7 +2559,9 @@ input:disabled {
   position: fixed;
   left: 50%;
   bottom: calc(24px + env(safe-area-inset-bottom));
-  z-index: 30;
+  /* Au-dessus des feuilles (36) : un refus du moteur qui s'afficherait derrière
+     le voile d'une feuille ouverte ne s'afficherait pas. */
+  z-index: 38;
   max-width: min(92vw, 420px);
   padding: 14px 20px;
   border: var(--bw) solid var(--ink);
@@ -2559,23 +2593,35 @@ input:disabled {
 
    `pointer-events: none` n'est pas un détail : le dé reste jouable pendant les
    trois secondes d'affichage. Une information discrète ne bloque rien. */
-.cardnote {
+/* Le bandeau qui les porte. Elles s'empilent au lieu de se chasser : un tour de
+   bot qui joue une carte, lance, avance et mange produisait quatre nouvelles
+   dont on ne lisait aucune. */
+.cardnotes {
   position: fixed;
   top: calc(12px + env(safe-area-inset-top));
   left: 50%;
   z-index: 35;
   display: flex;
-  gap: 9px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 7px;
+  align-items: stretch;
   width: max-content;
   max-width: min(92vw, 340px);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.cardnote {
+  position: relative;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
   padding: 9px 14px;
   border: 2.5px solid var(--ink);
   border-radius: 18px;
   background: var(--card);
   box-shadow: 0 4px 0 var(--shade);
   pointer-events: none;
-  transform: translateX(-50%);
   animation: cardnote-in 0.2s ease-out;
 }
 
@@ -2589,8 +2635,33 @@ input:disabled {
 
 .cardnote__text {
   display: grid;
+  flex: 1;
   gap: 1px;
   min-width: 0;
+}
+
+/* La seule chose de la nouvelle qui prenne un appui : une annonce qui passe
+   laisse une question derrière elle, et il faut un endroit où la poser. Le
+   reste du bandeau reste transparent au doigt — le dé demeure jouable pendant
+   qu'on lit. */
+.cardnote__info {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  margin-top: 1px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.cardnote__info:active {
+  background: var(--yellow);
 }
 
 .cardnote__who {
@@ -2626,7 +2697,7 @@ input:disabled {
 @keyframes cardnote-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -12px);
+    transform: translateY(-10px);
   }
 }
 
@@ -3329,11 +3400,15 @@ input:disabled {
   flex: none;
   display: flex;
   flex-wrap: nowrap;
-  gap: 6px;
+  /* Onze et non six : le ⓘ déborde du coin de chaque pastille, et un écart
+     serré le posait sur le voisin — ou sur l'indication qui suit la rangée. */
+  gap: 11px;
   align-items: center;
   justify-content: center;
   height: 34px;
-  padding: 0 4px;
+  /* Huit et non quatre : le ⓘ de la dernière pastille déborde de son coin, et
+     il ne doit pas tomber sous le `overflow: hidden` de la rangée. */
+  padding: 0 8px;
   overflow: hidden;
 }
 
@@ -3352,14 +3427,24 @@ input:disabled {
 /* La pastille et son ⓘ voyagent ensemble : c'est le créneau qui prend la
    place dans la rangée, et le petit rond se pose sur son coin sans en coûter
    un pixel — la rangée n'en a pas à donner. */
+/* `0 1 auto` et non `none` : trois cartes aux noms longs (« Dé pipé »,
+   « Bouclier », « Galop ») dépassent la largeur d'un téléphone de 320 px, et une
+   rangée qui ne se comprime pas se fait couper — le ⓘ de la dernière carte
+   partait avec. Elles rétrécissent donc, et c'est le nom qui s'abrège : la
+   figure, elle, reste entière, et c'est à elle qu'on reconnaît la carte. */
 .hand__slot {
   position: relative;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
 }
 
 .hand__card {
-  flex: none;
+  /* `1 1 auto` et non `1` : `flex: 1` pose une base de 0 et la pastille se
+     tronque alors même qu'il reste de la place — « Bouclier » devenait « B… »
+     sur un écran qui l'affichait entier la veille. */
+  flex: 1 1 auto;
+  min-width: 0;
   display: inline-flex;
   gap: 5px;
   align-items: center;
@@ -3446,9 +3531,14 @@ input:disabled {
    la taille d'un doigt sans déplacer quoi que ce soit. */
 .hand__info {
   position: absolute;
-  top: -6px;
+  /* Centré sur le bord droit, et non posé sur le coin : la rangée fait 34 px
+     et masque ce qui dépasse, si bien qu'un rond accroché au coin se faisait
+     couper par le haut. Là, il tient dans la hauteur et ne mord que sur la
+     marge intérieure de la pastille. */
+  top: 50%;
   right: -7px;
   z-index: 2;
+  transform: translateY(-50%);
   display: grid;
   place-items: center;
   width: 19px;
@@ -3471,7 +3561,12 @@ input:disabled {
   background: var(--yellow);
 }
 
+/* `flex: 0 100 auto` : c'est l'indication qui cède la première. Une rangée trop
+   étroite abrège le compte des cartes avant d'abréger leur nom — le nom est ce
+   qu'on lit, le compte est ce qu'on devine. Ce qu'elle disait de la manœuvre en
+   cours, la ligne de tour le porte aussi (voir `renderTurn`). */
 .hand__hint {
+  flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
@@ -3479,6 +3574,22 @@ input:disabled {
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Téléphone étroit, ou colonne de droite en paysage : la rangée se resserre
+   avant de tronquer. Trois cartes aux noms longs — « Dé pipé », « Bouclier »,
+   « Galop » — demandent trois cent trente pixels, et un écran de 320 n'en a pas
+   autant à donner ; autant lui rendre ce qu'on peut avant d'abréger le nom. */
+@media (max-width: 359px), (orientation: landscape) and (max-height: 620px) {
+  .hand {
+    gap: 8px;
+    padding: 0 6px;
+  }
+  .hand__card {
+    gap: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
 }
 
 /* Le dé en validateur : une carte est armée et n'attend plus que lui. Le halo

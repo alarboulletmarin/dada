@@ -49,7 +49,19 @@ export function tableVariant(lobby: Lobby): Variant {
 }
 
 const MAX_SEATS = 4
-const BOT_DELAY = 700
+/**
+ * Le temps qu'un bot prend avant chacun de ses gestes.
+ *
+ * Il ne réfléchit pas, et n'a aucune raison d'attendre : ce délai est pour ceux
+ * qui regardent. Un bot joue une carte, lance, puis avance — trois actions
+ * distinctes, et à sept dixièmes de seconde elles se confondaient en un seul
+ * clignement. Une table de trois bots devenait un défilé qu'on subissait sans
+ * jamais voir de qui venait quoi.
+ *
+ * Le tour d'un bot ne compte pas dans le temps de réflexion (voir
+ * `armTurnClock`) : allonger ce délai ne coûte rien à personne.
+ */
+const BOT_DELAY = 1150
 /**
  * Au-delà, on considère que l'invité ne trouvera personne. Mieux vaut le dire
  * que de le laisser devant un écran qui tourne : la mise en relation aboutit en

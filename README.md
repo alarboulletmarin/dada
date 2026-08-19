@@ -176,6 +176,44 @@ Le catalogue entier se lit **avant** la partie, depuis le salon, exemplaires
 compris. Un bonus qu'on découvre en le ramassant est une surprise ; un malus
 qu'on découvre en le ramassant est une injustice.
 
+**Et il se relit pendant.** L'annonce du ramassage passe et ne revient pas ;
+trois tours plus tard il ne reste qu'un mot sur une pastille, et « Faux pas » ne
+dit pas de combien on recule. Chaque carte en main porte donc sa figure et un
+ⓘ, qui rouvre le catalogue sur elle sans rien jouer ni rendre la main. Les
+annonces du haut de l'écran en ont un aussi : la question qu'une nouvelle laisse
+derrière elle a besoin d'un endroit où se poser, et le malus qu'on vient de
+subir n'est, lui, jamais passé par la main.
+
+## Ce que l'écran dit, et quand il le dit
+
+Le moteur est juste ; c'est l'affichage qui décide si la table le croit.
+
+**Rien avant l'heure.** Les chevaux étaient posés à leur position finale avant
+que celui qui avance n'ait fait un pas : la victime rentrait à son écurie
+pendant que son bourreau était encore à quatre cases de là, et l'on savait
+qu'on allait se faire manger une seconde avant de l'être. Le cheval mangé reste
+donc en place jusqu'à l'impact, et les nouvelles du haut d'écran attendent que
+le plateau ait fini de bouger — une annonce qui devance ce qu'elle raconte
+gâche les deux.
+
+**Les nouvelles s'empilent, elles ne se chassent pas.** Trois au plus, et de
+quatre à six secondes et demie selon ce qu'elles annoncent : un malus reste plus
+longtemps qu'un bonus, parce qu'un malus qu'on n'a pas eu le temps de lire se
+lit comme un bug le tour suivant, quand son effet se manifeste. Un tour de bot
+qui joue une carte, lance, avance et mange produisait quatre annonces dont on ne
+lisait aucune.
+
+**Un bot prend son temps.** Il ne réfléchit pas, et le tour d'un bot ne compte
+pas dans le temps de réflexion : son délai n'existe que pour ceux qui regardent.
+À sept dixièmes de seconde, ses trois gestes se confondaient en un clignement et
+une table de bots devenait un défilé.
+
+**Un coup sans choix se joue tout seul.** Un seul coup possible, ou aucun, et le
+tour part de lui-même après un temps de lecture. Une carte jouable en main
+allonge ce délai — de huit dixièmes à deux secondes six — mais ne le supprime
+plus : elle le supprimait, et il suffisait d'un bonus ramassé pour que chaque
+tour à coup unique redemande une confirmation jusqu'à la fin de la partie.
+
 ## La feuille de match
 
 L'écran de fin ne dit pas seulement qui a gagné : il donne, par joueur, les

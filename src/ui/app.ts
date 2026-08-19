@@ -144,8 +144,29 @@ const POWER_ICON: Record<PowerId, IconName> = {
  *  entière. Un appui envoie — c'est tout l'intérêt d'une réaction : on ne
  *  compose pas un message avec, on répond du tac au tac pendant son tour. */
 const EMOJI = ['😀', '😂', '😍', '😮', '😢', '😡', '👍', '👎', '🙌', '🎉', '🔥', '❤️', '🐴', '🎲', '⭐', '💀']
-/** Durée d'affichage de la carte ramassée, en haut de l'écran. */
-const CARD_NOTE_MS = 3400
+/**
+ * Combien de temps une nouvelle reste à l'écran, selon ce qu'elle annonce.
+ *
+ * Trois secondes quatre pour tout le monde, c'était le temps de la lire et pas
+ * celui de la comprendre — et un malus qu'on n'a pas eu le temps de lire se
+ * lit comme un bug le tour suivant, quand son effet se manifeste. Ce qui fait
+ * mal reste donc plus longtemps que ce qui fait plaisir, et ce qui ne dit
+ * qu'un fait (« une carte a été gardée ») repart le premier.
+ */
+const NOTE_MS: Record<PowerKind | 'neutral', number> = {
+  malus: 6500,
+  bonus: 5200,
+  neutral: 4200,
+}
+/**
+ * Nouvelles affichées en même temps, au plus.
+ *
+ * Elles s'empilaient à une, chacune chassant la précédente : un tour de bot qui
+ * joue une carte, lance, avance et mange produisait quatre nouvelles dont on ne
+ * lisait aucune. Trois tiennent en haut d'un écran de téléphone ; au-delà, la
+ * plus ancienne s'en va — c'est celle qu'on a déjà eu le temps de lire.
+ */
+const NOTE_STACK = 3
 /** Durée d'affichage de la bulle sur la carte du joueur. */
 const CHAT_BUBBLE_MS = 4000
 /** Au-delà, la bulle coupe : `-webkit-line-clamp` s'en charge visuellement,
@@ -334,9 +355,7 @@ export class App {
     if (this.autoTimer) clearTimeout(this.autoTimer)
     this.autoTimer = null
     this.autoAt = -1
-    if (this.cardTimer) clearTimeout(this.cardTimer)
-    this.cardTimer = null
-    document.querySelector('.cardnote')?.remove()
+    document.querySelector('.cardnotes')?.remove()
     this.closePause()
     this.armed = null
     this.closeChat()
@@ -1734,13 +1753,20 @@ export class App {
    *
    * Le plateau montre où sont les chevaux, pas pourquoi ils y sont : un cheval
    * qui recule de trois cases sans explication ressemble à un bug. Les
-   * événements de pouvoir sont donc annoncés au passage, une fois.
+   * événements de pouvoir sont donc annoncés au passage, ainsi que les
+   * captures — l'événement le plus violent du jeu était jusqu'ici le seul à ne
+   * rien dire.
    *
    * **À qui, en revanche, dépend de la carte.** Un malus s'abat sur le plateau,
    * tout le monde le voit et tout le monde doit savoir lequel. Un bonus rejoint
    * une main : l'annoncer à la table revenait à retourner les cartes de son
    * voisin — un bouclier qu'on sait posé n'en est plus un. Les autres apprennent
    * donc qu'une carte a été ramassée, pas laquelle.
+   *
+   * **Et après le plateau, jamais avant.** Les nouvelles attendent que les
+   * chevaux aient fini de marcher (voir `settled` dans `board-view.ts`) :
+   * annoncer une capture pendant que le cheval qui mange est encore à quatre
+   * cases de sa victime, c'est la raconter avant qu'elle n'arrive.
    */
   private announce(state: GameState): void {
     const fresh = state.log.filter((entry) => entry.seq > this.announced)
@@ -1748,51 +1774,101 @@ export class App {
     const session = this.session
     const mine = (seat: Seat) => session?.controls(seat) === true
 
-    // Une seule annonce : deux nouvelles qui se chassent ne se lisent ni l'une
-    // ni l'autre. Le dernier événement est celui qui explique l'écran actuel.
-    for (const entry of [...fresh].reverse()) {
+    type Note = {
+      kind: PowerKind | 'neutral'
+      who: string
+      title: string
+      desc?: string
+      power?: PowerId
+    }
+    /** Une carte nommée : sa figure, son mot, sa couleur, son effet. */
+    const card = (power: PowerId, who: string): Note => ({
+      kind: POWERS[power].kind,
+      who,
+      title: t(`power.${power}` as Key),
+      desc: t(`power.${power}.desc` as Key),
+      power,
+    })
+
+    // Dans l'ordre où les choses sont arrivées, et non à l'envers : la pile se
+    // lit de haut en bas, elle doit donc se remplir dans le sens du récit.
+    const notes: Note[] = []
+    for (const entry of fresh) {
       const { event } = entry
       if (event.kind === 'power') {
         const spec = POWERS[event.power]
         // Sa propre carte, ou un malus qui s'abat à la vue de tous : on la nomme.
-        if (!spec.held || mine(entry.seat)) return this.powerNote(event.power, entry.actor)
         // Celle d'un autre : on dit qu'elle existe, pas ce qu'elle est.
-        return this.note('neutral', entry.actor, t('toast.drew.title'))
-      }
-      // La carte perdue est une mauvaise nouvelle personnelle : elle n'a pas à
-      // s'afficher chez les autres, qui la lisaient comme la leur.
-      if (event.kind === 'handFull') {
-        if (!mine(entry.seat)) continue
-        return this.note('malus', entry.actor, t(`power.${event.power}` as Key), t('hand.full'), event.power)
-      }
-      if (event.kind === 'shielded') {
-        return this.note(
-          'bonus',
-          event.owner,
-          t('power.bouclier'),
-          t('toast.shielded', { pawn: event.pawn, owner: event.owner }),
-          'bouclier',
+        notes.push(
+          !spec.held || mine(entry.seat)
+            ? card(event.power, entry.actor)
+            : { kind: 'neutral', who: entry.actor, title: t('toast.drew.title') },
         )
-      }
-      if (event.kind === 'skipped') {
-        return this.note('malus', entry.actor, t('power.saute'), t('power.saute.desc'), 'saute')
-      }
-      // Une carte jouée par soi n'a pas besoin d'être annoncée : on vient de la
-      // taper. Celles des autres, si — c'est la seule trace qu'il en reste.
-      //
-      // La comparaison se fait avec SON siège, et non avec le siège courant :
-      // jouer une carte ne rend pas la main, si bien que `entry.seat` valait
-      // toujours `state.turn` et que l'annonce ne sortait jamais.
-      if (event.kind === 'played' && !mine(entry.seat)) {
-        return this.powerNote(event.power, entry.actor)
+      } else if (event.kind === 'handFull') {
+        // La carte perdue est une mauvaise nouvelle personnelle : elle n'a pas
+        // à s'afficher chez les autres, qui la lisaient comme la leur.
+        if (mine(entry.seat)) {
+          notes.push({
+            kind: 'malus',
+            who: entry.actor,
+            title: t(`power.${event.power}` as Key),
+            desc: t('hand.full'),
+            power: event.power,
+          })
+        }
+      } else if (event.kind === 'shielded') {
+        notes.push({
+          kind: 'bonus',
+          who: event.owner,
+          title: t('power.bouclier'),
+          desc: t('toast.shielded', { pawn: event.pawn, owner: event.owner }),
+          power: 'bouclier',
+        })
+      } else if (event.kind === 'skipped') {
+        notes.push({
+          kind: 'malus',
+          who: entry.actor,
+          title: t('power.saute'),
+          desc: t('power.saute.desc'),
+          power: 'saute',
+        })
+      } else if (event.kind === 'capture') {
+        // Un cheval disparaît d'un bout du plateau et reparaît dans une écurie.
+        // Sans un mot, c'est le coup qu'on ne comprend qu'en refaisant le
+        // trajet des yeux — quand on l'a vu partir.
+        notes.push({
+          kind: 'malus',
+          who: entry.actor,
+          title: t('toast.eaten.title'),
+          desc: t('toast.eaten', { pawn: event.pawn, victim: event.victim }),
+        })
+      } else if (event.kind === 'played' && !mine(entry.seat)) {
+        // Une carte jouée par soi n'a pas besoin d'être annoncée : on vient de
+        // la taper. Celles des autres, si — c'est la seule trace qu'il en reste.
+        //
+        // La comparaison se fait avec SON siège, et non avec le siège courant :
+        // jouer une carte ne rend pas la main, si bien que `entry.seat` valait
+        // toujours `state.turn` et que l'annonce ne sortait jamais.
+        notes.push(card(event.power, entry.actor))
       }
     }
+
+    if (notes.length === 0) return
+    const show = (): void => {
+      for (const n of notes.slice(-NOTE_STACK)) this.note(n.kind, n.who, n.title, n.desc, n.power)
+    }
+    const board = this.board
+    if (board) void board.settled().then(show)
+    else show()
   }
 
-  /** Une carte nommée : sa figure, son mot, sa couleur, son effet. */
-  private powerNote(power: PowerId, actor: string): void {
-    const spec = POWERS[power]
-    this.note(spec.kind, actor, t(`power.${power}` as Key), t(`power.${power}.desc` as Key), power)
+  /** Le bandeau des nouvelles, créé au premier besoin. */
+  private noteHost(): HTMLElement {
+    const found = document.querySelector<HTMLElement>('.cardnotes')
+    if (found) return found
+    const host = h('div', { class: 'cardnotes' })
+    document.body.append(host)
+    return host
   }
 
   /**
@@ -1803,6 +1879,10 @@ export class App {
    * prend aucune place dans la colonne — le plateau ne se redimensionne pas
    * derrière elle, l'écran ne bouge plus — et ne capte aucun appui : le dé reste
    * jouable pendant qu'on la lit. L'ancien bandeau, lui, se posait sur le dé.
+   *
+   * Une seule exception à « ne capte aucun appui » : le ⓘ, quand la nouvelle
+   * nomme une carte. Une annonce qui passe laisse une question derrière elle,
+   * et il faut un endroit où la poser.
    */
   private note(
     kind: PowerKind | 'neutral',
@@ -1811,7 +1891,6 @@ export class App {
     desc?: string,
     power?: PowerId,
   ): void {
-    document.querySelector('.cardnote')?.remove()
     const el = h(
       'div',
       { class: `cardnote cardnote--${kind}`, attrs: { role: 'status', 'aria-live': 'polite' } },
@@ -1828,10 +1907,30 @@ export class App {
         h('strong', { class: 'cardnote__name', text: title }),
         desc ? h('span', { class: 'cardnote__desc', text: desc }) : null,
       ),
+      power
+        ? h(
+            'button',
+            {
+              class: 'cardnote__info',
+              attrs: { 'aria-label': t('hand.info', { power: title }) },
+              on: {
+                click: () => {
+                  el.remove()
+                  this.showPowers(power)
+                },
+              },
+            },
+            icon('info', 14),
+          )
+        : null,
     )
-    document.body.append(el)
-    if (this.cardTimer) clearTimeout(this.cardTimer)
-    this.cardTimer = setTimeout(() => el.remove(), CARD_NOTE_MS)
+
+    const host = this.noteHost()
+    host.append(el)
+    // La plus ancienne s'efface quand la pile déborde : c'est celle qu'on a
+    // déjà eu le temps de lire.
+    while (host.children.length > NOTE_STACK) host.firstElementChild?.remove()
+    setTimeout(() => el.remove(), NOTE_MS[kind])
   }
 
   /**
@@ -2214,6 +2313,14 @@ export class App {
       title = turnOf(current?.name ?? '…')
     } else {
       title = t('play.rolled', { name: current?.name ?? '…', dice: state.dice ?? '' })
+    }
+
+    // Une carte armée passe devant tout le reste. « Touchez le dé » au-dessus
+    // d'une main qui réclame un cheval, ce sont deux consignes qui se
+    // contredisent — et la rangée de cartes, à trois cartes sur un petit
+    // écran, n'a plus la place d'en porter une (voir `.hand__hint`).
+    if (mine && !finished && this.armed) {
+      detail = this.armedReady() ? t('play.armed') : t('hand.aim')
     }
 
     const clock = h('span', { class: 'turnline__clock' })
@@ -2840,7 +2947,6 @@ export class App {
   // ─────────────────────────── divers ───────────────────────────
 
   private toastTimer: ReturnType<typeof setTimeout> | null = null
-  private cardTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
    * Un message flottant écrit dans la langue courante.
