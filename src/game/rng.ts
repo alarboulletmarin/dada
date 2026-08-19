@@ -15,18 +15,77 @@ export function nextFloat(state: number): [number, number] {
   return [t, ((r ^ (r >>> 14)) >>> 0) / 4294967296]
 }
 
-// Tables à 15 cases pour le bonus de dé : ~80% de chances côté favorisé
-// (chaque face du côté choisi à égalité) contre ~6,7% chacune de l'autre —
-// un vrai bonus qui se sent, mais pas un dé truqué à 100%.
-const LOW_BIAS_FACES = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 5, 6]
-const HIGH_BIAS_FACES = [1, 2, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6]
+/**
+ * Poids des six faces selon le bonus choisi : ~80% de chances côté favorisé
+ * (chaque face du côté à égalité) contre ~6,7% chacune de l'autre — un vrai
+ * bonus qui se sent, mais pas un dé truqué à 100%.
+ */
+const BIAS_WEIGHTS: Record<'low' | 'high', number[]> = {
+  low: [4, 4, 4, 1, 1, 1],
+  high: [1, 1, 1, 4, 4, 4],
+}
 
-/** Retourne le prochain état et un entier dans [1,6], `bias` pesant vers les petits ou grands nombres. */
-export function rollDie(state: number, bias?: 'low' | 'high'): [number, number] {
+const FAIR_WEIGHTS = [1, 1, 1, 1, 1, 1]
+
+export type RollOptions = {
+  /** Bonus de dé dépensé par le joueur : penche vers les petits ou les grands nombres. */
+  bias?: 'low' | 'high'
+  /** Faces qui font sortir un cheval de l'écurie, dans la variante en cours. */
+  exitFaces?: number[]
+  /**
+   * De 0 à 1 : part du hasard qui est retirée au joueur bloqué à l'écurie.
+   * 0 laisse le dé franc, 1 garantit une face de sortie. Entre les deux, la
+   * probabilité de sortir monte à `p + (1 - p) × chance`, où `p` est celle
+   * qu'avait le dé — le reste garde sa forme, bonus compris.
+   */
+  exitChance?: number
+}
+
+/**
+ * Retourne le prochain état et un entier dans [1,6].
+ *
+ * Un seul tirage, quelles que soient les options : la suite reste la même pour
+ * tout le monde, et une partie se rejoue à l'identique depuis sa graine.
+ * Sans option, c'est un dé à six faces et rien d'autre.
+ */
+export function rollDie(state: number, options: RollOptions = {}): [number, number] {
   const [next, f] = nextFloat(state)
-  if (!bias) return [next, Math.floor(f * 6) + 1]
-  const table = bias === 'low' ? LOW_BIAS_FACES : HIGH_BIAS_FACES
-  return [next, table[Math.floor(f * table.length)]!]
+  const weights = weigh(options)
+
+  let total = 0
+  for (const w of weights) total += w
+
+  let cursor = f * total
+  for (let face = 1; face <= 6; face++) {
+    cursor -= weights[face - 1]!
+    if (cursor < 0) return [next, face]
+  }
+  // Inatteignable : `f` est dans [0,1). Le repli garde la fonction totale.
+  return [next, 6]
+}
+
+/**
+ * Le poids de chaque face. La pitié de sortie s'applique APRÈS le bonus, en
+ * remontant la part des faces de sortie sans toucher aux proportions du reste :
+ * un joueur bloqué qui dépense un bonus ne perd donc jamais au change.
+ */
+function weigh({ bias, exitFaces, exitChance = 0 }: RollOptions): number[] {
+  const weights = [...(bias ? BIAS_WEIGHTS[bias] : FAIR_WEIGHTS)]
+  if (exitChance <= 0 || !exitFaces?.length) return weights
+
+  const isExit = (face: number): boolean => exitFaces.includes(face)
+  let total = 0
+  let exit = 0
+  weights.forEach((w, i) => {
+    total += w
+    if (isExit(i + 1)) exit += w
+  })
+  // Aucune face ne sort, ou toutes : il n'y a rien à redistribuer.
+  if (exit === 0 || exit === total) return weights
+
+  const share = exit / total
+  const wanted = Math.min(1, share + (1 - share) * exitChance)
+  return weights.map((w, i) => (isExit(i + 1) ? (w / exit) * wanted : (w / (total - exit)) * (1 - wanted)))
 }
 
 /** Graine à partir d'une chaîne (le code de partie), pour que tous partent du même point. */

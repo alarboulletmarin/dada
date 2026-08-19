@@ -30,6 +30,7 @@ const fr = {
   'common.player': 'Joueur {n}',
   'common.bot': 'Bot {n}',
   'common.close': 'Fermer',
+  'common.cancel': 'Annuler',
 
   'home.create': 'Créer une partie',
   'home.join': 'Rejoindre avec un code',
@@ -47,6 +48,17 @@ const fr = {
   'save.hours': 'il y a {n} h',
   'save.yesterday': 'hier',
   'save.days': 'il y a {n} jours',
+
+  'invite.resume': 'Revenir dans la partie',
+  'invite.detail': 'Partie en ligne · code {code} · {when}',
+  'invite.forget.label': 'Oublier la partie en ligne quittée',
+
+  'quit.title': 'Quitter la partie ?',
+  'quit.confirm': 'Quitter',
+  'quit.online':
+    "Un bot tiendra vos chevaux en votre absence. Vous pourrez revenir dans la partie depuis l'accueil, tant qu'elle dure.",
+  'quit.local': "La partie est sauvegardée. Vous pourrez la reprendre depuis l'accueil.",
+  'quit.lobby': 'Les autres joueurs resteront dans le salon sans vous.',
 
   'pick.title': 'On joue à quoi ?',
   'pick.hint': 'Les règles maison se règlent juste après, dans le salon.',
@@ -111,6 +123,8 @@ const fr = {
   'play.boost.remaining': '{n} bonus restants',
   'play.yourTurn': 'À vous',
   'play.touchDie': 'touchez le dé',
+  'play.mercy': 'le dé penche vers la sortie',
+  'play.mercy.sure': 'ce lancer vous sort',
   'play.turnOf': 'Tour {name}',
   'play.rolled': '{name} a fait {dice}',
   'play.youRolled': 'Vous avez fait {dice}',
@@ -130,6 +144,10 @@ const fr = {
   'play.pawn.move': 'Avancer le cheval {n}',
   'play.pawn.exit': 'Sortir le cheval {n}',
   'play.pawn.finish': 'Rentrer le cheval {n}',
+  'play.seconds': '{n} s',
+  'play.bot': 'tenu par un bot',
+  'play.takeBack': 'Reprendre',
+  'play.takeBack.label': 'Reprendre la main sur vos chevaux',
 
   'win.title': '{name} gagne !',
   'win.detail': '{n}/{total} chevaux rentrés · règles « {variant} »',
@@ -139,9 +157,10 @@ const fr = {
   'win.nobody': 'Personne',
 
   'rules.title': 'Comment on joue',
-  'rules.footer': 'Trois 6 de suite · tour perdu',
+  'rules.footer': 'Dix secondes pour jouer · trois 6 de suite, tour perdu',
   'rules.1.title': "Sortir de l'écurie",
-  'rules.1.body': 'Il faut un 6 pour poser un cheval sur sa case de départ.',
+  'rules.1.body':
+    "Il faut un 6 pour poser un cheval sur sa case de départ. Plus l'attente dure, plus le dé penche vers la sortie — au sixième tour bloqué, elle est certaine.",
   'rules.2.title': 'Tourner',
   'rules.2.body': 'On avance du nombre de points, dans le sens des aiguilles.',
   'rules.3.title': 'Manger',
@@ -153,6 +172,10 @@ const fr = {
   'rules.6.title': 'Bonus de dé',
   'rules.6.body':
     'Trois fois par partie, avant de lancer, on peut favoriser un petit nombre (1 à 3) ou un grand nombre (4 à 6). Les bonus sont communs à toute la table.',
+
+  'rules.7.title': 'Dix secondes',
+  'rules.7.body':
+    "Chaque tour est minuté, et le contour de la carte du joueur se vide. Passé le délai, le tour saute — rien n'est joué à sa place. Trois tours sautés, ou un départ en cours de partie, et un bot tient les chevaux jusqu'au retour.",
 
   'variant.petits-chevaux.name': 'Petits chevaux',
   'variant.petits-chevaux.desc': 'La règle française classique. Un 6 pour sortir, on rejoue sur un 6.',
@@ -195,6 +218,10 @@ const fr = {
   'error.nothingToPass': 'Rien à passer.',
   'error.moveExists': 'Un coup est possible.',
 
+  'notice.hostTaken': "Vous êtes désormais l'hôte de la partie.",
+  'notice.seatToBot': 'Un bot prend la place de {name}.',
+  'notice.seatBack': '{name} reprend sa place.',
+
   'theme.auto': 'Auto',
   'theme.light': 'Clair',
   'theme.dark': 'Sombre',
@@ -216,6 +243,7 @@ const en: Partial<Record<Key, string>> = {
   'common.player': 'Player {n}',
   'common.bot': 'Bot {n}',
   'common.close': 'Close',
+  'common.cancel': 'Cancel',
 
   'home.create': 'Create a game',
   'home.join': 'Join with a code',
@@ -233,6 +261,17 @@ const en: Partial<Record<Key, string>> = {
   'save.hours': '{n} h ago',
   'save.yesterday': 'yesterday',
   'save.days': '{n} days ago',
+
+  'invite.resume': 'Back to the game',
+  'invite.detail': 'Online game · code {code} · {when}',
+  'invite.forget.label': 'Forget the game you left',
+
+  'quit.title': 'Leave the game?',
+  'quit.confirm': 'Leave',
+  'quit.online':
+    'A bot will hold your horses while you are away. You can come back to the game from the home screen, as long as it lasts.',
+  'quit.local': 'The game is saved. You can resume it from the home screen.',
+  'quit.lobby': 'The other players will stay in the lobby without you.',
 
   'pick.title': 'What are we playing?',
   'pick.hint': 'House rules come right after, in the lobby.',
@@ -295,6 +334,8 @@ const en: Partial<Record<Key, string>> = {
   'play.boost.remaining': '{n} boosts left',
   'play.yourTurn': 'Your turn',
   'play.touchDie': 'tap the die',
+  'play.mercy': 'the die leans towards the gate',
+  'play.mercy.sure': 'this roll gets you out',
   'play.turnOf': "{name}'s turn",
   'play.rolled': '{name} rolled {dice}',
   'play.youRolled': 'You rolled {dice}',
@@ -314,6 +355,10 @@ const en: Partial<Record<Key, string>> = {
   'play.pawn.move': 'Move horse {n}',
   'play.pawn.exit': 'Bring out horse {n}',
   'play.pawn.finish': 'Bring horse {n} home',
+  'play.seconds': '{n}s',
+  'play.bot': 'held by a bot',
+  'play.takeBack': 'Take over',
+  'play.takeBack.label': 'Take your horses back from the bot',
 
   'win.title': '{name} wins!',
   'win.detail': '{n}/{total} horses home · « {variant} » rules',
@@ -323,9 +368,10 @@ const en: Partial<Record<Key, string>> = {
   'win.nobody': 'Nobody',
 
   'rules.title': 'How to play',
-  'rules.footer': 'Three 6s in a row · turn lost',
+  'rules.footer': 'Ten seconds to play · three 6s in a row, turn lost',
   'rules.1.title': 'Leave the stable',
-  'rules.1.body': 'You need a 6 to put a horse on its starting square.',
+  'rules.1.body':
+    'You need a 6 to put a horse on its starting square. The longer you wait, the more the die leans towards the gate — by the sixth turn stuck, coming out is certain.',
   'rules.2.title': 'Go around',
   'rules.2.body': 'Move as many squares as the die shows, clockwise.',
   'rules.3.title': 'Capture',
@@ -337,6 +383,10 @@ const en: Partial<Record<Key, string>> = {
   'rules.6.title': 'Dice bonus',
   'rules.6.body':
     'Three times a game, before rolling, you can favour a low number (1 to 3) or a high one (4 to 6). The bonuses are shared by the whole table.',
+
+  'rules.7.title': 'Ten seconds',
+  'rules.7.body':
+    "Every turn is timed, and the outline of the player's card empties out. Once time is up the turn is skipped — nothing is played for them. Three skipped turns, or leaving mid-game, and a bot holds the horses until they come back.",
 
   'variant.petits-chevaux.name': 'Little horses',
   'variant.petits-chevaux.desc': 'The classic French rules. A 6 to come out, roll again on a 6.',
@@ -378,6 +428,10 @@ const en: Partial<Record<Key, string>> = {
   'error.illegal': 'That move is not allowed.',
   'error.nothingToPass': 'Nothing to pass.',
   'error.moveExists': 'A move is possible.',
+
+  'notice.hostTaken': 'You are now the host of the game.',
+  'notice.seatToBot': 'A bot takes over for {name}.',
+  'notice.seatBack': '{name} is back.',
 
   'theme.auto': 'Auto',
   'theme.light': 'Light',

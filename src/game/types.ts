@@ -48,6 +48,18 @@ export type Variant = {
   pawnsPerPlayer: number
   /** Valeurs du dé permettant de sortir un pion de l'écurie. */
   exitRolls: number[]
+  /**
+   * Tours passés à l'écurie sans pouvoir en sortir après lesquels la sortie est
+   * certaine. 0 laisse le dé entièrement franc.
+   *
+   * Attendre un 6 est une loi de probabilité, pas une épreuve d'adresse : une
+   * fois sur quinze, la règle stricte laisse un joueur à l'écurie plus de
+   * quinze lancers pendant que la table fait le tour du plateau. Le dé reste
+   * franc au premier essai ; il ne penche qu'à mesure que l'attente dure, d'un
+   * cran par tour bloqué, jusqu'à la certitude. Voir `mercyOf` dans
+   * `engine.ts`.
+   */
+  mercyExit: number
   /** Relancer le dé après un 6. */
   extraTurnOnSix: boolean
   /** Nombre de 6 consécutifs après lequel le tour est annulé (0 = illimité). */
@@ -125,6 +137,12 @@ export type GameState = {
   rng: number
   /** Bonus de dé restants pour la partie entière — budget partagé, pas par joueur. */
   diceBoosts: number
+  /**
+   * Tours consécutifs terminés à l'écurie sans en sortir, par siège (l'indice
+   * est le siège). C'est ce compteur qui fait pencher le dé vers la sortie ;
+   * il retombe à zéro dès qu'un cheval est dehors.
+   */
+  stuck: number[]
   log: LogEntry[]
   /** Compteur monotone : sert à départager deux états lors d'un changement d'hôte. */
   seq: number

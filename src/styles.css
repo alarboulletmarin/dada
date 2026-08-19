@@ -1137,6 +1137,82 @@ input:disabled {
   font-weight: 800;
 }
 
+/* Le temps de réflexion, posé sur le contour de la carte.
+
+   Un trait qui s'efface de la droite vers la gauche, sur les quatre côtés à la
+   fois : on le voit du coin de l'œil sans avoir à le lire, et il ne prend pas
+   un pixel de plus que le liseré qui était déjà là. Le dégradé est LINÉAIRE et
+   non conique — sur une carte deux fois plus large que haute, un balayage
+   angulaire file le long des petits côtés et traîne sur les grands, et le
+   décompte semble irrégulier alors qu'il ne l'est pas.
+
+   `--left` va de 1 à 0 et vient de `tickClock` : une animation CSS décrirait
+   le temps écoulé depuis l'AFFICHAGE, pas celui du tour, et repartirait de zéro
+   à chaque bulle de chat qui redessine les cartes.
+
+   La découpe en anneau demande la composition de deux masques ; là où elle
+   manque, le contour ne s'affiche pas du tout plutôt que de peindre un aplat
+   par-dessus la carte. La minuterie, elle, court quand même. */
+.pcard__timer {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* Plus fin que le liseré coloré qu'il recouvre : le joueur actif se lit
+     toujours à la couleur de son camp, le décompte se glisse par-dessus. */
+  padding: 2.5px;
+  /* Le rayon intérieur de la carte : celui du bloc, moins son trait. */
+  border-radius: calc(20px - var(--bw));
+  background: linear-gradient(to right, var(--ink) calc(var(--left, 1) * 100%), transparent 0);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+@supports ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .pcard__timer {
+    display: block;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+}
+
+/* Les dernières secondes : le trait passe au rouge et cesse d'être discret. */
+.pcard__timer.urgent {
+  background: linear-gradient(to right, var(--red) calc(var(--left, 1) * 100%), transparent 0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pcard__timer.urgent {
+    animation: timer-pulse 0.9s ease-in-out infinite;
+  }
+}
+
+@keyframes timer-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Le bot ne tient le siège que faute de mieux : de quoi le lui reprendre, sur
+   la carte même où l'on vient de lire qu'il joue à notre place. */
+.pcard__take {
+  z-index: 2;
+  flex: none;
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--seat);
+  color: var(--on);
+  font-family: var(--title);
+  font-weight: 800;
+  font-size: clamp(11px, 1.6svh, 12.5px);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .pcard.out {
   opacity: 0.5;
 }
@@ -1552,6 +1628,20 @@ input:disabled {
   color: var(--muted);
 }
 
+/* Les secondes qui restent, à côté du titre. La place est réservée en
+   permanence — même vide, la boîte garde sa largeur : le titre ne doit pas
+   glisser de deux caractères vers la gauche au moment précis où l'on presse
+   le joueur. */
+.turnline__clock {
+  flex: none;
+  min-width: 2.2ch;
+  font-family: var(--title);
+  font-weight: 800;
+  font-size: clamp(13px, 2svh, 15px);
+  font-variant-numeric: tabular-nums;
+  color: var(--red);
+}
+
 /* Le dé et ses deux bonus tiennent sur une seule ligne. Empilés — les boutons
    d'abord, le compteur en dessous, le dé au-dessus — ils mangeaient quatre-vingts
    pixels de haut, autant de moins pour le plateau. Les boutons sont plus courts
@@ -1897,6 +1987,12 @@ input:disabled {
   border-radius: 34px;
   background: var(--paper);
   box-shadow: 0 12px 0 var(--shade);
+}
+
+/* Une question avant un geste sans retour : la même feuille que le podium, en
+   plus resserrée — on la reconnaît sans avoir à la lire. */
+.ask__sheet {
+  gap: 12px;
 }
 
 /* ─────────────────────────────── chat ─────────────────────────────── */
