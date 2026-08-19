@@ -188,6 +188,11 @@ button {
   color: inherit;
   cursor: pointer;
   border: none;
+  /* Le navigateur pose de lui-même un `padding: 1px 6px` sur les boutons. Sans
+     cette remise à zéro, chaque bouton qui ne redéclare pas le sien traîne une
+     marge intérieure invisible et asymétrique — six pixels de large contre un
+     de haut — qui rogne la place de son contenu. */
+  padding: 0;
   background: none;
 }
 
