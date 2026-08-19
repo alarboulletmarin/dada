@@ -100,7 +100,7 @@ const fr = {
   'lobby.offline': 'hors ligne',
   'lobby.remove': 'Retirer {name}',
   'lobby.rename': 'Nom du joueur {n}',
-  'lobby.rules': 'Règles maison · {variant}',
+  'lobby.rules': 'Règles maison',
   'lobby.change': 'Changer de jeu',
   'lobby.start': 'Lancer la partie',
   'lobby.needTwo': 'Il faut au moins 2 joueurs',
@@ -163,6 +163,12 @@ const fr = {
   'play.bot': 'tenu par un bot',
   'play.takeBack': 'Reprendre',
   'play.takeBack.label': 'Reprendre la main sur vos chevaux',
+  'play.pause': 'Mettre la partie en pause',
+
+  'pause.title': 'Partie en pause',
+  'pause.body':
+    'Le dé, les bots et le temps de réflexion attendent. Rien ne bouge tant que vous n’avez pas repris.',
+  'pause.resume': 'Reprendre la partie',
 
   'stats.title': 'Feuille de match',
   'stats.distance': 'Cases',
@@ -410,7 +416,7 @@ const en: Partial<Record<Key, string>> = {
   'lobby.offline': 'offline',
   'lobby.remove': 'Remove {name}',
   'lobby.rename': 'Name of player {n}',
-  'lobby.rules': 'House rules · {variant}',
+  'lobby.rules': 'House rules',
   'lobby.change': 'Change game',
   'lobby.start': 'Start the game',
   'lobby.needTwo': 'At least 2 players needed',
@@ -471,6 +477,11 @@ const en: Partial<Record<Key, string>> = {
   'play.bot': 'held by a bot',
   'play.takeBack': 'Take over',
   'play.takeBack.label': 'Take your horses back from the bot',
+  'play.pause': 'Pause the game',
+
+  'pause.title': 'Game paused',
+  'pause.body': 'The die, the bots and the turn clock are all waiting. Nothing moves until you come back.',
+  'pause.resume': 'Resume the game',
 
   'stats.title': 'Scoresheet',
   'stats.distance': 'Squares',

@@ -652,7 +652,7 @@ input:disabled {
   box-shadow: 0 7px 0 var(--shade);
 }
 
-.game-card .badge {
+.badge {
   display: grid;
   place-items: center;
   flex: none;
@@ -667,17 +667,30 @@ input:disabled {
   color: var(--ink);
 }
 
-.game-card .badge.b1 {
+.badge.b1 {
   background: var(--card);
 }
 
-.game-card .badge.b2 {
+.badge.b2 {
   background: var(--blue);
 }
 
-.game-card .badge.b3 {
+.badge.b3 {
   background: var(--yellow);
   color: var(--on-1);
+}
+
+/* La même pastille, en rappel : dans le salon elle n'annonce plus le jeu, elle
+   dit lequel a été retenu, et n'a donc pas à peser autant. */
+.badge--sm {
+  width: clamp(36px, 5.2svh, 44px);
+  height: clamp(36px, 5.2svh, 44px);
+  border-radius: 13px;
+  font-size: 22px;
+}
+
+.badge--sm .face {
+  padding: 7px;
 }
 
 .game-card .body {
@@ -883,29 +896,90 @@ input:disabled {
   box-shadow: none;
 }
 
-.chips {
+/* ─────────────────────────── règles maison ───────────────────────────
+   Le jeu de la table, dans une carte bâtie comme celle des réglages juste
+   dessous. Huit pastilles vertes en rangée ne disaient pas grand-chose : de la
+   couleur, toute la même, et les règles éteintes — les plus intéressantes,
+   celles qu'on n'a PAS ce soir — pâlies au point de disparaître. */
+
+.rules-card__head {
   display: flex;
   flex-wrap: wrap;
-  gap: clamp(4px, 0.8svh, 9px);
-}
-
-.chip {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: clamp(26px, 4svh, 42px);
-  padding: 0 clamp(8px, 1.4svh, 14px);
-  border: var(--bw) solid rgba(var(--ink-rgb), 0.35);
-  border-radius: 999px;
-  font-size: clamp(12px, 1.7svh, 15px);
-  font-weight: 800;
-  color: rgba(var(--ink-rgb), 0.45);
+  gap: 12px;
 }
 
-.chip.on {
-  border-color: var(--ink);
-  background: var(--green);
-  color: var(--cream);
+.rules-card__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 110px;
+}
+
+.rules-card__name strong {
+  font-family: var(--title);
+  font-size: clamp(18px, 2.6svh, 22px);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.rules-card__name .meta {
+  font-size: clamp(11.5px, 1.6svh, 13.5px);
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Le bouton qui change de jeu vit dans l'en-tête, à côté du nom qu'il
+   remplace : en pleine largeur sous les règles, il pesait autant que « Lancer
+   la partie » alors qu'il ne fait que revenir en arrière. */
+.btn.rules-card__change {
+  width: auto;
+  min-height: 38px;
+  margin-left: auto;
+  padding: 0 15px;
+  border-radius: 999px;
+  box-shadow: 0 3px 0 var(--shade);
+  font-size: clamp(14px, 2svh, 16px);
+}
+
+.btn.rules-card__change:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--shade);
+}
+
+/* Deux colonnes tant que la largeur le permet, une seule sur un téléphone
+   étroit. Les huit règles y sont toujours toutes : une règle absente et une
+   règle éteinte se ressemblaient trop, alors que c'est exactement ce qu'on
+   vient vérifier — « chez nous, manger renvoie ». */
+.rule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: clamp(5px, 0.9svh, 9px) 12px;
+}
+
+.rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: clamp(12px, 1.7svh, 13.5px);
+  font-weight: 700;
+  line-height: 1.25;
+  color: rgba(var(--ink-rgb), 0.4);
+}
+
+.rule .ico {
+  flex: none;
+  margin-top: 1px;
+  color: rgba(var(--ink-rgb), 0.32);
+}
+
+.rule.on {
+  color: var(--ink);
+}
+
+.rule.on .ico {
+  color: var(--green);
 }
 
 /* Trois points qui pulsent : l'attente doit avoir l'air vivante. */
@@ -1306,14 +1380,14 @@ input:disabled {
   display: none;
 }
 
-.game-card .badge .face {
+.badge .face {
   width: 100%;
   height: 100%;
   padding: 9px;
 }
 
 /* La silhouette du pion, en aplat d'encre sur la pastille colorée. */
-.game-card .badge .token {
+.badge .token {
   width: 26px;
   height: 30px;
   border: none;
@@ -2071,6 +2145,29 @@ input:disabled {
   gap: 12px;
 }
 
+/* La pause. Rien ne bouge derrière : la feuille est la seule chose à l'écran,
+   et son fond est plus opaque que les autres pour le dire. */
+.overlay.paused {
+  background: rgba(var(--ink-rgb), 0.82);
+}
+
+.pause__sheet {
+  gap: 14px;
+}
+
+.pause__mark {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 66px;
+  height: 66px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 22px;
+  background: var(--paper-deep);
+  box-shadow: 0 5px 0 var(--shade);
+  color: var(--ink);
+}
+
 /* ─────────────────────────────── chat ─────────────────────────────── */
 
 /* Le point rouge du bouton : discret tant qu'aucun message n'est arrivé. */
@@ -2486,6 +2583,10 @@ input:disabled {
   margin-top: 4px;
 }
 
+.cardnote .power-badge {
+  margin-top: 1px;
+}
+
 .cardnote__text {
   display: grid;
   gap: 1px;
@@ -2869,7 +2970,7 @@ input:disabled {
    sont les deux choses qu'on décide ensemble avant de lancer, et les voir
    côte à côte évite d'en oublier une. */
 
-.table-card hr {
+.card hr {
   height: 2px;
   margin: 14px 0;
   border: 0;
@@ -2879,6 +2980,76 @@ input:disabled {
 .row--split {
   align-items: center;
   justify-content: space-between;
+}
+
+/* Le titre d'un réglage, et son contrôle poussé au bout de la ligne. */
+.table-card__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.table-card__row .switch {
+  margin-left: auto;
+}
+
+/* La case pouvoir telle qu'elle sera sur le plateau : le losange d'encre sur
+   fond neutre, en réduction. Un réglage se comprend mieux quand il montre ce
+   qu'il ajoute au circuit plutôt que de le décrire. */
+.power-cell {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid var(--ink);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ink) 12%, var(--card));
+}
+
+.power-cell i {
+  width: 52%;
+  aspect-ratio: 1;
+  background: var(--ink);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+/* Cases pouvoir éteintes : la ligne s'efface sans disparaître — on doit
+   pouvoir la rallumer, et voir qu'elle existe. */
+.table-card__powers.off .power-cell,
+.table-card__powers.off strong {
+  opacity: 0.5;
+}
+
+/* Le bouton du catalogue porte un petit paquet de cartes : ce qu'il ouvre se
+   voit avant d'être lu. */
+.deck-btn__pile {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 28px;
+}
+
+.deck-btn__pile i {
+  position: absolute;
+  inset: 0 3px;
+  border: 2.5px solid var(--ink);
+  border-radius: 5px;
+  background: var(--card);
+}
+
+.deck-btn__pile i:nth-child(1) {
+  background: var(--green);
+  transform: translateX(-5px) rotate(-11deg);
+}
+
+.deck-btn__pile i:nth-child(2) {
+  background: var(--red);
+  transform: rotate(3deg);
+}
+
+.deck-btn__pile i:nth-child(3) {
+  transform: translateX(5px) rotate(13deg);
 }
 
 .shapes {
@@ -2925,53 +3096,176 @@ input:disabled {
   opacity: 0.55;
 }
 
-/* L'interrupteur porte son état écrit, pas seulement sa couleur : « Activées »
-   se lit sans distinguer le vert du gris, et un lecteur d'écran l'annonce. */
-.toggle {
-  padding: 7px 14px;
-  border: 2.5px solid var(--line);
-  border-radius: 999px;
-  background: var(--card);
+/* L'interrupteur porte son état écrit ET dessiné : « Activées » se lit sans
+   distinguer le vert du gris, le curseur se voit sans lire, et un lecteur
+   d'écran annonce l'un des deux. L'ancienne pastille de texte ne ressemblait
+   pas à un réglage — juste à un bouton de plus dans une carte qui en avait
+   déjà cinq. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--muted);
   font: inherit;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.toggle.on {
-  border-color: var(--ink);
+.switch__track {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 30px;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 12%, var(--card));
+  transition: background 0.16s ease;
+}
+
+.switch__track i {
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--card);
+  transition: transform 0.16s ease;
+}
+
+.switch.on {
+  color: var(--ink);
+}
+
+.switch.on .switch__track {
   background: var(--green);
-  color: var(--card);
 }
 
-.toggle:disabled {
+.switch.on .switch__track i {
+  transform: translateX(22px);
+}
+
+.switch:disabled {
   cursor: default;
   opacity: 0.55;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .switch__track,
+  .switch__track i {
+    transition: none;
+  }
+}
+
 /* ─────────────────────────── le catalogue des pouvoirs ─────────────────────────── */
+
+/* Le paquet réclame de la largeur : deux colonnes de cartes ne tiennent pas
+   dans les marges d'une feuille de dialogue ordinaire, et une colonne unique
+   redonnait la liste qu'on venait justement de quitter. */
+.overlay.powers {
+  padding: 14px;
+}
 
 .powers__sheet {
   max-height: min(88vh, 720px);
+  gap: 14px;
+  padding: 18px 14px 20px;
   overflow-y: auto;
 }
 
-.powers-group {
-  margin-top: 16px;
-}
-
-.power-row {
+.powers__head {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 9px 0;
-  border-top: 2px solid var(--line);
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
 }
 
-.powers-group .label + .power-row {
-  border-top: 0;
+.powers__head h2 {
+  margin: 0;
+}
+
+.powers-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Des cartes, et non une liste.
+   Le paquet se lisait en quatorze lignes de texte empilées : on y cherchait un
+   pouvoir comme dans un règlement, alors qu'on vient y regarder un jeu de
+   cartes. Deux colonnes de vraies cartes, donc — figure, compte d'exemplaires
+   au coin, nom, effet — et le paquet se parcourt d'un coup d'œil. Une seule
+   colonne quand le téléphone est trop étroit pour deux. */
+.power-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.power-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 12px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 4px 0 var(--shade);
+}
+
+.power-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+/* La figure, dans la couleur de son camp : vert pour ce qui aide, rouge pour
+   ce qui fait mal. On reconnaît la carte à son dessin bien avant d'avoir lu
+   son nom — c'est ce qui distingue un jeu de cartes d'une liste de courses. */
+.power-card__glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 2.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--green);
+  color: var(--cream);
+}
+
+.power-card--malus .power-card__glyph {
+  background: var(--red);
+}
+
+/* Le compte d'exemplaires, là où une carte à jouer porte sa valeur. C'est lui,
+   et non une promesse, qui dit à quel point le paquet est équitable. */
+.power-card__copies {
+  font-family: var(--title);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.power-card__name {
+  font-family: var(--title);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.power-card__desc {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .power-mark {
@@ -2983,37 +3277,29 @@ input:disabled {
   border-radius: 4px;
 }
 
-.power-mark--bonus {
-  background: var(--green);
-}
-
-.power-mark--malus {
-  background: var(--red);
-}
-
 /* La carte d'un autre joueur : on sait qu'elle existe, pas ce qu'elle est.
-   Une pastille vide dit exactement cela. */
+   Une pastille vide dit exactement cela — et c'est le seul cas qui reste, les
+   cartes qu'on a le droit de nommer portant leur figure (voir `.power-badge`). */
 .power-mark--neutral {
   background: var(--line);
 }
 
-.power-text {
-  flex: 1;
+/* La figure d'une carte, en petit : dans la nouvelle qui passe en haut de
+   l'écran, c'est elle qu'on reconnaît au vol pendant qu'un cheval bouge. */
+.power-badge {
   display: grid;
-  gap: 2px;
-}
-
-.power-text .desc {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.power-copies {
+  place-items: center;
   flex: none;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 800;
+  width: 34px;
+  height: 34px;
+  border: 2.5px solid var(--ink);
+  border-radius: 11px;
+  background: var(--green);
+  color: var(--cream);
+}
+
+.power-badge--malus {
+  background: var(--red);
 }
 
 
