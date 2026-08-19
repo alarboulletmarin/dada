@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 73 tests : géométrie du plateau, règles, présence
+npm test         # 91 tests : géométrie du plateau, règles, dé, présence
 npm run build    # vérification de types puis build de production
 ```
 
@@ -29,6 +29,20 @@ npm run build    # vérification de types puis build de production
 
 Les règles sont des **données**, pas du code : voir `src/game/variants.ts`. Ajouter
 la variante de votre famille tient en un objet de quinze lignes.
+
+### Sortir de l'écurie sans y passer la soirée
+
+Attendre un 6 est une loi de probabilité, pas une épreuve d'adresse. Avec un dé
+franc, une partie sur cinq laisse un joueur à l'écurie plus de huit tours, et
+une sur vingt plus de seize — pendant que la table fait le tour du plateau. Ce
+n'est pas une impression : c'est mesuré, et c'est le pire moment du jeu.
+
+Le dé reste donc franc au premier essai, puis penche d'un cran par tour passé
+enfermé ; au sixième, la sortie est certaine. L'attente moyenne tombe de six
+tours à trois, la longue traîne disparaît, et le joueur concerné le lit
+au-dessus du dé — un dé qui aide sans le dire serait un dé truqué. Le seuil est
+une donnée de variante (`mercyExit`) : « Rapide », qui sort déjà sur 1 ou 6,
+garde un dé entièrement franc.
 
 ## Architecture
 

@@ -7,7 +7,7 @@
  */
 
 import { geometryFor } from '../game/board.ts'
-import { pawnsOf } from '../game/engine.ts'
+import { mercyOf, pawnsOf } from '../game/engine.ts'
 import { STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { makeCode, type ChatMessage } from '../net/room.ts'
@@ -1295,7 +1295,10 @@ export class App {
       detail = t('play.voided.hint', { n: state.variant.maxConsecutiveSixes })
     } else if (mine && state.phase === 'rolling') {
       title = t('play.yourTurn')
-      detail = t('play.touchDie')
+      // Un joueur qu'on aide a le droit de le savoir : le dé qui penche vers la
+      // sortie se dit, il ne se cache pas.
+      const mercy = mercyOf(state, state.turn)
+      detail = mercy >= 1 ? t('play.mercy.sure') : mercy > 0 ? t('play.mercy') : t('play.touchDie')
     } else if (mine && moveCount === 0) {
       title = t('play.nothing')
       detail = t('play.nothing.hint')

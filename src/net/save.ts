@@ -14,7 +14,8 @@ import type { Lobby } from './room.ts'
 
 const KEY = 'dada.save'
 const INVITE_KEY = 'dada.invite'
-const VERSION = 1
+/** 2 : l'état porte le compteur de tours passés à l'écurie (`stuck`). */
+const VERSION = 2
 /**
  * Au-delà, la partie qu'on avait quittée est finie depuis longtemps : proposer
  * d'y revenir ne ferait que promettre une salle vide.

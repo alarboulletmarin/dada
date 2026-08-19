@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { geometryFor } from './board.ts'
-import { apply, createGame, forceSkipTurn, hasWon, legalMoves, pawnId } from './engine.ts'
+import { apply, createGame, forceSkipTurn, hasWon, legalMoves, mercyOf, pawnId } from './engine.ts'
 import { rollDie } from './rng.ts'
 import { variantById } from './variants.ts'
 import { DICE_BOOSTS_PER_GAME, STABLE, type GameState, type Player, type Seat } from './types.ts'
@@ -306,6 +306,82 @@ describe('bonus de dé', () => {
   })
 })
 
+describe('pitié de sortie', () => {
+  /** Enchaîne des tours entiers pour un joueur seul face à l'écurie. */
+  const turnsToLeave = (seed: number, variantId = 'petits-chevaux'): number => {
+    let s = createGame({ players: players([0, 1]), variant: variantById(variantId), seed })
+    for (let turn = 1; turn <= 60; turn++) {
+      s = apply(s, { type: 'roll' }, 0).state
+      const moves = legalMoves(s)
+      if (moves[0]) return turn
+      s = apply(s, { type: 'pass' }, 0).state
+      // Le siège 1 joue et rend la main, sinon on ne compterait qu'un seul tour.
+      while (s.turn !== 0) {
+        s = s.phase === 'rolling' ? apply(s, { type: 'roll' }, s.turn).state : s
+        const other = legalMoves(s)
+        s = other[0]
+          ? apply(s, { type: 'move', pawnId: other[0].pawnId }, s.turn).state
+          : apply(s, { type: 'pass' }, s.turn).state
+      }
+    }
+    return Infinity
+  }
+
+  it('laisse le premier essai au dé franc', () => {
+    const state = createGame({ players: players([0, 1]), variant: variantById('ludo'), seed: 7 })
+    expect(mercyOf(state, 0)).toBe(0)
+  })
+
+  it('monte d’un cran par tour passé à l’écurie', () => {
+    const state = createGame({ players: players([0, 1]), variant: variantById('ludo'), seed: 7 })
+    const after = (n: number): GameState => ({ ...state, stuck: [n, 0, 0, 0] })
+    expect(mercyOf(after(1), 0)).toBeCloseTo(0.2)
+    expect(mercyOf(after(3), 0)).toBeCloseTo(0.6)
+    expect(mercyOf(after(5), 0)).toBe(1)
+    // Au-delà du seuil, la certitude ne se dépasse pas.
+    expect(mercyOf(after(9), 0)).toBe(1)
+  })
+
+  it('retombe à zéro dès qu’un cheval est dehors', () => {
+    const state: GameState = {
+      ...setup({ at: { [pawnId(0, 0)]: 4 }, dice: 3 }),
+      stuck: [4, 0, 0, 0],
+    }
+    expect(mercyOf(state, 0)).toBe(0)
+  })
+
+  it('ne s’applique pas à une variante qui ne la connaît pas', () => {
+    const rapide = createGame({ players: players([0, 1]), variant: variantById('rapide'), seed: 7 })
+    expect(mercyOf({ ...rapide, stuck: [9, 0, 0, 0] }, 0)).toBe(0)
+  })
+
+  it('compte les tours passés enfermé, et les oublie à la sortie', () => {
+    let s = createGame({ players: players([0, 1]), variant: variantById('ludo'), seed: 3 })
+    s = apply(s, { type: 'roll' }, 0).state
+    expect(legalMoves(s)).toHaveLength(0)
+    s = apply(s, { type: 'pass' }, 0).state
+    expect(s.stuck[0]).toBe(1)
+  })
+
+  /**
+   * Le point de départ de toute l'affaire : la règle stricte laisse une partie
+   * sur quinze attendre plus de quinze lancers, pendant que la table fait le
+   * tour du plateau. Avec la pitié, la sortie est bornée.
+   */
+  it('borne l’attente à l’écurie, quelle que soit la graine', () => {
+    let worst = 0
+    let total = 0
+    const runs = 400
+    for (let seed = 1; seed <= runs; seed++) {
+      const turns = turnsToLeave(seed)
+      worst = Math.max(worst, turns)
+      total += turns
+    }
+    expect(worst).toBeLessThanOrEqual(6)
+    expect(total / runs).toBeLessThan(3.5)
+  })
+})
+
 describe('forceSkipTurn', () => {
   it('passe la main au siège suivant même si des coups légaux existaient', () => {
     const state = setup({ at: { [pawnId(0, 0)]: 2 }, dice: 3 })
@@ -322,6 +398,15 @@ describe('forceSkipTurn', () => {
 
     const after = forceSkipTurn(state, 0)
     expect(after.turn).toBe(1)
+  })
+
+  it('passe vraiment la main après un 6 resté sur la table', () => {
+    // Un 6 vaut rejeu : sans précaution, le tour « sauté » revenait au même
+    // joueur, qui l'aurait sauté à nouveau, et ainsi de suite.
+    const state = setup({ at: { [pawnId(0, 0)]: 2 }, dice: 6 })
+    const after = forceSkipTurn(state, 0)
+    expect(after.turn).toBe(1)
+    expect(after.dice).toBeNull()
   })
 
   it('ne fait rien si le siège appelé n’a pas la main', () => {

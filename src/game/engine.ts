@@ -53,6 +53,7 @@ export function createGame(opts: {
     ranking: [],
     rng: opts.seed,
     diceBoosts: DICE_BOOSTS_PER_GAME,
+    stuck: [0, 0, 0, 0],
     log: [
       { seq: 0, seat: players[0]!.seat, actor: '', event: { kind: 'start', variant: opts.variant.id } },
     ],
@@ -71,6 +72,30 @@ export const pawnsOf = (state: GameState, seat: Seat): Pawn[] =>
 export const hasWon = (state: GameState, seat: Seat): boolean => {
   const geometry = geometryFor(state.variant)
   return pawnsOf(state, seat).every((p) => hasFinished(geometry, p.steps))
+}
+
+/**
+ * Ce joueur est-il bloqué à l'écurie — c'est-à-dire : seule une face de sortie
+ * peut lui donner quelque chose à jouer ?
+ */
+export function isPenned(state: GameState, seat: Seat): boolean {
+  const geometry = geometryFor(state.variant)
+  const running = pawnsOf(state, seat).filter((p) => !hasFinished(geometry, p.steps))
+  return running.length > 0 && running.every((p) => p.steps === STABLE)
+}
+
+/**
+ * De 0 à 1 : à quel point le dé penche vers la sortie pour ce siège.
+ *
+ * Zéro tant que le joueur a un cheval dehors, ou si la variante ne connaît pas
+ * la pitié. Sinon un cran par tour passé à l'écurie, jusqu'à 1 — la sortie
+ * certaine. Le premier essai, lui, se joue toujours au dé franc : la pitié
+ * répare une attente, elle ne l'anticipe pas.
+ */
+export function mercyOf(state: GameState, seat: Seat): number {
+  const { mercyExit } = state.variant
+  if (mercyExit <= 0 || !isPenned(state, seat)) return 0
+  return Math.min(1, (state.stuck?.[seat] ?? 0) / mercyExit)
 }
 
 /** Une case du circuit est-elle protégée de la capture ? */
@@ -184,7 +209,11 @@ function applyRoll(state: GameState, boost?: 'low' | 'high'): ApplyResult {
   // Un boost sans bonus restant (UI périmée par la latence réseau) n'est pas
   // une faute du joueur : le lancer se fait simplement sans biais.
   const useBoost = boost !== undefined && state.diceBoosts > 0
-  const [rng, dice] = rollDie(state.rng, useBoost ? boost : undefined)
+  const [rng, dice] = rollDie(state.rng, {
+    bias: useBoost ? boost : undefined,
+    exitFaces: state.variant.exitRolls,
+    exitChance: mercyOf(state, state.turn),
+  })
   const consecutiveSixes = dice === 6 ? state.consecutiveSixes + 1 : 0
   const max = state.variant.maxConsecutiveSixes
   const voided = max > 0 && dice === 6 && consecutiveSixes >= max
@@ -252,13 +281,29 @@ function applyPass(state: GameState): ApplyResult {
  */
 export function forceSkipTurn(state: GameState, seat: Seat): GameState {
   if (state.phase === 'finished' || state.turn !== seat) return state
-  const next = addLog({ ...state, seq: state.seq + 1 }, seat, { kind: 'timeout' })
-  return endTurn(next, null)
+  // Le dé est effacé AVANT de clore le tour : un 6 resté sur la table vaut
+  // rejeu (voir `endTurn`), et le tour qu'on voulait sauter reviendrait au même
+  // joueur — indéfiniment, s'il est parti.
+  const cleared = { ...state, seq: state.seq + 1, dice: null, consecutiveSixes: 0, voided: false }
+  return endTurn(addLog(cleared, seat, { kind: 'timeout' }), null)
+}
+
+/**
+ * Tours passés à l'écurie sans en sortir. C'est ici que le compteur se tient à
+ * jour, à la fin de chaque tour : il monte tant que le joueur reste enfermé,
+ * et retombe à zéro à la seconde où un cheval est dehors.
+ */
+function countPenned(state: GameState, seat: Seat): GameState {
+  // `?? []` : un état reçu d'un pair resté sur une version d'avant le compteur
+  // n'en a pas. Il repart de zéro plutôt que de faire tomber la partie.
+  const stuck = [...(state.stuck ?? [])]
+  stuck[seat] = isPenned(state, seat) ? (stuck[seat] ?? 0) + 1 : 0
+  return { ...state, stuck }
 }
 
 /** Décide qui joue ensuite, en tenant compte des primes de rejeu. */
 function endTurn(state: GameState, move: Move | null): GameState {
-  let next = state
+  let next = countPenned(state, state.turn)
 
   // Un joueur qui vient de rentrer son dernier cheval prend place au classement.
   if (move?.finishes && hasWon(next, next.turn) && !next.ranking.includes(next.turn)) {
