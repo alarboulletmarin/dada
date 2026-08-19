@@ -36,6 +36,12 @@ export type LobbyPlayer = {
   peerId: string | null
   kind: 'human' | 'bot'
   connected: boolean
+  /**
+   * Un bot tient ce siège humain — son joueur est parti, ou n'a pas joué trois
+   * tours de suite. Le siège reste le sien : `clientId` et `name` ne bougent
+   * pas, et son retour efface simplement ce drapeau.
+   */
+  botFill: boolean
 }
 
 export type Lobby = {

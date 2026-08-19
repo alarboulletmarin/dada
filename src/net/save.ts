@@ -13,7 +13,13 @@ import type { GameState } from '../game/types.ts'
 import type { Lobby } from './room.ts'
 
 const KEY = 'dada.save'
+const INVITE_KEY = 'dada.invite'
 const VERSION = 1
+/**
+ * Au-delà, la partie qu'on avait quittée est finie depuis longtemps : proposer
+ * d'y revenir ne ferait que promettre une salle vide.
+ */
+const INVITE_TTL = 2 * 60 * 60 * 1000
 
 export type Save = {
   v: number
@@ -65,4 +71,44 @@ export function since(at: number): string {
   if (hours < 24) return `il y a ${hours} h`
   const days = Math.round(hours / 24)
   return days === 1 ? 'hier' : `il y a ${days} jours`
+}
+
+// ─────────────────────────── partie en ligne quittée ───────────────────────────
+
+/**
+ * Le code de la dernière partie en ligne où l'on jouait.
+ *
+ * Une partie en ligne ne se sauvegarde pas — elle vit sur la table, pas sur ce
+ * téléphone. Mais quitter ne doit pas être un aller simple : le siège reste le
+ * nôtre pendant que la table continue (voir `presence.ts`), encore faut-il
+ * pouvoir retrouver le code. C'est tout ce que garde cette entrée.
+ */
+export type Invite = { code: string; at: number }
+
+export function writeInvite(code: string): void {
+  try {
+    localStorage.setItem(INVITE_KEY, JSON.stringify({ code, at: Date.now() } satisfies Invite))
+  } catch {
+    // Quota plein ou mode privé : on ne pourra pas proposer le retour, c'est tout.
+  }
+}
+
+export function readInvite(): Invite | null {
+  try {
+    const raw = localStorage.getItem(INVITE_KEY)
+    if (!raw) return null
+    const invite = JSON.parse(raw) as Invite
+    if (!invite?.code || Date.now() - invite.at > INVITE_TTL) return null
+    return invite
+  } catch {
+    return null
+  }
+}
+
+export function clearInvite(): void {
+  try {
+    localStorage.removeItem(INVITE_KEY)
+  } catch {
+    // Sans conséquence : une invitation périmée est écartée à la lecture.
+  }
 }

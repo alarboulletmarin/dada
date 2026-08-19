@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 38 tests : géométrie du plateau + règles
+npm test         # 73 tests : géométrie du plateau, règles, présence
 npm run build    # vérification de types puis build de production
 ```
 
@@ -40,6 +40,9 @@ src/game/     moteur pur — (état, action) → état. Aucun DOM, aucun réseau
   bot.ts        adversaire artificiel
   rng.ts        aléatoire déterministe (mulberry32)
 src/net/      transport pair-à-pair et orchestration de la partie
+  room.ts       canaux WebRTC, code de partie, identité de l'appareil
+  session.ts    salon, arbitrage, minuterie de tour, relève des absents
+  presence.ts   les délais : dix secondes pour jouer, quand un bot prend la main
 src/ui/       écrans, plateau, animations
 ```
 
@@ -54,8 +57,19 @@ Avancer, c'est additionner. La conversion vers une case du plateau vit dans
 
 **Reprise après déconnexion.** Chaque appareil garde une copie complète de la
 partie. Si l'hôte s'en va, un nouveau est désigné de façon déterministe et la
-partie continue. Un joueur qui recharge sa page retrouve son siège : son
-identité est stockée localement, pas déduite de sa connexion.
+partie continue — les sièges que l'ancien hôte tenait pour d'autres (bots,
+joueurs sur son téléphone) passent au nouvel arbitre. Un joueur qui recharge sa
+page retrouve son siège : son identité est stockée localement, pas déduite de sa
+connexion. Quitter n'y change rien : le code de la partie reste sur l'appareil,
+et l'accueil propose d'y retourner tant qu'elle dure.
+
+**Personne n'attend personne.** Un tour dure dix secondes ; passé le délai il
+saute, et rien n'est joué à la place du joueur — ne pas jouer est toute la
+peine. Trois tours sautés d'affilée, ou vingt secondes d'absence, et un bot
+tient le siège en attendant. Le siège reste celui de son joueur : il porte
+toujours son nom, et son retour — ou un appui sur « Reprendre » — le lui rend.
+Les durées sont dans `presence.ts`, l'arbitrage dans `session.ts` : le moteur,
+lui, ne connaît toujours pas l'horloge.
 
 ## Déployer
 

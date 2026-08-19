@@ -11,8 +11,8 @@ import { pawnsOf } from '../game/engine.ts'
 import { STABLE, type GameState, type Move, type Seat, type Variant } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { makeCode, type ChatMessage } from '../net/room.ts'
-import { clearSave, readSave } from '../net/save.ts'
-import { Session } from '../net/session.ts'
+import { clearInvite, clearSave, readInvite, readSave } from '../net/save.ts'
+import { Session, type Notice, type NoticeCode } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
 import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
@@ -52,6 +52,30 @@ const CHAT_BUBBLE_MAX = 200
 /** Deux messages du même auteur à moins d'une minute d'écart forment un bloc :
  *  un seul nom, des bulles serrées. Au-delà, la conversation a repris. */
 const CHAT_GROUP_MS = 60_000
+
+/** Sous ce reste de temps de réflexion, le contour vire au rouge et les
+ *  secondes s'affichent : jusque-là, la minuterie reste une affaire de coin
+ *  de l'œil. */
+const URGENT_LEFT = 0.3
+
+/**
+ * Chaque motif rapporté par la session a sa phrase. Sans cette table, un refus
+ * du moteur s'afficherait tel quel — « notYourTurn » en travers de l'écran.
+ */
+const NOTICE_KEY: Record<NoticeCode, Key> = {
+  finished: 'error.finished',
+  notYourTurn: 'error.notYourTurn',
+  alreadyRolled: 'error.alreadyRolled',
+  rollFirst: 'error.rollFirst',
+  illegal: 'error.illegal',
+  nothingToPass: 'error.nothingToPass',
+  moveExists: 'error.moveExists',
+  linkFailed: 'link.failed',
+  linkBlocked: 'link.blocked',
+  hostTaken: 'notice.hostTaken',
+  seatToBot: 'notice.seatToBot',
+  seatBack: 'notice.seatBack',
+}
 
 /** Contient au moins un pictogramme et rien d'autre : une réaction, pas une
  *  phrase. Ces messages-là s'affichent en grand et sans cartouche — un pouce
@@ -116,6 +140,11 @@ export class App {
   private chatDot: HTMLElement | null = null
   /** Bulles actives par siège, avec leur minuterie d'effacement. */
   private chatBubbles = new Map<Seat, { text: string; timer: ReturnType<typeof setTimeout> }>()
+  /** Le contour qui se vide sur la carte du joueur dont c'est le tour. */
+  private turnRing: HTMLElement | null = null
+  /** Les secondes qui restent, affichées à la toute fin du décompte. */
+  private turnClock: HTMLElement | null = null
+  private clockFrame: number | null = null
 
   constructor(private root: HTMLElement) {}
 
@@ -143,7 +172,7 @@ export class App {
   private listeners() {
     return {
       onChange: () => this.update(),
-      onError: (message: string) => this.toast(message),
+      onError: (notice: Notice) => this.notify(NOTICE_KEY[notice.code], { name: notice.name ?? '' }),
       onChat: (message: ChatMessage) => this.onChat(message),
     }
   }
@@ -182,6 +211,7 @@ export class App {
     this.chatUnread = 0
     this.chatBubbles.forEach((b) => clearTimeout(b.timer))
     this.chatBubbles.clear()
+    this.stopClock()
     this.session?.destroy()
     this.session = null
     this.board = null
@@ -253,6 +283,84 @@ export class App {
     )
   }
 
+  /**
+   * Une question à laquelle on répond avant que le geste ne soit fait.
+   *
+   * Quitter une partie est irréversible pour la table : un doigt qui frôle la
+   * flèche de retour ne doit pas en décider. La feuille reprend celle du podium,
+   * pour qu'on reconnaisse la boîte plutôt que d'avoir à la lire.
+   */
+  private ask(opts: { title: string; body: string; confirm: string; onConfirm: () => void }): void {
+    if (document.querySelector('.overlay.ask')) return
+
+    const close = (): void => {
+      removeEventListener('keydown', onKey)
+      overlay.remove()
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') close()
+    }
+
+    const cancel = h('button', { class: 'btn', text: t('common.cancel'), on: { click: () => close() } })
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay ask',
+        attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': opts.title },
+        on: {
+          click: (ev) => {
+            if (ev.target === overlay) close()
+          },
+        },
+      },
+      h(
+        'div',
+        { class: 'sheet ask__sheet' },
+        h(
+          'div',
+          { class: 'card' },
+          h('h2', { style: { textAlign: 'center' }, text: opts.title }),
+          h('p', { class: 'hint center', text: opts.body }),
+        ),
+        h('button', {
+          class: 'btn red',
+          text: opts.confirm,
+          on: {
+            click: () => {
+              close()
+              opts.onConfirm()
+            },
+          },
+        }),
+        cancel,
+      ),
+    )
+    addEventListener('keydown', onKey)
+    document.body.append(overlay)
+    // Le doigt part vers « Annuler » : c'est aussi ce que doit faire un Entrée
+    // réflexe, et c'est la réponse sans conséquence des deux.
+    cancel.focus()
+  }
+
+  /** Le retour d'un écran de jeu : on demande, sauf quand il n'y a rien à perdre. */
+  private askQuit(): void {
+    const session = this.session
+    if (!session) return this.quit()
+
+    const playing = session.lobby.started && session.game !== null && session.game.phase !== 'finished'
+    const others = session.lobby.players.filter((p) => p.clientId !== session.self).length
+    // Un salon qu'on est seul à occuper, une partie déjà finie : personne n'est
+    // laissé en plan, et rien n'attend derrière la question.
+    if (!playing && others === 0) return this.quit()
+
+    this.ask({
+      title: t('quit.title'),
+      body: !playing ? t('quit.lobby') : session.mode === 'online' ? t('quit.online') : t('quit.local'),
+      confirm: t('quit.confirm'),
+      onConfirm: () => this.quit(),
+    })
+  }
+
   private backButton(onClick: () => void, label = t('common.back')): HTMLElement {
     return h(
       'button',
@@ -296,6 +404,7 @@ export class App {
         h(
           'div',
           { class: 'stack push' },
+          ...this.inviteCard(),
           ...this.resumeCard(),
           h('button', { class: 'btn red', text: t('home.create'), on: { click: () => go('online') } }),
           h('button', {
@@ -408,6 +517,47 @@ export class App {
             on: {
               click: () => {
                 clearSave()
+                this.renderHome()
+              },
+            },
+          }),
+        ),
+      ),
+    ]
+  }
+
+  /**
+   * On a quitté une partie en ligne : le siège y est toujours, tenu par un bot.
+   * Le code seul suffit à y retourner — c'est tout ce qu'on avait besoin de
+   * garder, et cela n'a de sens que le temps que la partie dure.
+   */
+  private inviteCard(): HTMLElement[] {
+    const invite = readInvite()
+    if (!invite) return []
+
+    return [
+      h(
+        'div',
+        { class: 'resume' },
+        h('button', {
+          class: 'btn blue',
+          text: t('invite.resume'),
+          on: { click: () => this.openOnline(invite.code, false) },
+        }),
+        h(
+          'div',
+          { class: 'resume-foot' },
+          h('span', {
+            class: 'hint',
+            text: t('invite.detail', { code: invite.code, when: since(invite.at) }),
+          }),
+          h('button', {
+            class: 'link',
+            text: t('common.forget'),
+            attrs: { 'aria-label': t('invite.forget.label') },
+            on: {
+              click: () => {
+                clearInvite()
                 this.renderHome()
               },
             },
@@ -597,7 +747,7 @@ export class App {
         })
         if (!editable) nameField.disabled = true
 
-        const tag = p.kind === 'bot' ? t('lobby.bot') : !p.connected ? t('lobby.offline') : ''
+        const tag = session.botAt(p.seat) ? t('lobby.bot') : !p.connected ? t('lobby.offline') : ''
         const isHostSeat = p.seat === session.hostSeat
 
         return h(
@@ -642,7 +792,7 @@ export class App {
         h(
           'div',
           { class: 'topbar' },
-          this.backButton(() => this.quit(), t('lobby.quit')),
+          this.backButton(() => this.askQuit(), t('lobby.quit')),
           h('h2', { text: t('lobby.title') }),
           online && !session.isHost ? this.codePill(lobby.code) : null,
           online ? this.chatButton() : null,
@@ -850,7 +1000,7 @@ export class App {
         h(
           'div',
           { class: 'steps' },
-          ...[1, 2, 3, 4, 5, 6].map((n) =>
+          ...[1, 2, 3, 4, 5, 6, 7].map((n) =>
             h(
               'div',
               { class: 'step', style: this.seatVars(((n - 1) % 4) as Seat) },
@@ -929,7 +1079,7 @@ export class App {
         h(
           'div',
           { class: 'topbar' },
-          this.backButton(() => this.quit(), t('lobby.quit')),
+          this.backButton(() => this.askQuit(), t('lobby.quit')),
           h('span', { style: { flex: '1' } }),
           this.session!.mode === 'online' ? this.codePill(this.session!.lobby.code) : null,
           this.session!.mode === 'online' ? this.chatButton() : null,
@@ -1028,6 +1178,10 @@ export class App {
       [3, 2],
     ]
 
+    // Le contour minuté est recréé à chaque passage : la référence d'avant
+    // pointerait sur une carte qui n'est plus à l'écran.
+    this.turnRing = null
+
     const card = (seat: Seat) => {
       const p = state.players.find((x) => x.seat === seat)
       // Siège inoccupé : une carte fantôme, pour que la carte voisine reste du
@@ -1053,16 +1207,27 @@ export class App {
               : t('play.stable')
 
       // Un pair distant déconnecté ne joue plus : sans ce signal, un tour qui
-      // se termine tout seul (voir `scheduleDisconnectSkip` côté session)
-      // resterait inexpliqué à l'écran. `state.players[].connected` est une
-      // photo figée au lancement de la partie : seul le lobby, tenu à jour en
-      // continu, sait qui est là maintenant.
+      // se termine tout seul (voir `armTurnClock` côté session) resterait
+      // inexpliqué à l'écran. `state.players[].connected` est une photo figée au
+      // lancement de la partie : seul le lobby, tenu à jour en continu, sait qui
+      // est là maintenant.
       const lobbyPlayer = session.lobby.players.find((x) => x.seat === seat)
       const offline =
         lobbyPlayer !== undefined &&
         lobbyPlayer.kind !== 'bot' &&
         lobbyPlayer.clientId !== session.self &&
         !lobbyPlayer.connected
+      // Un bot tient ce siège en l'absence de son joueur : le dire, sinon on
+      // croirait que le joueur d'à côté s'est mis à jouer tout seul.
+      const held = lobbyPlayer?.botFill === true
+
+      // « vous · tenu par un bot · 2 en piste » : ce qu'on est, ce qui joue à
+      // notre place, et où en sont les chevaux.
+      const line = [
+        session.mine(seat) ? t('common.you') : '',
+        held ? t('play.bot') : offline ? t('lobby.offline') : '',
+        meta,
+      ].filter(Boolean)
 
       const bubble = this.chatBubbles.get(seat)
 
@@ -1077,15 +1242,21 @@ export class App {
           'div',
           { class: 'body' },
           h('span', { class: 'who', text: p.name }),
-          h('span', {
-            class: 'meta',
-            text: session.controls(seat)
-              ? `${t('common.you')} · ${meta}`
-              : offline
-                ? `${t('lobby.offline')} · ${meta}`
-                : meta,
-          }),
+          h('span', { class: 'meta', text: line.join(' · ') }),
         ),
+        // Le bot n'a pris le siège que faute de mieux : un appui le rend.
+        held && session.mine(seat)
+          ? h('button', {
+              class: 'pcard__take',
+              text: t('play.takeBack'),
+              attrs: { 'aria-label': t('play.takeBack.label') },
+              on: { click: () => session.takeBack(seat) },
+            })
+          : null,
+        // Le temps de réflexion, sur le contour de la carte : discret tant qu'il
+        // en reste, rouge à la fin. Décoratif pour qui écoute — les secondes
+        // sont dites au-dessus du dé, là où l'on attend l'information.
+        active && session.turnLeft() !== null ? this.turnRingFor() : null,
         // Le texte a son propre nœud : c'est LUI qu'on tronque à trois lignes,
         // et une troncature demande `overflow: hidden` — posée sur la bulle,
         // elle rognait la pointe, qui vit hors de ses bords.
@@ -1142,9 +1313,18 @@ export class App {
       title = t('play.rolled', { name: current?.name ?? '…', dice: state.dice ?? '' })
     }
 
+    const clock = h('span', { class: 'turnline__clock' })
+    this.turnClock = clock
+
     fill(
       host,
-      h('div', { class: 'turnline-row' }, finished ? null : this.token(state.turn), h('strong', { text: title })),
+      h(
+        'div',
+        { class: 'turnline-row' },
+        finished ? null : this.token(state.turn),
+        h('strong', { text: title }),
+        clock,
+      ),
       // Toujours présente, même vide : la ligne garde sa hauteur (voir le CSS)
       // pour que le bloc ne change jamais de taille d'un tour à l'autre.
       h('span', { class: 'detail', text: detail ? `· ${detail}` : '' }),
@@ -1154,6 +1334,54 @@ export class App {
     const die = this.mounts!.dieBtn
     die.disabled = !canRoll
     die.classList.toggle('ready', canRoll)
+    this.startClock()
+  }
+
+  // ─────────────────────────── le temps de réflexion ───────────────────────────
+
+  /**
+   * Le contour qui se vide. Il est peint par une variable CSS remise à jour à
+   * chaque image plutôt que par une animation déclarée : le décompte doit
+   * repartir de la même valeur chez tout le monde, et une animation lancée à
+   * l'affichage aurait décrit le temps de CET écran, pas celui du tour.
+   */
+  private turnRingFor(): HTMLElement {
+    const ring = h('span', { class: 'pcard__timer', attrs: { 'aria-hidden': 'true' } })
+    this.turnRing = ring
+    this.startClock()
+    return ring
+  }
+
+  private startClock(): void {
+    if (this.clockFrame !== null) return
+    this.clockFrame = requestAnimationFrame(this.tickClock)
+  }
+
+  private stopClock(): void {
+    if (this.clockFrame !== null) cancelAnimationFrame(this.clockFrame)
+    this.clockFrame = null
+    this.turnRing = null
+    this.turnClock = null
+  }
+
+  private tickClock = (): void => {
+    this.clockFrame = null
+    const left = this.session?.turnLeft() ?? null
+
+    if (this.turnRing) {
+      this.turnRing.style.setProperty('--left', (left ?? 0).toFixed(3))
+      this.turnRing.classList.toggle('urgent', left !== null && left <= URGENT_LEFT)
+    }
+    if (this.turnClock) {
+      // Le chiffre n'apparaît qu'à la fin, et seulement pour qui doit jouer :
+      // un compte à rebours permanent au-dessus du dé ferait de chaque tour une
+      // épreuve chronométrée, ce que le contour dit déjà bien assez.
+      const urgent = left !== null && left <= URGENT_LEFT && this.session?.myTurn === true
+      this.turnClock.textContent = urgent ? t('play.seconds', { n: this.session!.turnSeconds() }) : ''
+    }
+
+    if (left === null || this.screen !== 'play') return
+    this.clockFrame = requestAnimationFrame(this.tickClock)
   }
 
   /**
