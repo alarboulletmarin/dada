@@ -235,6 +235,21 @@ donc en place jusqu'à l'impact, et les nouvelles du haut d'écran attendent que
 le plateau ait fini de bouger — une annonce qui devance ce qu'elle raconte
 gâche les deux.
 
+**Et un coup peut avoir deux temps.** Un cheval qui s'arrête sur une case
+pouvoir peut en repartir aussitôt : le faux pas le recule de trois, le retour à
+l'écurie le renvoie chez lui. L'état ne garde que sa position finale, si bien
+qu'un six suivi d'un faux pas se dessinait comme un tranquille déplacement de
+trois cases — et un retour à l'écurie ne se dessinait pas du tout, le cheval
+reparaissant chez lui sans avoir bougé. On perdait les deux moitiés de ce qui
+venait d'arriver, et il ne restait qu'un résultat inexplicable.
+
+L'état note donc l'étape intermédiaire — la case où le dé avait posé le cheval
+(`hop` dans `types.ts`) — et l'écran raconte le coup en trois battements : la
+marche du dé, l'arrivée qu'on laisse voir un instant, puis ce que la carte en
+fait. C'est du **dessin, pas de la règle** : le moteur pose ce champ et ne le
+lit jamais, et `powers.test.ts` fixe les deux cas où il est écrit comme celui
+où il doit rester vide.
+
 **Les nouvelles s'empilent, elles ne se chassent pas.** Trois au plus, et de
 quatre à six secondes et demie selon ce qu'elles annoncent : un malus reste plus
 longtemps qu'un bonus, parce qu'un malus qu'on n'a pas eu le temps de lire se

@@ -124,6 +124,22 @@ export type Variant = {
   numberedHome: boolean
 }
 
+/**
+ * L'étape intermédiaire du dernier déplacement.
+ *
+ * Un cheval qui s'arrête sur une case pouvoir peut en repartir aussitôt : le
+ * faux pas le recule de trois, le retour à l'écurie le renvoie chez lui. L'état
+ * ne garde alors que sa position **finale**, et l'écran, qui ne voit que des
+ * positions, dessinait un cheval avançant de trois cases après un six — ou ne
+ * dessinait rien du tout et le retrouvait à l'écurie. Le joueur y perdait les
+ * deux moitiés de ce qui venait de lui arriver.
+ *
+ * `at` est la case où le dé l'avait posé. C'est du **dessin, pas de la règle** :
+ * le moteur ne lit jamais ce champ, il ne fait que le poser pour que l'écran
+ * puisse raconter le coup en deux temps.
+ */
+export type Hop = { pawnId: string; at: number }
+
 export type Phase = 'rolling' | 'moving' | 'finished'
 
 /**
@@ -244,6 +260,11 @@ export type GameState = {
   hands?: PowerId[][]
   /** Ce que chaque siège a fait de sa partie. L'indice est le siège. */
   stats?: SeatStats[]
+  /**
+   * Où le dé avait posé le cheval, quand un pouvoir ramassé là l'a ensuite
+   * déplacé. Du dessin, pas de la règle : voir `Hop`. Absent le reste du temps.
+   */
+  hop?: Hop
   log: LogEntry[]
   /** Compteur monotone : sert à départager deux états lors d'un changement d'hôte. */
   seq: number
