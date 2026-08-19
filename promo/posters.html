@@ -1,0 +1,284 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Dada — visuels Instagram 9:16</title>
+<style>
+  @font-face { font-family:'Baloo 2'; font-weight:800; src:url('../node_modules/@fontsource/baloo-2/files/baloo-2-latin-800-normal.woff2') format('woff2'); }
+  @font-face { font-family:'Baloo 2'; font-weight:700; src:url('../node_modules/@fontsource/baloo-2/files/baloo-2-latin-700-normal.woff2') format('woff2'); }
+  @font-face { font-family:'Baloo 2'; font-weight:600; src:url('../node_modules/@fontsource/baloo-2/files/baloo-2-latin-600-normal.woff2') format('woff2'); }
+  @font-face { font-family:'Nunito'; font-weight:800; src:url('../node_modules/@fontsource/nunito/files/nunito-latin-800-normal.woff2') format('woff2'); }
+  @font-face { font-family:'Nunito'; font-weight:700; src:url('../node_modules/@fontsource/nunito/files/nunito-latin-700-normal.woff2') format('woff2'); }
+  @font-face { font-family:'Nunito'; font-weight:600; src:url('../node_modules/@fontsource/nunito/files/nunito-latin-600-normal.woff2') format('woff2'); }
+
+  /* Les jetons de la feuille de style du jeu, remis à l'échelle d'une affiche
+     1080 × 1920 : mêmes couleurs, mêmes traits d'encre, mêmes ombres franches. */
+  :root {
+    --paper:#fbf2df; --paper-deep:#efe3cb; --card:#fffdf5; --cream:#fff7e6;
+    --ink:#3b2a1e; --shade:#3b2a1e; --dot:rgba(59,42,30,0.10);
+    --muted:rgba(59,42,30,0.62); --muted-strong:rgba(59,42,30,0.75);
+    --red:#e9564b; --green:#57b26a; --blue:#4c93d8; --yellow:#f4c43c; --purple:#b6a2e4;
+    --on-yellow:#2a1e16;
+    --title:'Baloo 2', system-ui, sans-serif;
+    --body:'Nunito', system-ui, sans-serif;
+    --bw:8px;
+  }
+  .night {
+    --paper:#1e1712; --paper-deep:#17110d; --card:#2a211a; --cream:#fff7e6;
+    --ink:#f2e6d2; --shade:#0b0806; --dot:rgba(242,230,210,0.07);
+    --muted:rgba(242,230,210,0.62); --muted-strong:rgba(242,230,210,0.78);
+  }
+
+  * { box-sizing:border-box; margin:0; }
+  body { background:#4a4a4a; display:flex; flex-wrap:wrap; gap:40px; padding:40px; font-family:var(--body); }
+
+  .poster {
+    position:relative; width:1080px; height:1920px; overflow:hidden;
+    background-color:var(--paper);
+    background-image:radial-gradient(var(--dot) 4px, transparent 4px);
+    background-size:72px 72px;
+    color:var(--ink);
+    display:flex; flex-direction:column;
+    padding:110px 88px;
+  }
+
+  /* ── logo DADA : les quatre jetons de l'accueil ── */
+  .logo { display:flex; justify-content:center; gap:18px; }
+  .logo span {
+    display:grid; place-items:center;
+    width:150px; height:176px;
+    border:var(--bw) solid var(--ink); border-radius:48px;
+    box-shadow:0 14px 0 var(--shade);
+    color:var(--cream); font-family:var(--title); font-weight:800;
+    font-size:104px; line-height:1;
+  }
+  .logo span:nth-child(1){ background:var(--red);    transform:rotate(-2deg); }
+  .logo span:nth-child(2){ background:var(--green);  transform:rotate(1.5deg); }
+  .logo span:nth-child(3){ background:var(--blue);   transform:rotate(-1.5deg); }
+  .logo span:nth-child(4){ background:var(--yellow); color:var(--on-yellow); transform:rotate(2deg); }
+  .logo.small span { width:88px; height:102px; font-size:60px; border-width:5px; border-radius:28px; box-shadow:0 8px 0 var(--shade); }
+
+  h1 { font-family:var(--title); font-weight:800; font-size:108px; line-height:1.02; letter-spacing:-0.5px; }
+  h2 { font-family:var(--title); font-weight:800; font-size:76px; line-height:1.06; }
+  .tagline { font-family:var(--title); font-weight:600; font-size:48px; line-height:1.2; color:var(--muted-strong); text-align:center; }
+  .lead { font-size:38px; font-weight:700; line-height:1.42; color:var(--muted-strong); }
+  .foot { text-align:center; font-size:36px; font-weight:700; line-height:1.5; color:var(--muted); }
+
+  .center { text-align:center; }
+  .push { margin-top:auto; }
+
+  /* ── carte : bloc d'encre à ombre franche ── */
+  .card {
+    background:var(--card); border:var(--bw) solid var(--ink); border-radius:64px;
+    box-shadow:0 18px 0 var(--shade); padding:52px 56px;
+  }
+
+  /* ── bouton du jeu, en grand ── */
+  .btn {
+    display:flex; align-items:center; justify-content:center; gap:22px;
+    border:var(--bw) solid var(--ink); border-radius:56px; background:var(--card);
+    box-shadow:0 16px 0 var(--shade);
+    font-family:var(--title); font-weight:700; font-size:52px; padding:34px 48px;
+  }
+  .btn.red{ background:var(--red); color:var(--cream); }
+  .btn.green{ background:var(--green); color:var(--cream); }
+  .btn.blue{ background:var(--blue); color:var(--cream); }
+  .btn.yellow{ background:var(--yellow); color:var(--on-yellow); }
+
+  .pill {
+    display:inline-flex; align-items:center; gap:16px;
+    padding:20px 40px; border:6px solid var(--ink); border-radius:999px;
+    background:var(--yellow); color:var(--on-yellow); box-shadow:0 10px 0 var(--shade);
+    font-family:var(--title); font-weight:700; font-size:40px; letter-spacing:0.06em;
+  }
+
+  /* ── mockup téléphone : le trait d'encre du jeu, pas un cadre d'iPhone ── */
+  .phone {
+    border:var(--bw) solid var(--ink); border-radius:74px; overflow:hidden;
+    box-shadow:0 22px 0 var(--shade); background:var(--card); line-height:0;
+  }
+  .phone img { width:100%; display:block; }
+  .phone.crop { height:100%; }
+  .phone.crop img { height:100%; object-fit:cover; object-position:top center; }
+
+  /* ── dés ── */
+  .die {
+    display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
+    width:150px; height:150px; padding:24px;
+    border:7px solid var(--ink); border-radius:38px; box-shadow:0 12px 0 var(--shade);
+    background:var(--card);
+  }
+  .die i { width:26px; height:26px; border-radius:50%; background:var(--ink); align-self:center; justify-self:center; }
+  .die.yellow { background:var(--yellow); }
+  .die.red { background:var(--red); } .die.red i { background:var(--cream); }
+  .die.green { background:var(--green); } .die.green i { background:var(--cream); }
+  .die.blue { background:var(--blue); } .die.blue i { background:var(--cream); }
+  /* positions des points */
+  .p1{grid-area:1/1} .p2{grid-area:1/3} .p3{grid-area:2/2} .p4{grid-area:3/1} .p5{grid-area:3/3}
+  .p6{grid-area:2/1} .p7{grid-area:2/3} .p8{grid-area:1/2} .p9{grid-area:3/2}
+
+  /* ── pion, tel que le plateau le dessine ── */
+  .pawn { width:110px; height:110px; border-radius:50%; border:7px solid var(--ink); display:grid; place-items:center; box-shadow:0 10px 0 var(--shade); }
+  .pawn b { width:38px; height:38px; background:var(--cream); border-radius:50%; display:block; }
+  .pawn.sq b { border-radius:8px; }
+  .pawn.tri b { background:none; width:0; height:0; border-left:22px solid transparent; border-right:22px solid transparent; border-bottom:38px solid var(--ink); }
+  .pawn.di b { transform:rotate(45deg); border-radius:6px; }
+</style>
+<body>
+<!-- ═══════════ 1 · L'affiche de lancement ═══════════ -->
+<section class="poster" id="p1-lancement">
+  <div class="logo"><span>D</span><span>A</span><span>D</span><span>A</span></div>
+  <p class="tagline" style="margin-top:44px">le jeu des petits chevaux,<br>entre amis</p>
+
+  <div class="push" style="position:relative; display:flex; justify-content:center; margin-bottom:auto; margin-top:auto">
+    <div class="phone" style="width:820px; height:816px; transform:rotate(-1.5deg)">
+      <img src="shots/plateau.png" style="width:100%; margin-top:-344px" />
+    </div>
+    <div class="die" style="position:absolute; left:24px; top:-72px; transform:rotate(-9deg)">
+      <i class="p1"></i><i class="p2"></i><i class="p3"></i><i class="p4"></i><i class="p5"></i>
+    </div>
+    <div class="die yellow" style="position:absolute; right:14px; bottom:-64px; transform:rotate(8deg)">
+      <i class="p1"></i><i class="p2"></i><i class="p6"></i><i class="p7"></i><i class="p4"></i><i class="p5"></i>
+    </div>
+  </div>
+
+  <p class="foot">Sans compte · sans pub · sans serveur.<br>Trois secondes et le dé roule.</p>
+</section>
+
+<!-- ═══════════ 2 · Le plateau en grand ═══════════ -->
+<section class="poster" id="p2-plateau" style="padding:110px 0 0">
+  <div style="padding:0 88px">
+    <div class="pill" style="background:var(--red); color:var(--cream); transform:rotate(-2deg); margin-bottom:34px">gratuit &amp; libre</div>
+    <h1>Le plateau<br>de toute la<br>famille.</h1>
+    <p class="lead" style="margin-top:34px; max-width:840px">
+      Quatre couleurs, cinquante-six cases, un dé. Les règles que vous connaissez,
+      sur le téléphone que vous avez déjà.
+    </p>
+  </div>
+
+  <div style="position:absolute; left:130px; width:820px; top:800px; height:1220px">
+    <div class="phone" style="width:100%; height:100%">
+      <img src="shots/plateau.png" style="width:100%; margin-top:-344px" />
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 3 · Les trois promesses ═══════════ -->
+<section class="poster" id="p3-promesses">
+  <div class="logo small"><span>D</span><span>A</span><span>D</span><span>A</span></div>
+  <h1 style="margin-top:70px; text-align:center">Rien à<br>installer<br>de plus.</h1>
+
+  <div style="display:flex; flex-direction:column; gap:44px; margin-top:auto; margin-bottom:auto">
+    <div class="card" style="display:flex; align-items:center; gap:44px">
+      <div class="pawn" style="background:var(--red); flex:none"><b></b></div>
+      <div>
+        <h2 style="font-size:56px">Pas de compte</h2>
+        <p class="lead" style="font-size:34px; margin-top:8px">Un prénom, et c'est parti.</p>
+      </div>
+    </div>
+    <div class="card" style="display:flex; align-items:center; gap:44px">
+      <div class="pawn sq" style="background:var(--blue); flex:none"><b></b></div>
+      <div>
+        <h2 style="font-size:56px">Pas de pub</h2>
+        <p class="lead" style="font-size:34px; margin-top:8px">Jamais. Le code est libre.</p>
+      </div>
+    </div>
+    <div class="card" style="display:flex; align-items:center; gap:44px">
+      <div class="pawn di" style="background:var(--green); flex:none"><b></b></div>
+      <div>
+        <h2 style="font-size:56px">Pas de serveur</h2>
+        <p class="lead" style="font-size:34px; margin-top:8px">Vos téléphones se parlent<br>directement.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn red">Créer une partie</div>
+  <p class="foot" style="margin-top:36px">Jusqu'à 4 joueurs · hors ligne sur un seul téléphone</p>
+</section>
+
+<!-- ═══════════ 4 · Le code à cinq lettres ═══════════ -->
+<section class="poster" id="p4-code">
+  <div class="logo small"><span>D</span><span>A</span><span>D</span><span>A</span></div>
+  <h1 class="center" style="margin-top:60px">Un code.<br>Vos amis.<br>Le dé roule.</h1>
+
+  <div class="logo" style="margin-top:80px; gap:14px">
+    <span style="background:var(--card); color:var(--ink); transform:rotate(-3deg)">M</span>
+    <span style="background:var(--card); color:var(--ink); transform:rotate(2deg)">B</span>
+    <span style="background:var(--card); color:var(--ink); transform:rotate(-1deg)">Q</span>
+    <span style="background:var(--card); color:var(--ink); transform:rotate(3deg)">P</span>
+    <span style="background:var(--card); color:var(--ink); transform:rotate(-2deg)">D</span>
+  </div>
+
+  <p class="tagline" style="margin-top:52px; font-size:40px">
+    Cinq lettres à envoyer.<br>Aucun compte à créer.
+  </p>
+
+  <div class="push" style="display:flex; justify-content:center; align-items:flex-start; gap:40px; margin-bottom:60px">
+    <div class="phone" style="width:410px; height:628px; transform:rotate(-3deg); margin-top:46px">
+      <img src="shots/salon.png" style="width:100%" />
+    </div>
+    <div class="phone" style="width:410px; height:598px; transform:rotate(3deg)">
+      <img src="shots/accueil.png" style="width:100%" />
+    </div>
+  </div>
+
+  <p class="foot">Le lien s'ouvre dans le navigateur.<br>Rien à installer, rien à retenir.</p>
+</section>
+
+<!-- ═══════════ 5 · Version nuit ═══════════ -->
+<section class="poster night" id="p5-nuit">
+  <div class="logo"><span>D</span><span>A</span><span>D</span><span>A</span></div>
+  <p class="tagline" style="margin-top:44px">une partie avant<br>d'éteindre&nbsp;?</p>
+
+  <div class="push" style="position:relative; display:flex; justify-content:center; margin-top:auto; margin-bottom:auto">
+    <div class="phone" style="width:820px; height:816px; transform:rotate(1.5deg)">
+      <img src="shots/plateau-nuit.png" style="width:100%; margin-top:-344px" />
+    </div>
+    <div class="die yellow" style="position:absolute; left:18px; top:-70px; transform:rotate(-8deg)">
+      <i class="p1"></i><i class="p2"></i><i class="p6"></i><i class="p7"></i><i class="p4"></i><i class="p5"></i>
+    </div>
+    <div class="die red" style="position:absolute; right:20px; bottom:-62px; transform:rotate(9deg)">
+      <i class="p3"></i>
+    </div>
+  </div>
+
+  <p class="foot">Thème sombre d'origine · hors ligne.<br>Dix minutes suffisent.</p>
+</section>
+
+<!-- ═══════════ 6 · Les trois jeux de règles ═══════════ -->
+<section class="poster" id="p6-regles">
+  <div class="logo small"><span>D</span><span>A</span><span>D</span><span>A</span></div>
+  <h1 style="margin-top:64px; text-align:center">Trois jeux<br>dans un.</h1>
+
+  <div style="display:flex; flex-direction:column; gap:40px; margin-top:auto; margin-bottom:auto">
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:32px">
+        <div class="die red" style="width:118px; height:118px; padding:18px; flex:none">
+          <i class="p1"></i><i class="p2"></i><i class="p6"></i><i class="p7"></i><i class="p4"></i><i class="p5"></i>
+        </div>
+        <h2 style="font-size:60px; flex:1">Petits chevaux</h2>
+        <span class="pill" style="font-size:30px; padding:14px 28px; box-shadow:0 7px 0 var(--shade)">FR</span>
+      </div>
+      <p class="lead" style="font-size:33px; margin-top:26px">Un 6 pour sortir, on rejoue sur un 6. La règle française.</p>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:32px">
+        <div class="pawn" style="background:var(--blue); width:118px; height:118px; flex:none"><b></b></div>
+        <h2 style="font-size:60px; flex:1">Ludo</h2>
+        <span class="pill" style="font-size:30px; padding:14px 28px; box-shadow:0 7px 0 var(--shade); background:var(--blue); color:var(--cream)">INT</span>
+      </div>
+      <p class="lead" style="font-size:33px; margin-top:26px">Cases étoilées, barrages, primes de capture. La règle internationale.</p>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:32px">
+        <div class="die green" style="width:118px; height:118px; padding:18px; flex:none"><i class="p3"></i></div>
+        <h2 style="font-size:60px; flex:1">Rapide</h2>
+        <span class="pill" style="font-size:30px; padding:14px 28px; box-shadow:0 7px 0 var(--shade); background:var(--green); color:var(--cream)">EXPRESS</span>
+      </div>
+      <p class="lead" style="font-size:33px; margin-top:26px">Sortie sur 1 ou 6, arrivée sans compte exact. Dix minutes.</p>
+    </div>
+  </div>
+
+  <p class="foot">Et les règles maison se cochent dans le salon,<br>juste avant de lancer.</p>
+</section>
+</body>
