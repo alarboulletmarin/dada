@@ -250,6 +250,8 @@ export class App {
   private mounts: {
     players: HTMLElement[]
     turn: HTMLElement
+    /** La ligne entière, qui porte aussi le bouton de la main. */
+    turnLine: HTMLElement
     dieBtn: HTMLButtonElement
     die: HTMLElement
     diceRow: HTMLElement
@@ -282,6 +284,8 @@ export class App {
   /** Coup évident déjà programmé, repéré par le numéro d'état du moteur. */
   private autoAt = -1
   private autoTimer: ReturnType<typeof setTimeout> | null = null
+  /** Le tiroir de la main, tant qu'il est ouvert. */
+  private handTray: { overlay: HTMLElement; body: HTMLElement; foot: HTMLElement } | null = null
   /** Le panneau de chat est ouvert : les messages qui arrivent s'y affichent
    *  directement plutôt que de compter dans le badge du bouton. */
   private chatOpen = false
@@ -360,6 +364,7 @@ export class App {
     this.autoTimer = null
     this.autoAt = -1
     document.querySelector('.cardnotes')?.remove()
+    this.closeHandTray()
     this.closePause()
     this.armed = null
     this.closeChat()
@@ -1425,6 +1430,7 @@ export class App {
       h(
         'div',
         { class: 'sheet powers__sheet' },
+        this.sheetClose(close),
         // Un en-tête, et non une carte de plus : la feuille est déjà pleine de
         // cartes, et une boîte qui les annonce leur volerait le premier coup
         // d'œil.
@@ -1441,9 +1447,10 @@ export class App {
             }),
           }),
         ),
-        group('bonus'),
-        group('malus'),
-        h('button', { class: 'btn', text: t('common.close'), on: { click: () => close() } }),
+        // Le corps défile, la feuille non : la croix et le titre restent où on
+        // les a laissés. Une croix qui flotte au-dessus du texte qui défile
+        // sous elle se lit comme une carte de plus, mal placée.
+        h('div', { class: 'powers__body' }, group('bonus'), group('malus')),
       ),
     )
     addEventListener('keydown', onKey)
@@ -1542,7 +1549,16 @@ export class App {
     // enfants en CSS se serait cassé au premier bloc inséré.
     const top = h('div', { class: 'players players--top' })
     const bottom = h('div', { class: 'players players--bottom' })
-    const turn = h('div', { class: 'turnline', attrs: { 'aria-live': 'polite' } })
+    // La ligne de tour porte désormais deux choses : ce qui se passe, et la main.
+    // La rangée de cartes vivait sous elle, sur une ligne à hauteur fixe qu'elle
+    // gardait même vide — quarante-cinq pixels pris au plateau pendant les trois
+    // quarts d'une partie, pour un rang vide. Elle tient maintenant dans un
+    // bouton, et le plateau récupère la ligne entière.
+    // `aria-live` sur le bloc de texte et non sur la ligne entière : le bouton
+    // des cartes vit dans la même ligne, et ses changements se feraient lire à
+    // voix haute à chaque passe d'affichage.
+    const turnMain = h('div', { class: 'turnline__main', attrs: { 'aria-live': 'polite' } })
+    const turn = h('div', { class: 'turnline' }, turnMain)
     const die = h('div', { class: 'face' })
     const dieBtn = h(
       'button',
@@ -1575,10 +1591,17 @@ export class App {
     const low = boost('low')
     const high = boost('high')
     const diceRow = h('div', { class: 'dice-row' }, low.btn, dieBtn, high.btn)
-    // La main vit au-dessus du dé et non dessous : une carte se joue *avant* de
-    // lancer aussi bien qu'après, et la ranger sous le dé la ferait lire comme
-    // une conséquence du lancer.
-    const hand = h('div', { class: 'hand', attrs: { 'aria-label': t('hand.title') } })
+    // Le bouton de la main, à droite de la ligne de tour : il porte les figures
+    // des cartes gardées, et l'ouvre au doigt. Il est dans la ligne de tour et
+    // non dans la rangée du dé parce qu'une carte se joue *avant* de lancer
+    // aussi bien qu'après — la ranger sous le dé la ferait lire comme une
+    // conséquence du lancer.
+    const hand = h('button', {
+      class: 'handbtn',
+      attrs: { 'aria-haspopup': 'dialog', 'aria-label': t('hand.title') },
+      on: { click: () => this.showHand() },
+    })
+    turn.append(hand)
 
     // La pause n'existe que sur un seul téléphone : voir `canPause` côté
     // session. En ligne, un bouton qui ne figerait que son propre écran
@@ -1625,7 +1648,6 @@ export class App {
         h('div', { class: 'board-slot' }, boardHost),
         bottom,
         turn,
-        hand,
         diceRow,
       ),
     )
@@ -1633,7 +1655,8 @@ export class App {
     this.board = new BoardView(boardHost, this.session!.game!.variant)
     this.mounts = {
       players: [top, bottom],
-      turn,
+      turn: turnMain,
+      turnLine: turn,
       dieBtn,
       die,
       diceRow,
@@ -2191,88 +2214,207 @@ export class App {
   /**
    * Ses propres cartes — jamais celles des autres.
    *
-   * Une carte qui ne mène à rien maintenant reste visible mais éteinte : la
-   * retirer ferait croire qu'on l'a perdue. Toucher une carte ne la joue pas :
-   * elle s'arme, on désigne son cheval sur le plateau s'il en faut un, et c'est
-   * le dé qui la lâche. Un second appui la range.
+   * **Un bouton, et non une rangée.** Les cartes tenaient sur une ligne à
+   * hauteur fixe, sous la ligne de tour, qu'elles gardaient même vides : le
+   * plateau perdait quarante-cinq pixels pendant les trois quarts d'une partie
+   * pour un rang qui ne montrait rien. Un plateau qu'on ne voit pas bien est un
+   * plateau sur lequel on joue mal — c'est la pièce maîtresse, tout le reste
+   * est du décor.
    *
-   * **Chaque carte porte son ⓘ.** L'annonce du ramassage passe et ne revient
-   * pas ; trois tours plus tard, il ne reste qu'un mot sur une pastille, et
-   * « Faux pas » ne dit pas de combien on recule. Le petit rond ouvre le
-   * catalogue sur la carte touchée — sans rien jouer, sans rendre la main, et
-   * la partie continue derrière. Il ouvre le catalogue **entier** et non une
-   * fiche isolée : la question « c'est quoi déjà ? » vient souvent d'un malus
-   * qu'on vient de subir et qui, lui, n'est jamais passé par la main.
+   * Le bouton ne porte que les figures des cartes gardées : à cette taille un
+   * dessin se reconnaît, un mot ne se lit pas. Le nom, l'effet et le geste sont
+   * dans le tiroir, où il y a la place de les écrire en entier.
    */
   private renderHand(host: HTMLElement): void {
     const session = this.session!
     const { cards, playable } = session.hand()
+    const line = this.mounts!.turnLine
+    // La partie finie, il n'y a plus de carte à jouer ; la partie figée, la
+    // feuille de pause couvre déjà tout — un tiroir resté ouvert derrière elle
+    // reviendrait au premier doigt posé sur « Reprendre ».
+    const closed = session.game?.phase === 'finished' || session.paused
 
-    host.classList.toggle('empty', cards.length === 0)
-    host.classList.toggle('aiming', this.armed !== null)
-    if (cards.length === 0) {
+    // Pas de carte, pas de bouton : la ligne de tour reprend toute sa largeur.
+    const show = cards.length > 0 && session.game?.phase !== 'finished'
+    line.classList.toggle('has-cards', show)
+    host.hidden = !show
+    if (closed) this.closeHandTray()
+    if (!show) {
       fill(host)
       return
     }
 
     const armed = this.armed
-    // Le compte, et rien d'autre. Ce qu'il reste à faire est dit juste au-dessus,
-    // dans la ligne de tour (voir `armedDetail`) : le répéter ici donnait
-    // « choisissez un cheval · choisissez un cheval » sur deux lignes qui se
-    // touchent, et une consigne écrite deux fois se lit comme deux consignes.
-    const hint = t('hand.count', { n: cards.length, max: HAND_LIMIT })
+    host.classList.toggle('on', playable.length > 0)
+    host.classList.toggle('aimed', armed !== null)
+    host.setAttribute(
+      'aria-label',
+      armed
+        ? t('hand.open.armed', { power: t(`power.${armed.power}` as Key) })
+        : t('hand.open', { n: cards.length, max: HAND_LIMIT }),
+    )
 
     fill(
       host,
-      ...cards.map((power) => {
-        const usable = playable.includes(power)
-        const chosen = armed?.power === power
-        const name = t(`power.${power}` as Key)
-        const desc = t(`power.${power}.desc` as Key)
-        return h(
+      ...cards.map((power) =>
+        h(
           'span',
-          { class: 'hand__slot' },
+          {
+            class: `handbtn__glyph${armed?.power === power ? ' on' : ''}`,
+            attrs: { 'aria-hidden': 'true' },
+          },
+          icon(POWER_ICON[power], 15),
+        ),
+      ),
+    )
+
+    // Le tiroir ouvert suit la partie : une carte ramassée pendant qu'on le lit
+    // doit y apparaître, et une carte qui n'est plus jouable doit s'y éteindre.
+    this.paintHandTray()
+  }
+
+  /**
+   * Le tiroir de la main.
+   *
+   * Il dit d'une carte tout ce que le bouton ne peut pas : son nom, son effet,
+   * et si elle se joue maintenant. Un appui l'arme et referme le tiroir — le
+   * geste suivant est sur le plateau ou sur le dé, et un panneau resté ouvert
+   * les cacherait tous les deux.
+   */
+  private showHand(): void {
+    if (this.handTray) return this.closeHandTray()
+    if (this.session?.hand().cards.length === 0) return
+
+    const body = h('div', { class: 'tray__cards' })
+    const foot = h('span', { class: 'hint center' })
+    const sheet = h(
+      'div',
+      { class: 'sheet tray__sheet' },
+      this.sheetClose(() => this.closeHandTray()),
+      h('h2', { class: 'tray__title', text: t('hand.title') }),
+      body,
+      foot,
+      // Les malus ne passent jamais par la main : la question « c'était quoi,
+      // déjà ? » vient le plus souvent d'eux, et il faut un chemin vers eux.
+      h('button', {
+        class: 'tray__all',
+        text: t('table.powers.see', { n: POWER_LIST.length }),
+        on: { click: () => this.showPowers() },
+      }),
+    )
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay tray',
+        attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('hand.title') },
+        on: {
+          click: (ev) => {
+            if (ev.target === overlay) this.closeHandTray()
+          },
+        },
+      },
+      sheet,
+    )
+
+    this.handTray = { overlay, body, foot }
+    addEventListener('keydown', this.onTrayKey)
+    document.body.append(overlay)
+    this.paintHandTray()
+  }
+
+  private onTrayKey = (ev: KeyboardEvent): void => {
+    if (ev.key === 'Escape') this.closeHandTray()
+  }
+
+  private closeHandTray(): void {
+    if (!this.handTray) return
+    removeEventListener('keydown', this.onTrayKey)
+    this.handTray.overlay.remove()
+    this.handTray = null
+  }
+
+  /** Le contenu du tiroir, refait à chaque changement d'état. */
+  private paintHandTray(): void {
+    const tray = this.handTray
+    const session = this.session
+    if (!tray || !session) return
+    const { cards, playable } = session.hand()
+
+    fill(
+      tray.body,
+      ...cards.map((power) => {
+        const spec = POWERS[power]
+        const usable = playable.includes(power)
+        const chosen = this.armed?.power === power
+        const name = t(`power.${power}` as Key)
+        return h(
+          'div',
+          { class: `tray-card tray-card--${spec.kind}${chosen ? ' chosen' : ''}` },
           h(
             'button',
             {
-              class: `hand__card${usable ? ' on' : ''}${chosen ? ' aimed' : ''}`,
+              class: 'tray-card__pick',
               disabled: !usable,
-              attrs: { 'aria-pressed': String(chosen), 'aria-label': `${name} — ${desc}` },
+              attrs: { 'aria-pressed': String(chosen) },
               on: {
                 click: () => {
-                  // Ranger la carte armée, ou en armer une autre. Dans les deux
-                  // cas rien n'est joué : c'est le dé qui joue.
+                  // Toucher une carte ne la joue pas : elle s'arme, et le
+                  // tiroir s'efface pour laisser voir le plateau et le dé.
                   this.armed = chosen ? null : { power }
-                  // Un coup évident déjà programmé ne doit pas passer devant la
-                  // carte qu'on vient de choisir.
                   if (this.autoTimer) clearTimeout(this.autoTimer)
                   this.autoTimer = null
+                  this.closeHandTray()
                   this.update()
                 },
               },
             },
-            // La figure d'abord : dans un paquet, une carte se reconnaît à son
-            // dessin bien avant qu'on ait lu son nom.
-            h('span', { class: 'hand__glyph', attrs: { 'aria-hidden': 'true' } }, icon(POWER_ICON[power], 15)),
-            // Pas de numéro : deux cartes du même nom sont deux boutons du même
-            // nom, et c'est déjà lisible. Le compte est sous la rangée.
-            h('span', { class: 'hand__name', text: name }),
+            h('span', { class: `tray-card__glyph tray-card__glyph--${spec.kind}` }, icon(POWER_ICON[power], 22)),
+            h(
+              'span',
+              { class: 'tray-card__text' },
+              h('strong', { class: 'tray-card__name', text: name }),
+              h('span', { class: 'tray-card__desc', text: t(`power.${power}.desc` as Key) }),
+              // Une carte éteinte doit dire pourquoi. « Grisée sans raison » se
+              // lit comme une panne, et l'on retape dessus jusqu'à y croire.
+              h('span', {
+                class: 'tray-card__state',
+                text: chosen ? this.armedDetail() : usable ? t('hand.playable') : t('hand.later'),
+              }),
+            ),
           ),
-          // Le ⓘ est posé sur le coin de la pastille, comme le compteur des
-          // bonus de dé : en position absolue, il ne coûte pas un pixel de la
-          // rangée — et la rangée n'a pas un pixel à donner (voir le CSS).
           h(
             'button',
             {
-              class: 'hand__info',
+              class: 'tray-card__info',
               attrs: { 'aria-label': t('hand.info', { power: name }) },
               on: { click: () => this.showPowers(power) },
             },
-            icon('info', 13),
+            icon('info', 15),
           ),
         )
       }),
-      h('span', { class: 'hand__hint', text: hint }),
+    )
+    tray.foot.textContent = t('hand.count', { n: cards.length, max: HAND_LIMIT })
+  }
+
+  /**
+   * La croix d'une feuille, en haut à droite et toujours là.
+   *
+   * Un bouton « Fermer » posé sous le contenu oblige à faire défiler une feuille
+   * entière pour en sortir — et sur le catalogue des sept cartes, c'est un écran
+   * et demi de défilement pour refermer ce qu'on est venu lire trois secondes.
+   * La croix, elle, colle au haut de la zone visible : elle est au même endroit
+   * quel que soit l'endroit où l'on a défilé.
+   */
+  private sheetClose(onClose: () => void): HTMLElement {
+    return h(
+      'button',
+      {
+        class: 'sheet__close',
+        attrs: { 'aria-label': t('common.close') },
+        on: { click: onClose },
+      },
+      icon('close', 18),
     )
   }
 

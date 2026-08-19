@@ -149,9 +149,12 @@ cacher. Mais l'écran, lui, ne montre que la sienne. De celle des autres il ne d
 que le nombre, sur la pastille de leur carte de joueur. Un bouclier qu'on sait
 posé n'en est plus un, et une main qu'on lit fait des tours prévisibles.
 
-**Le dé valide la carte.** Toucher une carte l'arme : elle se pose devant son
-joueur sans partir. Si elle demande un cheval, on le désigne sur le plateau — il
-se cercle de vert. Puis on lance le dé, et c'est le lancer qui la joue. Un seul
+**Le dé valide la carte.** On ouvre sa main, on touche une carte : elle s'arme,
+le tiroir se referme, et elle attend sans partir. Si elle demande un cheval, on
+le désigne sur le plateau — il se cercle de vert. Puis on lance le dé, et c'est
+le lancer qui la joue. Le dé pipé fait bande à part : ce sont ses deux boutons —
+petit nombre, grand nombre — qui le lancent et le dépensent, et c'est là que le
+halo vert se pose ; un lancer nu le gaspillerait, et l'écran le refuse. Un seul
 geste, un seul ordre possible : la carte d'abord, le dé ensuite. Un bouclier posé
 après le lancer arriverait trop tard pour la relance qu'il couvre, et un dé pipé
 rangé après coup ne pencherait plus rien — les deux voyagent donc dans une seule
@@ -160,8 +163,8 @@ qui pourraient arriver en désordre chez l'hôte.
 
 Jouer une carte ne consomme pas le tour : le bouclier posé avant le lancer
 protège dès ce lancer, et le rejeu se joue sur un dé déjà sur la table — on
-touche la carte, puis on retouche le dé. Un second appui sur la carte la range.
-Tant que le dé n'a pas bougé, rien n'est joué.
+touche la carte, puis on retouche le dé. Un second appui sur la carte armée, dans
+le tiroir, la range. Tant que le dé n'a pas bougé, rien n'est joué.
 
 **Un pouvoir peut durer.** Un bouclier tient sur son cheval aussi longtemps que
 personne ne vient le manger — une partie entière, s'il le faut ; un tour sauté
@@ -177,12 +180,33 @@ compris. Un bonus qu'on découvre en le ramassant est une surprise ; un malus
 qu'on découvre en le ramassant est une injustice.
 
 **Et il se relit pendant.** L'annonce du ramassage passe et ne revient pas ;
-trois tours plus tard il ne reste qu'un mot sur une pastille, et « Faux pas » ne
-dit pas de combien on recule. Chaque carte en main porte donc sa figure et un
-ⓘ, qui rouvre le catalogue sur elle sans rien jouer ni rendre la main. Les
-annonces du haut de l'écran en ont un aussi : la question qu'une nouvelle laisse
-derrière elle a besoin d'un endroit où se poser, et le malus qu'on vient de
-subir n'est, lui, jamais passé par la main.
+trois tours plus tard, il ne reste qu'une figure, et « Faux pas » ne dit pas de
+combien on recule. La main s'ouvre donc en tiroir : chaque carte y donne son
+nom, son effet, l'état où elle est — jouable maintenant, ou pas — et un ⓘ qui
+rouvre le catalogue sur elle. Les annonces du haut de l'écran ont le même ⓘ : la
+question qu'une nouvelle laisse derrière elle a besoin d'un endroit où se poser,
+et le malus qu'on vient de subir n'est, lui, jamais passé par la main.
+
+**La main est un bouton, pas une rangée.** Elle a tenu un temps sur une ligne à
+hauteur fixe sous la ligne de tour, gardée même vide pour que rien ne saute à
+l'arrivée de la première carte. Le remède coûtait plus cher que le mal :
+quarante-cinq pixels pris au plateau pendant les trois quarts d'une partie, pour
+un rang qui ne montrait rien — et le plateau se dimensionne sur ce qui reste.
+Rendue à la ligne de tour, qui avait de la largeur à revendre et pas une ligne à
+donner, la main coûte zéro et le plateau gagne 12 à 14 % de côté, soit un bon
+quart de surface.
+
+Le bouton ne porte que les figures des cartes gardées : à cette taille un dessin
+se reconnaît, un mot ne se lit pas. Il se cercle d'encre et bat quand une carte
+est jouable, comme le dé prêt à partir ; il devient plein quand une carte est
+armée. Le tiroir, lui, se referme dès qu'on choisit — le geste suivant est sur
+le plateau ou sur le dé, et un panneau resté ouvert les cacherait tous les deux.
+
+**Une feuille se ferme par sa croix.** En haut à droite, au même endroit quel
+que soit l'endroit où l'on a défilé : c'est le corps de la feuille qui défile,
+pas la feuille. Un bouton « Fermer » posé sous le contenu demandait un écran et
+demi de défilement pour refermer un catalogue qu'on était venu lire trois
+secondes.
 
 ## Ce que l'écran dit, et quand il le dit
 
