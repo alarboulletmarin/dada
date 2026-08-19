@@ -64,6 +64,15 @@ export type Lobby = {
 }
 
 export type Hello = { clientId: string; name: string }
+/**
+ * Réponse de l'hôte à qui demande une place.
+ *
+ * `pending` : la demande est posée, l'hôte n'a pas encore tranché.
+ * `denied`  : refusée. Il n'y a pas de `granted` — un siège accordé se voit
+ *             dans le salon publié, et deux façons de dire la même chose
+ *             finiraient par se contredire.
+ */
+export type JoinVerdict = { clientId: string; status: 'pending' | 'denied' }
 export type Intent = { clientId: string; action: Action }
 /** Le nom voyage avec chaque message : un renommage en cours de partie ne
  *  doit pas réécrire l'historique déjà affiché chez les autres. */
@@ -71,6 +80,7 @@ export type ChatMessage = { clientId: string; name: string; text: string; at: nu
 
 type Messages = {
   hello: Hello
+  join: JoinVerdict
   lobby: Lobby
   state: GameState
   intent: Intent
@@ -150,6 +160,7 @@ export function joinGameRoom(code: string, onError?: (message: string) => void):
   // Trystero limite les noms d'action à 12 octets.
   const channels: Record<keyof Messages, AnyChannel> = {
     hello: room.makeAction<Hello>('hello') as unknown as AnyChannel,
+    join: room.makeAction<JoinVerdict>('join') as unknown as AnyChannel,
     lobby: room.makeAction<Lobby>('lobby') as unknown as AnyChannel,
     state: room.makeAction<GameState>('state') as unknown as AnyChannel,
     intent: room.makeAction<Intent>('intent') as unknown as AnyChannel,
@@ -196,8 +207,22 @@ export function clientId(): string {
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // sans I/O/0/1, ambigus à l'oral
 
-/** Code de partie court, lisible au téléphone et transmissible par SMS. */
-export function makeCode(length = 5): string {
+/**
+ * Code de partie, lisible au téléphone et transmissible par SMS.
+ *
+ * **Huit caractères, et non cinq.** Le code n'est pas qu'une commodité : c'est
+ * l'adresse du rendez-vous sur les relais publics *et* le seul secret qui
+ * protège le salon. L'identifiant d'app est public — le dépôt est libre — donc
+ * qui veut peut précalculer le sujet de chaque code possible et repérer les
+ * parties en cours. À cinq caractères sur un alphabet de 32, cela fait 32⁵ ≈
+ * 33 millions de possibilités : quelques minutes de calcul. À huit, 32⁸ ≈ 10¹²,
+ * et le jeu n'en vaut plus la chandelle.
+ *
+ * Trois caractères de plus à dicter, donc, contre un espace de recherche trente
+ * mille fois plus grand. Et l'accord de l'hôte reste le vrai verrou : un code
+ * deviné ne donne plus une place, seulement une demande à refuser.
+ */
+export function makeCode(length = 8): string {
   const bytes = crypto.getRandomValues(new Uint8Array(length))
   return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('')
 }

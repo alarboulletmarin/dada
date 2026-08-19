@@ -26,6 +26,7 @@ import {
   TURN_GRACE_MS,
   TURN_MS,
 } from './presence.ts'
+import { canAdmit, welcomeFor } from './admission.ts'
 import { clientId, joinGameRoom, type ChatMessage, type Lobby, type LobbyPlayer, type Room } from './room.ts'
 import { clearInvite, clearSave, writeInvite, writeSave, type Save } from './save.ts'
 
@@ -61,6 +62,21 @@ export type SessionMode = 'local' | 'online'
 /** Où en est la mise en relation, pour que l'écran d'attente puisse le dire. */
 export type Link = 'searching' | 'linked' | 'lost'
 
+/** Une demande d'entrée en attente de la décision de l'hôte. */
+export type JoinRequest = { clientId: string; name: string; peer: string }
+
+/**
+ * Où en est *ma* demande, vue de l'invité.
+ *
+ * `unknown` couvre les deux cas où la question ne se pose pas : l'hôte, et
+ * l'invité qui a déjà son siège. Un invité sans siège et sans réponse est
+ * simplement en train de chercher — c'est `link` qui le dit.
+ */
+export type AskStatus = 'unknown' | 'pending' | 'denied'
+
+/** De quoi ouvrir un canal — la vraie implémentation, ou un double de test. */
+export type RoomFactory = (code: string, onError?: (message: string) => void) => Room
+
 /**
  * Ce que la session a besoin de faire dire à l'écran. Elle transmet un motif et
  * ses paramètres, pas une phrase : la couche réseau n'a pas à connaître la
@@ -88,6 +104,19 @@ export class Session {
   lobby: Lobby
   game: GameState | null = null
   link: Link = 'linked'
+  /**
+   * Côté hôte : les demandes d'entrée en attente de sa décision, dans l'ordre
+   * d'arrivée. Elles ne voyagent pas dans le salon publié — c'est un état de
+   * l'hôte, pas une propriété de la table, et un pair n'a pas à savoir qui
+   * d'autre frappe à la porte.
+   */
+  private requests: JoinRequest[] = []
+  /** Côté hôte : appareils déjà refusés. Ils ne redemandent plus. */
+  private refused = new Set<string>()
+  /** Côté invité : où en est ma propre demande. */
+  private askStatus: AskStatus = 'unknown'
+  /** Comment ouvrir un canal. Voir `Session.online`. */
+  private join: RoomFactory = joinGameRoom
   /** En mémoire seulement : rien n'est stocké ni relayé par un hôte pour les
    *  pairs qui n'étaient pas encore là. */
   chatLog: ChatMessage[] = []
@@ -178,7 +207,22 @@ export class Session {
     return session
   }
 
-  static online(code: string, name: string, asHost: boolean, listeners: SessionListeners): Session {
+  /**
+   * `join` n'existe que pour les tests.
+   *
+   * L'admission d'un joueur est la seule règle de sécurité du jeu, et elle vit
+   * dans le va-et-vient entre `hello`, la liste d'attente et `admit()` — pas
+   * dans une fonction pure qu'on pourrait tester à côté. Sans cette couture, il
+   * faudrait un vrai relais public pour vérifier qu'un inconnu n'entre pas tout
+   * seul : autant dire qu'on ne le vérifierait pas.
+   */
+  static online(
+    code: string,
+    name: string,
+    asHost: boolean,
+    listeners: SessionListeners,
+    join: RoomFactory = joinGameRoom,
+  ): Session {
     const self = clientId()
     const lobby: Lobby = {
       code,
@@ -190,7 +234,7 @@ export class Session {
 
     const session = new Session('online', lobby, listeners)
     session.myName = name
-    session.connect(code, name)
+    session.connect(code, name, join)
     return session
   }
 
@@ -210,8 +254,9 @@ export class Session {
 
   // ───────────────────────────── réseau ─────────────────────────────
 
-  private connect(code: string, name: string): void {
-    const room = joinGameRoom(code, (error) => this.reportLinkError(error))
+  private connect(code: string, name: string, join: RoomFactory = this.join): void {
+    this.join = join
+    const room = join(code, (error) => this.reportLinkError(error))
     this.room = room
     this.myName = name
 
@@ -232,10 +277,23 @@ export class Session {
       this.welcome(hello.clientId, hello.name, peer)
     })
 
+    room.on('join', (verdict) => {
+      if (verdict.clientId !== this.self) return
+      this.askStatus = verdict.status
+      this.listeners.onChange()
+    })
+
     room.on('lobby', (lobby) => {
       // Seul l'hôte fait autorité sur la composition de la table.
       if (this.isHost) return
       this.lobby = lobby
+      // Un salon où je n'ai pas de siège : soit ma demande attend, soit l'hôte
+      // a changé et le nouveau n'en sait rien. On se represente — c'est aussi
+      // ce qui rattrape un `hello` perdu, et l'hôte déduplique.
+      if (lobby.players.some((p) => p.clientId === this.self)) this.askStatus = 'unknown'
+      else if (this.askStatus !== 'denied') {
+        room.send('hello', { clientId: this.self, name: this.myName })
+      }
       // Un bot vient peut-être de prendre le siège dont c'est le tour : il n'y
       // a plus personne à décompter. Le tour en cours, lui, garde son échéance.
       this.armTurnClock()
@@ -284,6 +342,12 @@ export class Session {
     })
 
     room.onPeerLeave((peer) => {
+      // Une demande dont l'auteur est parti n'a plus d'objet : l'accepter
+      // donnerait un siège fantôme, occupé par personne.
+      if (this.requests.some((r) => r.peer === peer)) {
+        this.requests = this.requests.filter((r) => r.peer !== peer)
+        this.listeners.onChange()
+      }
       const player = this.lobby.players.find((p) => p.peerId === peer)
       if (player) {
         player.connected = false
@@ -325,26 +389,100 @@ export class Session {
   }
 
   private welcome(id: string, name: string, peer: string): void {
-    const known = this.lobby.players.find((p) => p.clientId === id)
-    if (known) {
+    const verdict = welcomeFor(this.admission(), id)
+
+    if (verdict.kind === 'reclaim') {
+      const known = this.lobby.players.find((p) => p.clientId === id)!
       known.peerId = peer
       known.connected = true
       known.name = name
       // Le siège lui appartient toujours, bot ou pas : il le retrouve intact,
       // qu'il revienne d'un départ ou qu'il reprenne la main après une absence.
+      // Aucun accord à redemander : un rechargement de page n'est pas une
+      // arrivée, et une porte qui claque dans le dos serait la pire des règles.
       this.reclaim(known)
-    } else if (!this.lobby.started && this.lobby.players.length < MAX_SEATS) {
-      this.lobby.players.push(seatFor(this.freeSeat(), name, id, 'human', peer))
-    } else {
-      // Table pleine ou partie lancée : le pair reste spectateur.
-      this.room?.send('lobby', this.lobby, peer)
-      if (this.game) this.room?.send('state', this.game, peer)
+      this.publishLobby()
+      if (this.game) this.room?.send('state', this.game)
+      this.onGameChanged()
+      this.listeners.onChange()
       return
     }
 
+    if (verdict.kind === 'ask') {
+      // Le pair se represente à chaque publication du salon : une même demande
+      // ne s'empile pas, elle se met simplement à jour.
+      const already = this.requests.find((r) => r.clientId === id)
+      if (already) {
+        already.name = name
+        already.peer = peer
+      } else {
+        this.requests.push({ clientId: id, name, peer })
+      }
+      this.room?.send('join', { clientId: id, status: 'pending' }, peer)
+      this.listeners.onChange()
+      return
+    }
+
+    // Refusé, table pleine ou partie lancée : le pair regarde. On lui envoie
+    // quand même la table, faute de quoi il resterait devant un écran d'attente
+    // sans jamais savoir pourquoi.
+    if (verdict.kind === 'refused') this.room?.send('join', { clientId: id, status: 'denied' }, peer)
+    this.room?.send('lobby', this.lobby, peer)
+    if (this.game) this.room?.send('state', this.game, peer)
+  }
+
+  private admission() {
+    return {
+      lobby: this.lobby,
+      refused: this.refused,
+      pending: new Set(this.requests.map((r) => r.clientId)),
+      maxSeats: MAX_SEATS,
+    }
+  }
+
+  // ───────────────────────── qui entre, qui n'entre pas ─────────────────────────
+
+  /** Les demandes en attente, pour que l'hôte les voie. Vide chez les autres. */
+  pendingJoins(): readonly JoinRequest[] {
+    return this.isHost ? this.requests : []
+  }
+
+  /** Où en est ma propre demande, vue de l'invité. */
+  get joinStatus(): AskStatus {
+    return this.askStatus
+  }
+
+  /** L'hôte accorde une place. */
+  admit(id: string): void {
+    if (!this.isHost) return
+    const request = this.requests.find((r) => r.clientId === id)
+    if (!request || !canAdmit(this.admission(), id)) {
+      this.requests = this.requests.filter((r) => r.clientId !== id)
+      this.listeners.onChange()
+      return
+    }
+
+    this.requests = this.requests.filter((r) => r.clientId !== id)
+    this.refused.delete(id)
+    this.lobby.players.push(seatFor(this.freeSeat(), request.name, id, 'human', request.peer))
     this.publishLobby()
     if (this.game) this.room?.send('state', this.game)
     this.onGameChanged()
+    this.listeners.onChange()
+  }
+
+  /**
+   * L'hôte refuse.
+   *
+   * L'appareil est retenu : sans cela il se representerait à la publication
+   * suivante du salon, et l'hôte passerait sa soirée à refuser le même.
+   */
+  refuse(id: string): void {
+    if (!this.isHost) return
+    const request = this.requests.find((r) => r.clientId === id)
+    this.requests = this.requests.filter((r) => r.clientId !== id)
+    this.refused.add(id)
+    if (request) this.room?.send('join', { clientId: id, status: 'denied' }, request.peer)
     this.listeners.onChange()
   }
 
