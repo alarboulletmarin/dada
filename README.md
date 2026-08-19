@@ -69,7 +69,7 @@ npm run build
 Pour un sous-chemin (GitHub Pages de projet) :
 
 ```bash
-BASE_PATH=/jeu-dada/ npm run build
+BASE_PATH=/dada/ npm run build
 ```
 
 HTTPS est requis en production : le service worker et WebRTC ne fonctionnent pas

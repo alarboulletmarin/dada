@@ -2,7 +2,7 @@ Dada — notices des composants tiers
 ====================================
 
 Le code de Dada est distribué sous licence GNU AGPL-3.0-or-later
-(fichier LICENSE du dépôt : https://github.com/alarboulletmarin/jeu-dada).
+(fichier LICENSE du dépôt : https://github.com/alarboulletmarin/dada).
 
 Ce fichier couvre ce que le site servi redistribue avec lui et qui porte ses
 propres conditions : la bibliothèque pair-à-pair et les deux fontes empaquetées.

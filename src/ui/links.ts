@@ -6,7 +6,7 @@
  * lien — l'écran « à propos » le fait.
  */
 
-export const REPO = 'https://github.com/alarboulletmarin/jeu-dada'
+export const REPO = 'https://github.com/alarboulletmarin/dada'
 
 /** Le fichier livré avec le programme, pas le texte canonique de la FSF.
  *
