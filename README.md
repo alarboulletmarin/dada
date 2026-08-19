@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 341 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence
+npm test         # 353 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause
 npm run build    # vérification de types puis build de production
 ```
 
@@ -18,6 +18,15 @@ npm run build    # vérification de types puis build de production
 - **En ligne** — l'un crée une partie, les autres saisissent le code à 8 caractères
   (ou ouvrent le lien partagé) ; l'hôte les accepte à sa table. Jusqu'à 4 joueurs.
 - **Ordinateurs** — l'hôte peut compléter la table quand on n'est que deux ou trois.
+
+Sur un seul téléphone, la partie se met **en pause** : le bot qui allait jouer, le
+temps de réflexion et le dé s'arrêtent tous ensemble. Elle n'est pas proposée en
+ligne — figer les bots et la pendule chez soi ne figerait rien chez les autres, et
+le siège en pause finirait sauté par l'hôte au bout de son temps de réflexion.
+
+Le règlement se consulte **pendant** une partie sans la déranger : les autres
+continuent de jouer derrière, et l'écran ne se referme pas sous les yeux de qui le
+lit (voir `DETOURS` dans `app.ts`).
 
 ## Les trois jeux de règles
 

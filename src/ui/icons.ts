@@ -6,9 +6,9 @@
  * sur un troisième — impossible de tenir une direction artistique là-dessus.
  * Pas de bibliothèque non plus (Material, Lucide et les autres) : leur trait
  * fin et leurs bouts carrés jurent avec des contours d'encre de 3 px, et ce
- * serait une dépendance de plus pour douze glyphes.
+ * serait une dépendance de plus pour la vingtaine de glyphes d'un jeu de dés.
  *
- * Douze traits, donc, tracés à la même main que le reste : grille de 24,
+ * Tout est donc tracé à la même main que le reste : grille de 24,
  * trait épais, bouts et coins ronds, `currentColor` pour que chaque icône
  * prenne la couleur du bloc qui la porte.
  */
@@ -44,6 +44,30 @@ const ICONS = {
    *  gauche, la bulle penchait visiblement vers le coin haut-gauche de son
    *  bouton, alors même que sa boîte était centrée. */
   chat: '<rect x="3.4" y="4" width="17.2" height="12.2" rx="4.2"/><path d="M9.2 16.2v3l3.4-3"/>',
+  /** Mettre en pause : deux barres pleines, comme sur un magnétophone. */
+  pause:
+    '<rect x="7.6" y="4.8" width="3" height="14.4" rx="1.5" fill="currentColor" stroke-linejoin="round"/><rect x="13.4" y="4.8" width="3" height="14.4" rx="1.5" fill="currentColor" stroke-linejoin="round"/>',
+  /** Reprendre : le triangle, plein lui aussi. */
+  play: '<path d="M8.6 5.4 19 12 8.6 18.6Z" fill="currentColor" stroke-linejoin="round"/>',
+
+  /* Les sept pouvoirs. Un dessin par carte : dans un paquet, on reconnaît une
+     carte à sa figure bien avant de lire son nom. */
+  /** Bouclier : l'écu, pointe en bas. */
+  shield: '<path d="M12 3.4 19.4 6v5.9c0 4.1-2.9 7.2-7.4 8.7-4.5-1.5-7.4-4.6-7.4-8.7V6Z"/>',
+  /** Galop : deux chevrons lancés vers l'avant. */
+  gallop: '<path d="M5.4 6.8 10.6 12l-5.2 5.2"/><path d="M13 6.8 18.2 12 13 17.2"/>',
+  /** Rejeu : la flèche qui fait le tour et revient. */
+  replay: '<path d="M20 12a8 8 0 1 1-2.7-6"/><path d="M20.4 3.6v4.6h-4.6"/>',
+  /** Dé pipé : le dé et ses trois points en diagonale. */
+  loaded:
+    '<rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8.6 8.6v.1"/><path d="M12 12v.1"/><path d="M15.4 15.4v.1"/>',
+  /** Faux pas : les mêmes chevrons, mais à contresens. */
+  stumble: '<path d="M18.6 6.8 13.4 12l5.2 5.2"/><path d="M11 6.8 5.8 12 11 17.2"/>',
+  /** Tour sauté : le rond barré — rien ne se passe. */
+  skip: '<circle cx="12" cy="12" r="8.4"/><path d="M6.1 17.9 17.9 6.1"/>',
+  /** Retour à l'écurie : le toit et la porte. */
+  stable: '<path d="M3.8 10.9 12 4.2l8.2 6.7v8.9H3.8Z"/><path d="M9.4 19.8v-4.7h5.2v4.7"/>',
+
   /** Envoyer : l'avion de papier, plié en deux traits. */
   send: '<path d="M20.6 3.4 3.9 9.7a.6.6 0 0 0 0 1.1l6.7 2.6 2.6 6.7a.6.6 0 0 0 1.1 0Z"/><path d="M10.6 13.4 20.6 3.4"/>',
 } as const
@@ -75,6 +99,11 @@ const NUDGE: Partial<Record<IconName, readonly [number, number]>> = {
   moon: [1.2, -1.2],
   bolt: [0.5, 0],
   send: [-0.7, 0.7],
+  // Le triangle du « reprendre » : toute sa masse est du côté de sa base, et
+  // sa boîte se lit donc décalée à gauche dans un bouton rond.
+  play: [0.9, 0],
+  // L'écu s'affine vers le bas : il pèse du haut, et demande à descendre.
+  shield: [0, 0.4],
 }
 
 /**

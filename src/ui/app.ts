@@ -14,6 +14,7 @@ import {
   HAND_LIMIT,
   POWERS,
   POWER_LIST,
+  type Power,
   type PowerId,
   type PowerKind,
 } from '../game/powers.ts'
@@ -25,7 +26,7 @@ import { Session, type Notice, type NoticeCode } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
 import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
-import { icon } from './icons.ts'
+import { icon, type IconName } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
 import { renderRulebook } from './rulebook.ts'
 import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
@@ -110,6 +111,22 @@ const BADGES: Record<string, 'die' | 'pawn' | 'bolt'> = {
   rapide: 'bolt',
 }
 
+/**
+ * La figure de chaque pouvoir.
+ *
+ * Dans un paquet, une carte se reconnaît à son dessin bien avant qu'on ait lu
+ * son nom : c'est ce qui distingue un jeu de cartes d'une liste de courses.
+ */
+const POWER_ICON: Record<PowerId, IconName> = {
+  bouclier: 'shield',
+  galop: 'gallop',
+  rejeu: 'replay',
+  des: 'loaded',
+  fauxpas: 'stumble',
+  saute: 'skip',
+  ecurie: 'stable',
+}
+
 /** Les réactions du chat : une poignée d'expressions, pas une bibliothèque
  *  entière. Un appui envoie — c'est tout l'intérêt d'une réaction : on ne
  *  compose pas un message avec, on répond du tac au tac pendant son tour. */
@@ -180,6 +197,14 @@ const turnOf = (name: string): string =>
 
 type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'rulebook' | 'about'
 
+/**
+ * Les écrans qui se consultent *pendant* une partie sans y toucher : le
+ * règlement, les mentions. Ils ne montrent aucun état de jeu, donc rien ne
+ * justifie de les redessiner quand cet état change — et tout justifie de ne pas
+ * les fermer sous les yeux de qui les lit.
+ */
+const DETOURS = new Set<Screen | null>(['rules', 'rulebook', 'about'])
+
 export class App {
   private session: Session | null = null
   private board: BoardView | null = null
@@ -194,6 +219,7 @@ export class App {
     boostHighBtn: HTMLButtonElement
     boostCounts: HTMLElement[]
     hand: HTMLElement
+    pauseBtn: HTMLButtonElement | null
   } | null = null
   private name = localStorage.getItem(NAME_KEY) ?? ''
   /** Ce qu'on fera de la variante choisie sur l'écran « on joue à quoi ? ». */
@@ -231,6 +257,8 @@ export class App {
   /** Les secondes qui restent, affichées à la toute fin du décompte. */
   private turnClock: HTMLElement | null = null
   private clockFrame: number | null = null
+  /** La feuille de pause, tant qu'elle est à l'écran. */
+  private pauseSheet: HTMLElement | null = null
 
   constructor(private root: HTMLElement) {}
 
@@ -296,6 +324,7 @@ export class App {
     if (this.cardTimer) clearTimeout(this.cardTimer)
     this.cardTimer = null
     document.querySelector('.cardnote')?.remove()
+    this.closePause()
     this.armed = null
     this.closeChat()
     this.chatUnread = 0
@@ -316,6 +345,13 @@ export class App {
   private update(): void {
     const session = this.session
     if (!session) return this.renderHome()
+
+    // Un détour par les règles n'arrête pas la partie : les bots jouent, les
+    // pairs jouent, et chacun de leurs coups passe par ici. Sans ce garde-fou,
+    // l'écran des règles se faisait remplacer par le plateau à la première
+    // nouvelle venue — c'est-à-dire aussitôt ouvert, quand ce n'était pas notre
+    // tour. Ce qu'on a manqué se rattrape en une passe au retour (`backToGame`).
+    if (DETOURS.has(this.screen)) return
 
     if (session.game && session.lobby.started) {
       if (this.screen !== 'play') this.renderPlay()
@@ -449,6 +485,18 @@ export class App {
       confirm: t('quit.confirm'),
       onConfirm: () => this.quit(),
     })
+  }
+
+  /**
+   * Le retour d'un détour vers la partie.
+   *
+   * `this.screen = null` d'abord : `update` refuse de dessiner par-dessus un
+   * écran de détour (voir `DETOURS`), et sans cet oubli le retour ne ramènerait
+   * nulle part.
+   */
+  private backToGame(): void {
+    this.screen = null
+    this.update()
   }
 
   private backButton(onClick: () => void, label = t('common.back')): HTMLElement {
@@ -666,14 +714,8 @@ export class App {
     const cards = h(
       'div',
       { class: 'stack' },
-      ...VARIANTS.map((v) => {
-        const badge = h('span', { class: `badge b${VARIANTS.indexOf(v) + 1}` })
-        const kind = BADGES[v.id] ?? 'die'
-        if (kind === 'die') badge.append(this.face(5))
-        else if (kind === 'pawn') badge.append(this.token(null))
-        else badge.append(icon('bolt', 30))
-
-        return h(
+      ...VARIANTS.map((v) =>
+        h(
           'button',
           {
             class: 'game-card',
@@ -685,7 +727,7 @@ export class App {
               },
             },
           },
-          badge,
+          this.variantBadge(v),
           h(
             'div',
             { class: 'body' },
@@ -698,8 +740,8 @@ export class App {
             h('p', { class: 'desc', text: t(`variant.${v.id}.desc` as Key) }),
             h('span', { class: 'desc', text: t(`variant.${v.id}.meta` as Key) }),
           ),
-        )
-      }),
+        ),
+      ),
     )
 
     const confirm = () => {
@@ -917,26 +959,7 @@ export class App {
                 : null,
             ),
 
-        h(
-          'div',
-          { class: 'stack' },
-          h('span', { class: 'label', text: t('lobby.rules', { variant: variantName(variant.id) }) }),
-          this.ruleChips(variant),
-          session.isHost
-            ? h('button', {
-                class: 'btn small',
-                text: t('lobby.change'),
-                on: {
-                  click: () => {
-                    this.picking = 'change'
-                    this.variantId = variant.id
-                    this.renderPick()
-                  },
-                },
-              })
-            : null,
-        ),
-
+        this.rulesCard(session, variant),
         this.tableCard(session),
 
         h(
@@ -1117,9 +1140,81 @@ export class App {
     )
   }
 
-  /** Les réglages de la variante, lisibles d'un coup d'œil. */
-  private ruleChips(v: Variant): HTMLElement {
-    const chips: [string, boolean][] = [
+  /** La pastille d'une variante : le dé, le pion, l'éclair. */
+  private variantBadge(v: Variant, small = false): HTMLElement {
+    const badge = h('span', { class: `badge b${VARIANTS.indexOf(v) + 1}${small ? ' badge--sm' : ''}` })
+    const kind = BADGES[v.id] ?? 'die'
+    if (kind === 'die') badge.append(this.face(5))
+    else if (kind === 'pawn') badge.append(this.token(null))
+    else badge.append(icon('bolt', small ? 24 : 30))
+    return badge
+  }
+
+  /**
+   * Le jeu de la table, et ce qu'il change.
+   *
+   * Une rangée de pastilles vertes ne disait pas grand-chose : huit libellés
+   * de la même couleur se lisent comme une décoration, et les règles éteintes
+   * — les plus intéressantes, justement, celles qu'on n'a PAS ce soir — s'y
+   * perdaient en gris pâle. Le tout s'appelait « règles maison » sans jamais
+   * dire de quel jeu il s'agissait.
+   *
+   * Une carte, donc, bâtie comme celle des réglages de table juste dessous :
+   * le jeu en titre avec sa pastille, son format en sous-titre, et les huit
+   * règles en deux colonnes — chacune cochée ou barrée. Le bouton qui change
+   * de jeu vit dans l'en-tête de la carte, à côté du nom qu'il remplace, au
+   * lieu de traîner en pleine largeur sous les pastilles.
+   */
+  private rulesCard(session: Session, variant: Variant): HTMLElement {
+    const change =
+      session.isHost && !session.lobby.started
+        ? h('button', {
+            class: 'btn small rules-card__change',
+            text: t('lobby.change'),
+            on: {
+              click: () => {
+                this.picking = 'change'
+                this.variantId = variant.id
+                this.renderPick()
+              },
+            },
+          })
+        : null
+
+    return h(
+      'div',
+      { class: 'stack' },
+      h('span', { class: 'label', text: t('lobby.rules') }),
+      h(
+        'div',
+        { class: 'card rules-card' },
+        h(
+          'div',
+          { class: 'rules-card__head' },
+          this.variantBadge(variant, true),
+          h(
+            'div',
+            { class: 'rules-card__name' },
+            h('strong', { text: variantName(variant.id) }),
+            h('span', { class: 'meta', text: t(`variant.${variant.id}.meta` as Key) }),
+          ),
+          change,
+        ),
+        h('hr'),
+        this.ruleGrid(variant),
+      ),
+    )
+  }
+
+  /**
+   * Les huit règles qui changent d'une famille à l'autre.
+   *
+   * Cochées ou barrées, et toujours toutes les huit : une règle absente de la
+   * liste et une règle éteinte ne se distinguaient pas, alors que c'est
+   * exactement ce qu'on vient vérifier — « chez nous, manger renvoie ».
+   */
+  private ruleGrid(v: Variant): HTMLElement {
+    const rules: [string, boolean][] = [
       [t('chip.exit', { rolls: v.exitRolls.join(t('chip.or')) }), true],
       [t('chip.six'), v.extraTurnOnSix],
       [t('chip.capture'), true],
@@ -1131,9 +1226,14 @@ export class App {
     ]
     return h(
       'div',
-      { class: 'chips' },
-      ...chips.map(([text, on]) =>
-        h('span', { class: `chip${on ? ' on' : ''}` }, text, on ? icon('check', 15) : null),
+      { class: 'rule-grid' },
+      ...rules.map(([text, on]) =>
+        h(
+          'span',
+          { class: `rule${on ? ' on' : ''}` },
+          icon(on ? 'check' : 'close', 15),
+          h('span', { text }),
+        ),
       ),
     )
   }
@@ -1170,6 +1270,23 @@ export class App {
       ),
     )
 
+    // L'interrupteur porte son état écrit ET dessiné : « Activées » se lit sans
+    // distinguer le vert du gris, le curseur se voit sans lire, et un lecteur
+    // d'écran annonce l'un des deux. L'ancienne pastille de texte, elle, ne
+    // ressemblait pas à un réglage — juste à un bouton de plus dans une carte
+    // qui en avait déjà cinq.
+    const toggle = h(
+      'button',
+      {
+        class: `switch${powers ? ' on' : ''}`,
+        disabled: !host,
+        attrs: { role: 'switch', 'aria-checked': String(powers), 'aria-label': t('table.powers') },
+        on: { click: () => session.setPowers(!powers) },
+      },
+      h('span', { class: 'switch__state', text: t(powers ? 'table.powers.on' : 'table.powers.off') }),
+      h('span', { class: 'switch__track' }, h('i')),
+    )
+
     return h(
       'div',
       { class: 'stack' },
@@ -1181,25 +1298,50 @@ export class App {
         shapes,
         h('p', { class: 'hint', text: t(`shape.${shape}.desc` as Key) }),
         h('hr'),
+        // La case pouvoir telle qu'elle sera sur le plateau — le losange
+        // d'encre sur fond neutre. Un réglage se comprend mieux quand il montre
+        // ce qu'il ajoute au plateau plutôt que de le décrire.
         h(
           'div',
-          { class: 'row row--split' },
+          { class: `table-card__row table-card__powers${powers ? '' : ' off'}` },
+          h('span', { class: 'power-cell', attrs: { 'aria-hidden': 'true' } }, h('i')),
           h('strong', { text: t('table.powers') }),
-          h('button', {
-            class: `toggle${powers ? ' on' : ''}`,
-            disabled: !host,
-            attrs: { role: 'switch', 'aria-checked': String(powers), 'aria-label': t('table.powers') },
-            text: t(powers ? 'table.powers.on' : 'table.powers.off'),
-            on: { click: () => session.setPowers(!powers) },
-          }),
+          toggle,
         ),
         h('p', { class: 'hint', text: t('table.powers.hint') }),
-        h('button', {
-          class: 'btn small',
-          text: t('table.powers.see', { n: POWER_LIST.length }),
-          on: { click: () => this.showPowers() },
-        }),
+        h(
+          'button',
+          {
+            class: 'btn small deck-btn',
+            on: { click: () => this.showPowers() },
+          },
+          h('span', { class: 'deck-btn__pile', attrs: { 'aria-hidden': 'true' } }, h('i'), h('i'), h('i')),
+          t('table.powers.see', { n: POWER_LIST.length }),
+        ),
       ),
+    )
+  }
+
+  /**
+   * Une carte du paquet, dessinée comme une carte.
+   *
+   * Le compte d'exemplaires est en haut à droite, là où un jeu de cartes met
+   * sa valeur ; la figure est au milieu ; le nom et l'effet dessous. C'est ce
+   * qui fait qu'on la reconnaît plus tard, en une demi-seconde, quand elle
+   * remonte du paquet au milieu d'un tour.
+   */
+  private powerCard(power: Power): HTMLElement {
+    return h(
+      'div',
+      { class: `power-card power-card--${power.kind}` },
+      h(
+        'div',
+        { class: 'power-card__top' },
+        h('span', { class: 'power-card__glyph' }, icon(POWER_ICON[power.id], 26)),
+        h('span', { class: 'power-card__copies', text: t('powers.copies', { n: power.copies }) }),
+      ),
+      h('strong', { class: 'power-card__name', text: t(`power.${power.id}` as Key) }),
+      h('span', { class: 'power-card__desc', text: t(`power.${power.id}.desc` as Key) }),
     )
   }
 
@@ -1222,24 +1364,15 @@ export class App {
       if (ev.key === 'Escape') close()
     }
 
-    const group = (kind: 'bonus' | 'malus') =>
+    const group = (kind: PowerKind) =>
       h(
         'div',
         { class: `powers-group powers-group--${kind}` },
         h('span', { class: 'label', text: t(kind === 'bonus' ? 'powers.bonus' : 'powers.malus') }),
-        ...POWER_LIST.filter((p) => p.kind === kind).map((p) =>
-          h(
-            'div',
-            { class: 'power-row' },
-            h('span', { class: `power-mark power-mark--${p.kind}` }),
-            h(
-              'div',
-              { class: 'power-text' },
-              h('strong', { text: t(`power.${p.id}` as Key) }),
-              h('span', { class: 'desc', text: t(`power.${p.id}.desc` as Key) }),
-            ),
-            h('span', { class: 'power-copies', text: t('powers.copies', { n: p.copies }) }),
-          ),
+        h(
+          'div',
+          { class: 'power-cards' },
+          ...POWER_LIST.filter((p) => p.kind === kind).map((p) => this.powerCard(p)),
         ),
       )
 
@@ -1257,10 +1390,13 @@ export class App {
       h(
         'div',
         { class: 'sheet powers__sheet' },
+        // Un en-tête, et non une carte de plus : la feuille est déjà pleine de
+        // cartes, et une boîte qui les annonce leur volerait le premier coup
+        // d'œil.
         h(
           'div',
-          { class: 'card' },
-          h('h2', { style: { textAlign: 'center' }, text: t('powers.title') }),
+          { class: 'powers__head' },
+          h('h2', { text: t('powers.title') }),
           h('p', {
             class: 'hint center',
             text: t('table.powers.fair', {
@@ -1269,9 +1405,9 @@ export class App {
               malus: DECK_SIZE - bonusCount,
             }),
           }),
-          group('bonus'),
-          group('malus'),
         ),
+        group('bonus'),
+        group('malus'),
         h('button', { class: 'btn', text: t('common.close'), on: { click: () => close() } }),
       ),
     )
@@ -1405,6 +1541,21 @@ export class App {
     // une conséquence du lancer.
     const hand = h('div', { class: 'hand', attrs: { 'aria-label': t('hand.title') } })
 
+    // La pause n'existe que sur un seul téléphone : voir `canPause` côté
+    // session. En ligne, un bouton qui ne figerait que son propre écran
+    // mentirait sur ce qu'il fait.
+    const pauseBtn = this.session!.mode === 'local'
+      ? h(
+          'button',
+          {
+            class: 'icon-btn',
+            attrs: { 'aria-label': t('play.pause') },
+            on: { click: () => this.session?.setPaused(true) },
+          },
+          icon('pause'),
+        )
+      : null
+
     fill(
       this.root,
       h(
@@ -1417,12 +1568,13 @@ export class App {
           h('span', { style: { flex: '1' } }),
           this.session!.mode === 'online' ? this.codePill(this.session!.lobby.code) : null,
           this.session!.mode === 'online' ? this.chatButton() : null,
+          pauseBtn,
           h(
             'button',
             {
               class: 'icon-btn',
               attrs: { 'aria-label': t('rules.title') },
-              on: { click: () => this.renderRules(() => this.update()) },
+              on: { click: () => this.renderRules(() => this.backToGame()) },
             },
             icon('help'),
           ),
@@ -1450,6 +1602,7 @@ export class App {
       boostHighBtn: high.btn,
       boostCounts: [low.count, high.count],
       hand,
+      pauseBtn,
     }
     this.armed = null
     this.shownDice = null
@@ -1463,6 +1616,10 @@ export class App {
   private refreshPlay(state: GameState): void {
     const session = this.session!
     const mounts = this.mounts!
+    // La feuille de pause passe avant tout le reste : elle doit apparaître
+    // même quand le dé roule encore, et la passe s'arrête là (voir plus bas).
+    if (mounts.pauseBtn) mounts.pauseBtn.disabled = !session.canPause
+    this.paintPause()
     const moves = session.moves()
     if (state.dice !== null) this.lastDie = state.dice
 
@@ -1528,7 +1685,14 @@ export class App {
         aimed,
       )
     } else {
-      this.board!.render(state, moves, (pawnId) => session.dispatch({ type: 'move', pawnId }))
+      // Partie figée : les chevaux restent à leur place mais ne prennent plus le
+      // doigt. La feuille couvre déjà l'écran ; ceci couvre le clavier, qui
+      // sait très bien atteindre un bouton caché.
+      this.board!.render(
+        state,
+        session.paused ? [] : moves,
+        (pawnId) => session.dispatch({ type: 'move', pawnId }),
+      )
     }
     this.renderHand(mounts.hand)
     this.renderPlayers(mounts.players, state)
@@ -1577,7 +1741,7 @@ export class App {
       // s'afficher chez les autres, qui la lisaient comme la leur.
       if (event.kind === 'handFull') {
         if (!mine(entry.seat)) continue
-        return this.note('malus', entry.actor, t(`power.${event.power}` as Key), t('hand.full'))
+        return this.note('malus', entry.actor, t(`power.${event.power}` as Key), t('hand.full'), event.power)
       }
       if (event.kind === 'shielded') {
         return this.note(
@@ -1585,10 +1749,11 @@ export class App {
           event.owner,
           t('power.bouclier'),
           t('toast.shielded', { pawn: event.pawn, owner: event.owner }),
+          'bouclier',
         )
       }
       if (event.kind === 'skipped') {
-        return this.note('malus', entry.actor, t('power.saute'), t('power.saute.desc'))
+        return this.note('malus', entry.actor, t('power.saute'), t('power.saute.desc'), 'saute')
       }
       // Une carte jouée par soi n'a pas besoin d'être annoncée : on vient de la
       // taper. Celles des autres, si — c'est la seule trace qu'il en reste.
@@ -1602,10 +1767,10 @@ export class App {
     }
   }
 
-  /** Une carte nommée : son mot, sa couleur de bonus ou de malus, son effet. */
+  /** Une carte nommée : sa figure, son mot, sa couleur, son effet. */
   private powerNote(power: PowerId, actor: string): void {
     const spec = POWERS[power]
-    this.note(spec.kind, actor, t(`power.${power}` as Key), t(`power.${power}.desc` as Key))
+    this.note(spec.kind, actor, t(`power.${power}` as Key), t(`power.${power}.desc` as Key), power)
   }
 
   /**
@@ -1617,12 +1782,23 @@ export class App {
    * derrière elle, l'écran ne bouge plus — et ne capte aucun appui : le dé reste
    * jouable pendant qu'on la lit. L'ancien bandeau, lui, se posait sur le dé.
    */
-  private note(kind: PowerKind | 'neutral', who: string, title: string, desc?: string): void {
+  private note(
+    kind: PowerKind | 'neutral',
+    who: string,
+    title: string,
+    desc?: string,
+    power?: PowerId,
+  ): void {
     document.querySelector('.cardnote')?.remove()
     const el = h(
       'div',
       { class: `cardnote cardnote--${kind}`, attrs: { role: 'status', 'aria-live': 'polite' } },
-      h('span', { class: `power-mark power-mark--${kind}` }),
+      // La figure de la carte quand on sait laquelle c'est ; la pastille nue
+      // quand on ne le sait pas — la carte d'un autre joueur existe, on ne dit
+      // rien de plus.
+      power
+        ? h('span', { class: `power-badge power-badge--${kind}` }, icon(POWER_ICON[power], 22))
+        : h('span', { class: `power-mark power-mark--${kind}` }),
       h(
         'div',
         { class: 'cardnote__text' },
@@ -1836,7 +2012,7 @@ export class App {
    */
   private canAutoPlay(state: GameState, moveCount: number): boolean {
     const session = this.session
-    if (!session?.myTurn || state.phase !== 'moving' || moveCount > 1) return false
+    if (!session?.myTurn || session.paused || state.phase !== 'moving' || moveCount > 1) return false
     return this.armed === null && session.hand().playable.length === 0
   }
 
@@ -1992,13 +2168,82 @@ export class App {
     // `!this.tumbling` : tant qu'il roule, il n'accepte rien. Un appui pendant
     // l'animation passerait le tour ou lâcherait une carte avant même qu'on ait
     // lu le chiffre.
-    const acting = mine && !finished && !this.tumbling
+    const acting = mine && !finished && !this.tumbling && !session.paused
     const canPass = acting && state.phase === 'moving' && moveCount === 0
     const canRoll = acting && (state.phase === 'rolling' || this.armedReady() || canPass)
     const die = this.mounts!.dieBtn
     die.disabled = !canRoll
     die.classList.toggle('ready', canRoll)
     this.startClock()
+  }
+
+  // ─────────────────────────── la pause ───────────────────────────
+
+  /**
+   * La partie figée, et la feuille qui le dit.
+   *
+   * **Tout s'arrête** : le bot qui allait jouer, la pendule du tour, le dé et
+   * le plateau (voir `setPaused` côté session). La feuille n'est donc pas un
+   * décor posé devant un jeu qui continuerait derrière — elle est la seule
+   * chose qui bouge encore, et le seul geste qui la referme est son bouton :
+   * un fond qu'on ferme au doigt relancerait la partie en reprenant son
+   * téléphone dans sa poche.
+   *
+   * L'écran a le droit de s'éteindre pendant ce temps-là : c'est même pour ça
+   * qu'on met en pause.
+   */
+  private paintPause(): void {
+    const session = this.session
+    if (session?.paused !== true) {
+      if (this.pauseSheet) {
+        this.closePause()
+        // Le coup évident du tour en cours a été programmé, puis refusé pendant
+        // la pause : sans cet oubli, il ne serait jamais reprogrammé et le tour
+        // attendrait un doigt qui ne sait pas qu'on l'attend.
+        this.autoAt = -1
+        setKeepAwake(this.screen === 'play')
+      }
+      return
+    }
+    if (this.pauseSheet) return
+
+    if (this.autoTimer) clearTimeout(this.autoTimer)
+    this.autoTimer = null
+    setKeepAwake(false)
+    const resume = h('button', {
+      class: 'btn red',
+      text: t('pause.resume'),
+      on: { click: () => session.setPaused(false) },
+    })
+    this.pauseSheet = h(
+      'div',
+      {
+        class: 'overlay paused',
+        attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('pause.title') },
+      },
+      h(
+        'div',
+        { class: 'sheet pause__sheet' },
+        h('span', { class: 'pause__mark' }, icon('pause', 34)),
+        h('h2', { style: { textAlign: 'center' }, text: t('pause.title') }),
+        h('p', { class: 'hint center', text: t('pause.body') }),
+        resume,
+      ),
+    )
+    addEventListener('keydown', this.onPauseKey)
+    document.body.append(this.pauseSheet)
+    resume.focus()
+  }
+
+  private closePause(): void {
+    if (!this.pauseSheet) return
+    removeEventListener('keydown', this.onPauseKey)
+    this.pauseSheet.remove()
+    this.pauseSheet = null
+  }
+
+  private onPauseKey = (ev: KeyboardEvent): void => {
+    if (ev.key === 'Escape') this.session?.setPaused(false)
   }
 
   /** Une carte est armée et ne lui manque plus rien : le dé peut la lâcher. */

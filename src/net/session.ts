@@ -135,6 +135,8 @@ export class Session {
   private missed = new Map<Seat, number>()
   /** Relève d'un siège abandonné, par siège : chaque pair l'arme, l'hôte l'exécute. */
   private awayTimers = new Map<Seat, ReturnType<typeof setTimeout>>()
+  /** Partie figée à la demande du joueur. Voir `setPaused`. */
+  private frozen = false
   /** Retenu pour pouvoir refaire une tentative sans repasser par l'accueil. */
   private myName = ''
 
@@ -584,6 +586,60 @@ export class Session {
     return Math.ceil(((this.turnLeft() ?? 0) * TURN_MS) / 1000)
   }
 
+  /**
+   * La partie peut-elle se mettre en pause ?
+   *
+   * Sur un seul téléphone seulement. Une partie en ligne n'appartient à
+   * personne en particulier : figer les bots et la pendule chez soi ne
+   * figerait rien chez les autres, et le siège mis en pause finirait sauté
+   * par l'hôte au bout de son temps de réflexion. Contre des bots, en
+   * revanche, il n'y a personne à faire attendre — la partie entière tient
+   * sur cet appareil, et elle a le droit de s'arrêter le temps d'un métro.
+   */
+  get canPause(): boolean {
+    return (
+      this.mode === 'local' &&
+      this.lobby.started &&
+      this.game !== null &&
+      this.game.phase !== 'finished'
+    )
+  }
+
+  /** La partie est-elle figée ? */
+  get paused(): boolean {
+    return this.frozen
+  }
+
+  /**
+   * Fige la partie, ou la relance.
+   *
+   * **Tout s'arrête** : le bot qui allait jouer, la pendule du tour, et les
+   * coups eux-mêmes (voir `dispatch`). Une pause qui laisserait le bot avancer
+   * ne serait pas une pause, et une pendule qui continuerait de tourner
+   * derrière la feuille sanctionnerait le joueur d'avoir posé son téléphone.
+   *
+   * À la reprise, le tour repart d'une pendule pleine : mémoriser le reste
+   * exact pour rendre trois secondes au lieu de dix ferait de la pause une
+   * punition.
+   */
+  setPaused(on: boolean): void {
+    if (on && !this.canPause) return
+    if (this.frozen === on) return
+    this.frozen = on
+
+    if (on) {
+      if (this.botTimer) clearTimeout(this.botTimer)
+      this.botTimer = null
+      if (this.turnTimer) clearTimeout(this.turnTimer)
+      this.turnTimer = null
+      this.turnEndsAt = null
+      this.turnFor = null
+    } else {
+      this.onGameChanged()
+    }
+    this.listeners.onChange()
+  }
+
   /** Le joueur local peut-il agir maintenant ? */
   get myTurn(): boolean {
     return this.game !== null && this.game.phase !== 'finished' && this.controls(this.game.turn)
@@ -654,6 +710,7 @@ export class Session {
   start(): void {
     if (!this.isHost || this.lobby.players.length < 2) return
 
+    this.frozen = false
     this.missed.clear()
     this.lobby.started = true
     this.game = createGame({
@@ -676,7 +733,7 @@ export class Session {
 
   /** Point d'entrée unique de l'UI pour jouer un coup. */
   dispatch(action: Action): void {
-    if (!this.game) return
+    if (!this.game || this.frozen) return
     const seat = this.game.turn
     if (!this.controls(seat)) {
       this.listeners.onError({ code: 'notYourTurn' })
@@ -722,6 +779,7 @@ export class Session {
   /** L'hôte joue pour les sièges tenus par un bot. */
   private scheduleBot(): void {
     if (this.botTimer) clearTimeout(this.botTimer)
+    if (this.frozen) return
     if (!this.isHost || !this.game || this.game.phase === 'finished') return
 
     const seat = this.game.turn
@@ -766,6 +824,7 @@ export class Session {
     const seat = game?.turn
     const player = this.lobby.players.find((p) => p.seat === seat)
     const running =
+      !this.frozen &&
       game !== null &&
       this.lobby.started &&
       game.phase !== 'finished' &&
@@ -889,6 +948,7 @@ export class Session {
   /** Rejouer une nouvelle manche avec la même table. */
   restart(): void {
     if (!this.isHost) return
+    this.frozen = false
     this.lobby.started = false
     this.game = null
     this.missed.clear()
