@@ -277,6 +277,52 @@ describe('enchaînement des tours', () => {
     expect(apply(rolled, { type: 'pass' }, 0).state.turn).toBe(1)
   })
 
+  /**
+   * Trois 6 d'affilée, et le tour est perdu — le troisième compris.
+   *
+   * Sans plafond, un 6 rend la main, et la main rendue peut refaire 6 : la
+   * table regarde un joueur jouer seul aussi longtemps que le dé le veut. Le
+   * troisième 6 ne se joue donc pas : il annule le coup **et** le tour. La
+   * chaîne s'accumule bien d'un lancer à l'autre, y compris au travers du
+   * rejeu qui rend la main — c'est ce que ce test vérifie de bout en bout,
+   * plutôt qu'en posant le compteur à la main.
+   */
+  for (const variant of ['petits-chevaux', 'ludo', 'rapide']) {
+    it(`perd le tour au troisième 6, en ${variant}`, () => {
+      let state = setup({ variant })
+      expect(state.variant.maxConsecutiveSixes).toBe(3)
+
+      // Deux 6 joués : chacun rend la main au même joueur.
+      for (let n = 1; n < 3; n++) {
+        state = apply({ ...state, rng: seedFor(6) }, { type: 'roll' }, 0).state
+        expect(state.dice).toBe(6)
+        expect(state.voided).toBe(false)
+        const moves = legalMoves(state)
+        expect(moves.length).toBeGreaterThan(0)
+        state = apply(state, { type: 'move', pawnId: moves[0]!.pawnId }, 0).state
+        expect(state.turn).toBe(0)
+        expect(state.phase).toBe('rolling')
+      }
+
+      // Le troisième : rien n'est jouable, et la main passe.
+      state = apply({ ...state, rng: seedFor(6) }, { type: 'roll' }, 0).state
+      expect(state.voided).toBe(true)
+      expect(legalMoves(state)).toHaveLength(0)
+      expect(apply(state, { type: 'pass' }, 0).state.turn).toBe(1)
+    })
+  }
+
+  // Le rejeu relance le dé sans rendre la main : s'il remettait la chaîne à
+  // zéro, il serait le moyen d'effacer deux 6 déjà posés et d'échapper à la règle.
+  it('compte aussi les 6 obtenus par la carte rejeu', () => {
+    const state = { ...setup({}), rng: seedFor(6), consecutiveSixes: 2, dice: 3, phase: 'moving' as const }
+    const withCard = { ...state, hands: [['rejeu' as const], [], [], []] }
+    const played = apply(withCard, { type: 'power', power: 'rejeu' }, 0).state
+    expect(played.dice).toBe(6)
+    expect(played.voided).toBe(true)
+    expect(legalMoves(played)).toHaveLength(0)
+  })
+
   it('refuse une action venant du mauvais siège', () => {
     expect(apply(setup({}), { type: 'roll' }, 1).error).toBeTruthy()
   })

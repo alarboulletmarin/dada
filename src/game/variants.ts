@@ -59,7 +59,11 @@ export const VARIANTS: Variant[] = [
     // Une sortie sur deux faces tombe déjà d'elle-même : le dé reste franc.
     mercyExit: 0,
     extraTurnOnSix: true,
-    maxConsecutiveSixes: 0,
+    // Trois, comme partout ailleurs. Zéro — la série sans fin — était un
+    // oubli et non un parti pris : le règlement annonce la règle sans
+    // étiquette de variante, donc pour les trois jeux, et un plateau de 40
+    // cases est justement celui où une bonne série fait le plus de dégâts.
+    maxConsecutiveSixes: 3,
     extraTurnOnCapture: true,
     extraTurnOnFinish: true,
     starSquaresAreSafe: true,

@@ -1870,6 +1870,18 @@ export class App {
           desc: t('power.saute.desc'),
           power: 'saute',
         })
+      } else if (event.kind === 'voided') {
+        // Le tour perdu ne se lit que sur la ligne de tour, et seulement chez
+        // celui qui le perd — or c'est un événement de table : le joueur qui
+        // enchaînait les 6 s'arrête net, et sans un mot personne ne sait
+        // pourquoi. Chez lui, la ligne de tour passe en une seconde ; la
+        // nouvelle, elle, reste le temps qu'on la lise.
+        notes.push({
+          kind: 'malus',
+          who: entry.actor,
+          title: t('play.voided'),
+          desc: t('play.voided.hint', { n: event.sixes }),
+        })
       } else if (event.kind === 'capture') {
         // Un cheval disparaît d'un bout du plateau et reparaît dans une écurie.
         // Sans un mot, c'est le coup qu'on ne comprend qu'en refaisant le
