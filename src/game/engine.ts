@@ -168,34 +168,6 @@ function pawnsOnTrackIndex(state: GameState, index: number, exceptId?: string): 
 }
 
 /**
- * Un barrage adverse (2+ pions d'un même joueur) occupe-t-il cette case ?
- *
- * « Adverse » n'est pas un détail : un barrage est un mur dressé contre les
- * autres, pas une case qu'on se condamne à soi-même. Ses propres pions le
- * franchissent librement — sans quoi poser un barrage reviendrait à s'enfermer
- * derrière, et personne n'en poserait jamais.
- */
-function isBlockaded(state: GameState, index: number, mover: Pawn): boolean {
-  const perOwner = new Map<Seat, number>()
-  for (const p of pawnsOnTrackIndex(state, index, mover.id)) {
-    if (p.owner === mover.owner) continue
-    perOwner.set(p.owner, (perOwner.get(p.owner) ?? 0) + 1)
-  }
-  return [...perOwner.values()].some((n) => n >= 2)
-}
-
-/** Le trajet `from → to` traverse-t-il un barrage ? La case d'arrivée compte. */
-function pathIsBlocked(state: GameState, pawn: Pawn, from: number, to: number): boolean {
-  const geometry = geometryFor(state.variant)
-  for (let s = from + 1; s <= to; s++) {
-    if (!isOnTrack(geometry, s)) continue
-    const index = trackIndexOf(geometry, pawn.owner, s)
-    if (index !== null && isBlockaded(state, index, pawn)) return true
-  }
-  return false
-}
-
-/**
  * Les chevaux déjà posés sur la case où ce coup mènerait — les siens comme
  * ceux des autres. Le circuit est commun et se compte en cases absolues ;
  * l'escalier est privé, et seuls les chevaux du même siège peuvent s'y trouver.
@@ -234,7 +206,6 @@ export function legalMoves(state: GameState): Move[] {
     }
 
     const from = exits ? STABLE : pawn.steps
-    if (variant.blockades && pathIsBlocked(state, pawn, exits ? -1 : from, to)) continue
 
     // Capture : uniquement sur le circuit, et jamais sur une case protégée.
     // Un cheval au bouclier reste sur la case : le coup est légal, il n'est

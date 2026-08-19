@@ -27,7 +27,6 @@ export const VARIANTS: Variant[] = [
     extraTurnOnFinish: false,
     starSquaresAreSafe: false,
     startSquaresAreSafe: true,
-    blockades: false,
     // « Deux chevaux ne peuvent pas occuper la même case. »
     onePerSquare: true,
     exactFinish: true,
@@ -46,8 +45,7 @@ export const VARIANTS: Variant[] = [
     extraTurnOnFinish: true,
     starSquaresAreSafe: true,
     startSquaresAreSafe: true,
-    blockades: true,
-    // Impossible ici : deux pions sur une case, c'est justement un barrage.
+    // Deux pions d'une même couleur partagent une case sans se gêner.
     onePerSquare: false,
     exactFinish: true,
     // Le couloir d'arrivée du Ludo est une bande de couleur, sans numéros.
@@ -66,7 +64,6 @@ export const VARIANTS: Variant[] = [
     extraTurnOnFinish: true,
     starSquaresAreSafe: true,
     startSquaresAreSafe: true,
-    blockades: false,
     onePerSquare: false,
     exactFinish: false,
     numberedHome: false,

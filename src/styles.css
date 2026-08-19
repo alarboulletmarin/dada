@@ -3219,6 +3219,14 @@ input:disabled {
   box-shadow: 0 4px 0 var(--shade);
 }
 
+/* La carte qu'on est venu chercher, quand le catalogue s'ouvre depuis un ⓘ de
+   la main. Sept cartes ne tiennent pas sur un écran de téléphone : sans repère,
+   la réponse est quelque part dans une liste qu'il faut relire en entier. */
+.power-card--focus {
+  border-color: var(--green);
+  box-shadow: 0 4px 0 var(--shade), 0 0 0 3px var(--card), 0 0 0 6px var(--green);
+}
+
 .power-card__top {
   display: flex;
   align-items: center;
@@ -3341,11 +3349,21 @@ input:disabled {
 
    `flex: none` n'est pas cosmétique non plus : sans lui la pilule se laisse
    comprimer par l'indication qui la suit et son libellé passe à la ligne. */
+/* La pastille et son ⓘ voyagent ensemble : c'est le créneau qui prend la
+   place dans la rangée, et le petit rond se pose sur son coin sans en coûter
+   un pixel — la rangée n'en a pas à donner. */
+.hand__slot {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
 .hand__card {
   flex: none;
   display: inline-flex;
+  gap: 5px;
   align-items: center;
-  padding: 6px 12px;
+  padding: 5px 11px;
   white-space: nowrap;
   border: 2.5px solid var(--line);
   border-radius: 999px;
@@ -3359,12 +3377,31 @@ input:disabled {
   transition: border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
 }
 
+/* La figure de la carte, à la taille d'une lettre : on la reconnaît au dessin
+   avant d'avoir lu le mot, exactement comme dans le catalogue. */
+.hand__glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+}
+
+.hand__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Une carte jouable se cercle d'encre — le même vocabulaire que le cheval
    jouable sur le plateau. Une carte éteinte reste lisible : la retirer ferait
-   croire qu'on l'a perdue. */
+   croire qu'on l'a perdue.
+
+   Et elle bat, comme le dé prêt à partir. Une pastille immobile au-dessus du
+   dé ne dit pas qu'on peut la toucher : on la lit comme un compteur, on ne
+   l'essaie jamais, et le tour se joue sans elle jusqu'à la fin de la partie. */
 .hand__card.on {
   border-color: var(--ink);
   color: var(--ink);
+  animation: hand-wink 2.6s ease-in-out infinite;
 }
 
 .hand__card.on:hover {
@@ -3377,12 +3414,61 @@ input:disabled {
   opacity: 0.5;
 }
 
-/* La carte en visée : c'est au plateau de jouer, et elle le dit. */
+/* La carte en visée : c'est au plateau de jouer, et elle le dit. Elle ne bat
+   plus — elle est choisie, et ce qui bat maintenant est ailleurs. */
 .hand__card.aimed {
   background: var(--ink);
   border-color: var(--ink);
   box-shadow: none;
   color: var(--cream);
+  animation: none;
+}
+
+@keyframes hand-wink {
+  0%,
+  84%,
+  100% {
+    box-shadow: 0 2px 0 var(--shade);
+    transform: translateY(0);
+  }
+  90% {
+    box-shadow: 0 4px 0 var(--shade);
+    transform: translateY(-2px);
+  }
+}
+
+/* Le ⓘ de chaque carte.
+
+   L'annonce du ramassage passe et ne revient pas ; trois tours plus tard il ne
+   reste qu'un mot sur une pastille, et « Faux pas » ne dit pas de combien on
+   recule. Le rond est petit — il ne doit pas voler le premier coup d'œil à la
+   carte — mais sa zone d'appui, elle, ne l'est pas : le `::after` l'élargit à
+   la taille d'un doigt sans déplacer quoi que ce soit. */
+.hand__info {
+  position: absolute;
+  top: -6px;
+  right: -7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.hand__info::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+.hand__info:active {
+  background: var(--yellow);
 }
 
 .hand__hint {
@@ -3405,6 +3491,14 @@ input:disabled {
 
 .hand.aiming .hand__hint {
   color: var(--ink);
+}
+
+/* « Mouvement réduit » : la carte jouable garde son trait d'encre, elle cesse
+   simplement de battre. Le signal reste, l'agitation part. */
+@media (prefers-reduced-motion: reduce) {
+  .hand__card.on {
+    animation: none;
+  }
 }
 
 

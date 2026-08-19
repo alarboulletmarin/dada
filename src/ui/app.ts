@@ -24,6 +24,7 @@ import { makeCode, type ChatMessage } from '../net/room.ts'
 import { clearInvite, clearSave, readInvite, readSave } from '../net/save.ts'
 import { Session, type Notice, type NoticeCode } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
+import { armedReady, keepArmed, needsPawn, type Armed } from './aim.ts'
 import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
 import { icon, type IconName } from './icons.ts'
@@ -33,7 +34,19 @@ import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
 
 const NAME_KEY = 'dada.name'
 /** Temps laissé au dé pour retomber avant qu'un coup évident ne se joue seul. */
-const AUTO_MS = 600
+const AUTO_MS = 800
+/**
+ * Le même délai, mais quand une carte jouable attend en main.
+ *
+ * Un coup sans choix se joue tout seul — c'est la promesse, et elle vaut aussi
+ * avec des cartes en main : sans cela, ramasser un bonus condamnait la partie
+ * entière à confirmer d'un doigt chaque tour à coup unique, et le jeu
+ * s'arrêtait de couler. Mais une carte **est** un choix, et le rejeu qu'on
+ * garde justement pour un dé mort n'a aucune raison de partir avec le tour. On
+ * ne supprime donc pas l'automatisme : on lui laisse le temps qu'il faut pour
+ * qu'un doigt arrive avant lui. Toucher une carte annule le coup programmé.
+ */
+const AUTO_HOLD_MS = 2600
 /**
  * Longueur du code de partie. Voir `makeCode` dans `room.ts` : c'est une mesure
  * de sécurité avant d'être un réglage de confort.
@@ -235,7 +248,7 @@ export class App {
    * tant que le joueur n'a pas touché le dé — un bonus qui se déclencherait au
    * moment où on le regarde n'est pas un bonus, c'est un tirage au sort.
    */
-  private armed: { power: PowerId; pawnId?: string } | null = null
+  private armed: Armed | null = null
   /** Dernier résultat de dé connu : le dé du bas garde toujours une face visible. */
   private lastDie: number | null = null
   /** Valeur déjà affichée, pour repérer le lancer qui vient d'arriver. */
@@ -1221,7 +1234,6 @@ export class App {
       [t('chip.star'), v.starSquaresAreSafe],
       [t('chip.exact'), v.exactFinish],
       [t('chip.single'), v.onePerSquare],
-      [t('chip.blockade'), v.blockades],
       [t('chip.bonus'), v.extraTurnOnCapture],
     ]
     return h(
@@ -1330,10 +1342,10 @@ export class App {
    * qui fait qu'on la reconnaît plus tard, en une demi-seconde, quand elle
    * remonte du paquet au milieu d'un tour.
    */
-  private powerCard(power: Power): HTMLElement {
+  private powerCard(power: Power, focus = false): HTMLElement {
     return h(
       'div',
-      { class: `power-card power-card--${power.kind}` },
+      { class: `power-card power-card--${power.kind}${focus ? ' power-card--focus' : ''}` },
       h(
         'div',
         { class: 'power-card__top' },
@@ -1353,7 +1365,7 @@ export class App {
    * lisibles avant la partie, avec le nombre d'exemplaires de chacune — c'est
    * ce nombre, et non une promesse, qui dit à quel point le paquet est équitable.
    */
-  private showPowers(): void {
+  private showPowers(focus?: PowerId): void {
     if (document.querySelector('.overlay.powers')) return
 
     const close = (): void => {
@@ -1372,7 +1384,7 @@ export class App {
         h(
           'div',
           { class: 'power-cards' },
-          ...POWER_LIST.filter((p) => p.kind === kind).map((p) => this.powerCard(p)),
+          ...POWER_LIST.filter((p) => p.kind === kind).map((p) => this.powerCard(p, p.id === focus)),
         ),
       )
 
@@ -1413,6 +1425,10 @@ export class App {
     )
     addEventListener('keydown', onKey)
     document.body.append(overlay)
+    // Ouvert depuis une carte en main : elle est cerclée, et l'on va la
+    // chercher. Sept cartes tiennent rarement sur un écran de téléphone, et
+    // une réponse qu'il faut faire défiler pour trouver n'est pas une réponse.
+    overlay.querySelector('.power-card--focus')?.scrollIntoView({ block: 'center' })
   }
 
   private linkFor(code: string): string {
@@ -1627,11 +1643,14 @@ export class App {
     // désigné rentrer ou se faire manger. Une carte qui ne mène plus à rien se
     // range, et une désignation périmée s'oublie — sinon le reste de la passe
     // dessine un état qui n'existe plus.
-    const aimTargets = this.armed ? session.targetsFor(this.armed.power) : []
-    if (this.armed && aimTargets.length === 0) this.armed = null
-    if (this.armed?.pawnId !== undefined && !aimTargets.includes(this.armed.pawnId)) {
-      this.armed = { power: this.armed.power }
-    }
+    //
+    // `needsPawn` d'abord : une carte qui ne vise personne n'a aucune cible à
+    // proposer, et la traiter comme une carte sans cible restante la rangeait
+    // aussitôt armée. Le rejeu et le dé pipé étaient injouables pour cette
+    // seule raison — voir `aim.ts`, où la règle est désormais tenue par un test.
+    const aimTargets =
+      this.armed !== null && needsPawn(this.armed.power) ? session.targetsFor(this.armed.power) : []
+    this.armed = keepArmed(this.armed, { playable: session.hand().playable, targets: aimTargets })
 
     // Un dé pipé armé compte déjà : il garnit la réserve au moment où le lancer
     // le valide, si bien qu'un même geste peut ranger la carte et pencher le dé.
@@ -1668,10 +1687,13 @@ export class App {
     // dessus, ni les chevaux cerclés. Le rendu complet reprend à la réception.
     if (this.tumbling) return this.renderTurn(mounts.turn, state, moves.length)
 
-    // Carte armée : le plateau ne montre plus les coups mais les chevaux que la
-    // carte peut viser, et un appui **désigne** le cheval — il ne joue rien. La
-    // carte part au lancer du dé, jamais avant.
-    if (this.armed) {
+    // Carte armée qui vise un cheval : le plateau ne montre plus les coups mais
+    // les chevaux que la carte peut viser, et un appui **désigne** le cheval —
+    // il ne joue rien. La carte part au lancer du dé, jamais avant.
+    //
+    // Une carte qui ne vise personne, elle, laisse le plateau tranquille : ses
+    // coups restent jouables, et le joueur garde le droit de changer d'avis.
+    if (this.armed !== null && needsPawn(this.armed.power)) {
       const aimed = this.armed.pawnId
       this.board!.render(
         state,
@@ -1982,7 +2004,7 @@ export class App {
     if (armed) {
       // Une carte qui demande un cheval et n'en a pas encore : le lancer ne
       // part pas, on rappelle simplement ce qui manque.
-      if (POWERS[armed.power].target === 'cheval' && armed.pawnId === undefined) {
+      if (needsPawn(armed.power) && armed.pawnId === undefined) {
         return this.notify('hand.aim.needed')
       }
       this.armed = null
@@ -2004,16 +2026,25 @@ export class App {
   /**
    * Le tour peut-il se dérouler tout seul ?
    *
-   * Un coup sans choix n'est pas un choix. Mais **une carte en main est un
-   * choix** : le seul coup possible partait six cents millisecondes après le
-   * lancer, et le rejeu qu'on gardait justement pour un dé mort s'en allait avec
-   * le tour. Tant qu'il reste une carte jouable — ou une carte déjà armée —
-   * l'automatisme se tait et attend le joueur.
+   * Un coup sans choix n'est pas un choix : quand il n'y a rien à jouer, ou un
+   * seul coup possible, le tour part de lui-même. Une carte **armée** est la
+   * seule chose qui l'en empêche — le doigt est alors sur le plateau, pas sur
+   * le dé, et jouer le coup dessous ferait disparaître la carte qu'on visait.
+   *
+   * Une carte simplement *présente* en main, elle, ne suspend plus rien : elle
+   * ne fait qu'allonger le délai (voir `autoDelay`). L'ancienne règle rendait la
+   * main un piège — un bonus ramassé, et chaque tour à coup unique redemandait
+   * une confirmation jusqu'à la fin de la partie.
    */
   private canAutoPlay(state: GameState, moveCount: number): boolean {
     const session = this.session
     if (!session?.myTurn || session.paused || state.phase !== 'moving' || moveCount > 1) return false
-    return this.armed === null && session.hand().playable.length === 0
+    return this.armed === null
+  }
+
+  /** Le temps de lecture avant qu'un coup sans choix ne parte tout seul. */
+  private autoDelay(): number {
+    return (this.session?.hand().playable.length ?? 0) > 0 ? AUTO_HOLD_MS : AUTO_MS
   }
 
   /**
@@ -2045,6 +2076,14 @@ export class App {
    * retirer ferait croire qu'on l'a perdue. Toucher une carte ne la joue pas :
    * elle s'arme, on désigne son cheval sur le plateau s'il en faut un, et c'est
    * le dé qui la lâche. Un second appui la range.
+   *
+   * **Chaque carte porte son ⓘ.** L'annonce du ramassage passe et ne revient
+   * pas ; trois tours plus tard, il ne reste qu'un mot sur une pastille, et
+   * « Faux pas » ne dit pas de combien on recule. Le petit rond ouvre le
+   * catalogue sur la carte touchée — sans rien jouer, sans rendre la main, et
+   * la partie continue derrière. Il ouvre le catalogue **entier** et non une
+   * fiche isolée : la question « c'est quoi déjà ? » vient souvent d'un malus
+   * qu'on vient de subir et qui, lui, n'est jamais passé par la main.
    */
   private renderHand(host: HTMLElement): void {
     const session = this.session!
@@ -2058,43 +2097,65 @@ export class App {
     }
 
     const armed = this.armed
-    const needsPawn = armed !== null && POWERS[armed.power].target === 'cheval'
+    // Ce qu'il reste à faire, dans l'ordre où il faut le faire. Le dé pipé a sa
+    // phrase à lui : lui « lancer le dé » ne veut rien dire, puisque ce sont ses
+    // deux boutons — petit nombre, grand nombre — qui le lancent et le dépensent.
     const hint = !armed
       ? t('hand.count', { n: cards.length, max: HAND_LIMIT })
-      : needsPawn && armed.pawnId === undefined
+      : needsPawn(armed.power) && armed.pawnId === undefined
         ? t('hand.aim')
-        : t('hand.roll')
+        : armed.power === 'des'
+          ? t('hand.roll.boost')
+          : t('hand.roll')
 
     fill(
       host,
       ...cards.map((power) => {
         const usable = playable.includes(power)
         const chosen = armed?.power === power
+        const name = t(`power.${power}` as Key)
+        const desc = t(`power.${power}.desc` as Key)
         return h(
-          'button',
-          {
-            class: `hand__card${usable ? ' on' : ''}${chosen ? ' aimed' : ''}`,
-            disabled: !usable,
-            attrs: {
-              'aria-pressed': String(chosen),
-              'aria-label': `${t(`power.${power}` as Key)} — ${t(`power.${power}.desc` as Key)}`,
-            },
-            on: {
-              click: () => {
-                // Ranger la carte armée, ou en armer une autre. Dans les deux
-                // cas rien n'est joué : c'est le dé qui joue.
-                this.armed = chosen ? null : { power }
-                // Un coup évident déjà programmé ne doit pas passer devant la
-                // carte qu'on vient de choisir.
-                if (this.autoTimer) clearTimeout(this.autoTimer)
-                this.autoTimer = null
-                this.update()
+          'span',
+          { class: 'hand__slot' },
+          h(
+            'button',
+            {
+              class: `hand__card${usable ? ' on' : ''}${chosen ? ' aimed' : ''}`,
+              disabled: !usable,
+              attrs: { 'aria-pressed': String(chosen), 'aria-label': `${name} — ${desc}` },
+              on: {
+                click: () => {
+                  // Ranger la carte armée, ou en armer une autre. Dans les deux
+                  // cas rien n'est joué : c'est le dé qui joue.
+                  this.armed = chosen ? null : { power }
+                  // Un coup évident déjà programmé ne doit pas passer devant la
+                  // carte qu'on vient de choisir.
+                  if (this.autoTimer) clearTimeout(this.autoTimer)
+                  this.autoTimer = null
+                  this.update()
+                },
               },
             },
-          },
-          // Pas de numéro : deux cartes du même nom sont deux boutons du même
-          // nom, et c'est déjà lisible. Le compte est sous la rangée.
-          t(`power.${power}` as Key),
+            // La figure d'abord : dans un paquet, une carte se reconnaît à son
+            // dessin bien avant qu'on ait lu son nom.
+            h('span', { class: 'hand__glyph', attrs: { 'aria-hidden': 'true' } }, icon(POWER_ICON[power], 15)),
+            // Pas de numéro : deux cartes du même nom sont deux boutons du même
+            // nom, et c'est déjà lisible. Le compte est sous la rangée.
+            h('span', { class: 'hand__name', text: name }),
+          ),
+          // Le ⓘ est posé sur le coin de la pastille, comme le compteur des
+          // bonus de dé : en position absolue, il ne coûte pas un pixel de la
+          // rangée — et la rangée n'a pas un pixel à donner (voir le CSS).
+          h(
+            'button',
+            {
+              class: 'hand__info',
+              attrs: { 'aria-label': t('hand.info', { power: name }) },
+              on: { click: () => this.showPowers(power) },
+            },
+            icon('info', 13),
+          ),
         )
       }),
       h('span', { class: 'hand__hint', text: hint }),
@@ -2125,13 +2186,25 @@ export class App {
       detail = mercy >= 1 ? t('play.mercy.sure') : mercy > 0 ? t('play.mercy') : t('play.touchDie')
     } else if (mine && moveCount === 0) {
       title = t('play.nothing')
-      // « on passe la main » n'est vrai que si le tour se déroule tout seul. Dès
-      // qu'une carte attend en main, c'est au joueur de trancher — et on lui dit
-      // par quel geste.
-      detail = this.canAutoPlay(state, moveCount) ? t('play.nothing.hint') : t('play.nothing.pass')
+      // Ce qui va se passer, et non ce qui pourrait se passer : le tour part
+      // tout seul, il part tout seul mais laisse le temps d'une carte, ou il
+      // attend un geste. Trois situations, trois phrases.
+      detail = !this.canAutoPlay(state, moveCount)
+        ? this.armed
+          ? t('play.armed')
+          : t('play.nothing.pass')
+        : this.autoDelay() > AUTO_MS
+          ? t('play.nothing.card')
+          : t('play.nothing.hint')
     } else if (mine && moveCount === 1) {
       title = t('play.youRolled', { dice: state.dice ?? '' })
-      detail = t('play.pickOne')
+      detail = !this.canAutoPlay(state, moveCount)
+        ? this.armed
+          ? t('play.armed')
+          : t('play.pickOne.tap')
+        : this.autoDelay() > AUTO_MS
+          ? t('play.pickOne.card')
+          : t('play.pickOne')
     } else if (mine) {
       title = t('play.youRolled', { dice: state.dice ?? '' })
       detail = t('play.pickMany')
@@ -2248,9 +2321,7 @@ export class App {
 
   /** Une carte est armée et ne lui manque plus rien : le dé peut la lâcher. */
   private armedReady(): boolean {
-    const armed = this.armed
-    if (!armed) return false
-    return POWERS[armed.power].target !== 'cheval' || armed.pawnId !== undefined
+    return armedReady(this.armed)
   }
 
   // ─────────────────────────── le temps de réflexion ───────────────────────────
@@ -2305,10 +2376,9 @@ export class App {
    * seul coup possible, le tour se déroule tout seul après un temps de lecture.
    * Seul l'appareil qui contrôle le siège agit — les autres regardent.
    *
-   * **Une carte en main est un choix**, et il suffit à annuler l'automatisme :
-   * le seul coup possible était joué six cents millisecondes après le lancer, et
-   * le rejeu qu'on gardait pour un mauvais dé partait avec le tour. Une carte
-   * armée aussi : le doigt est sur le plateau, pas sur le dé.
+   * Une carte jouable en main ne l'empêche pas ; elle rallonge le délai, le
+   * temps qu'un doigt puisse arriver avant lui (voir `autoDelay`). Toucher une
+   * carte annule le coup programmé — c'est ce que fait le gestionnaire d'appui.
    */
   private scheduleObvious(state: GameState, moves: Move[]): void {
     if (this.autoAt === state.seq) return
@@ -2323,7 +2393,7 @@ export class App {
       if (!now || now.seq !== state.seq || !this.session!.myTurn || now.phase !== 'moving') return
       const move = moves[0]
       this.session!.dispatch(move ? { type: 'move', pawnId: move.pawnId } : { type: 'pass' })
-    }, AUTO_MS)
+    }, this.autoDelay())
   }
 
   /** Peint une face sur le dé, sans le retirer du DOM : l'animation survit. */

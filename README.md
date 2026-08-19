@@ -33,7 +33,7 @@ lit (voir `DETOURS` dans `app.ts`).
 | Variante | Plateau | Sortie | Particularités |
 |---|---|---|---|
 | **Petits chevaux** | 56 cases | 6 | Règle française. Une case, un cheval. Seules les cases de départ protègent. |
-| **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, barrages à deux pions, rejeu sur capture et sur arrivée. |
+| **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, deux pions par case, rejeu sur capture et sur arrivée. |
 | **Rapide** | 40 cases | 1 ou 6 | Arrivée sans compte exact. Parties courtes, deux chevaux. |
 
 Les règles sont des **données**, pas du code : voir `src/game/variants.ts`. Ajouter
@@ -59,7 +59,7 @@ Même grille de 15×15, mêmes écuries, mêmes escaliers de six marches : quatr
 cases d'écart, et deux jeux différents. `board.test.ts` fixe les deux, coordonnée
 par coordonnée, pour qu'un remaniement de géométrie ne les fasse pas dériver.
 
-### Deux règles qu'on croit interchangeables et qui ne le sont pas
+### Une case, un cheval — et rien qui barre la route
 
 **Une case, un cheval** (français). « Deux chevaux ne peuvent pas occuper la même
 case ; s'il s'agit de vos propres chevaux, l'un reste derrière l'autre. » Un coup
@@ -67,11 +67,14 @@ qui amènerait un cheval sur une case tenue par un cheval qu'il ne peut pas mang
 — le sien, ou un adversaire sur sa case de départ — n'est tout simplement pas
 jouable. L'arrivée fait exception : c'est là que les quatre se rejoignent.
 
-**Les barrages** (Ludo). Deux pions d'une même couleur sur une case forment un
-mur qu'aucun pion **adverse** ne peut franchir ni occuper. Le Ludo ne peut donc
-pas connaître la règle précédente : empiler deux pions est précisément ce qui
-fabrique le barrage. Et un barrage n'arrête jamais son propriétaire — sinon en
-poser un reviendrait à s'enfermer derrière, et personne n'en poserait.
+**Aucun barrage**, nulle part. Le Ludo et la variante rapide laissent deux pions
+d'une même couleur partager une case ; cela ne dresse aucun mur. On franchit une
+pile, on peut s'arrêter dessus, et l'on y mange alors ce qui s'y trouvait.
+
+La règle internationale des barrages a existé ici, et elle a été retirée : deux
+pions qu'on ne peut ni manger ni contourner arrêtent la table entière, et une
+partie arrêtée n'est pas une partie difficile. `engine.test.ts` garde le cas —
+franchir *et* s'arrêter — pour qu'elle ne revienne pas par accident.
 
 ## La forme du plateau
 

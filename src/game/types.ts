@@ -96,13 +96,6 @@ export type Variant = {
   /** Les 4 cases de départ protègent de la capture. */
   startSquaresAreSafe: boolean
   /**
-   * Deux pions d'un même joueur sur une case forment un barrage : aucun pion
-   * **adverse** ne peut s'y arrêter ni le franchir. Le barrage n'arrête jamais
-   * son propriétaire — c'est un mur qu'on dresse contre les autres, pas une
-   * case qu'on se condamne à soi-même.
-   */
-  blockades: boolean
-  /**
    * Une case, un cheval.
    *
    * La règle française : « deux chevaux ne peuvent pas occuper la même case ;
@@ -112,8 +105,8 @@ export type Variant = {
    *
    * L'arrivée fait exception, évidemment : c'est là que les quatre se rejoignent.
    *
-   * Le Ludo ne connaît pas cette règle, et ne peut pas la connaître : empiler
-   * deux pions d'une même couleur est exactement ce qui y forme un barrage.
+   * Le Ludo, lui, laisse deux pions d'une même couleur partager une case : on
+   * y avance en file plutôt que de rester coincé derrière les siens.
    */
   onePerSquare: boolean
   /** L'entrée à l'arrivée exige le compte exact (sinon le coup est illégal). */
