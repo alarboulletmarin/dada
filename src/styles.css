@@ -831,6 +831,42 @@ input:disabled {
   color: rgba(var(--ink-rgb), 0.28);
 }
 
+/* ── le QR de la partie ─────────────────────────────────────────────────────
+   Un carré posé sur une plaque blanche, code écrit dessous. La plaque tient
+   toute la largeur qu'on peut lui donner sans qu'elle déborde du bras tendu :
+   plus le module est gros, plus le lecteur va vite, et c'est tout ce qu'on
+   attend d'un QR affiché à trois personnes penchées sur un téléphone. */
+.qr__sheet {
+  position: relative; /* la croix de fermeture se pose dans son coin */
+  gap: 14px;
+}
+
+/* La croix de fermeture flotte dans le coin : le titre s'écarte pour ne pas
+   passer dessous, comme celui du catalogue des pouvoirs. */
+.qr__title {
+  margin: 0;
+  padding-inline: 44px;
+  text-align: center;
+}
+
+/* Blanche même la nuit, et c'est voulu : ce carré est une cible d'appareil
+   photo, pas un élément de décor. Voir `showQr` dans `app.ts`. */
+.qr__plaque {
+  align-self: center;
+  width: min(100%, 340px);
+  padding: 8px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 5px 0 var(--shade);
+}
+
+.qr__plaque svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 /* ─────────────────────────── salon ─────────────────────────── */
 
 .seats {
