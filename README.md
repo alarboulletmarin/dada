@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 391 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR
+npm test         # 395 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR, portraits
 npm run build    # vérification de types puis build de production
 ```
 
@@ -271,6 +271,30 @@ tour à coup unique redemande une confirmation jusqu'à la fin de la partie. Le
 cas qui fixe la durée est « rien à jouer, mais un rejeu en main » : il faut lire
 la ligne, comprendre qu'on peut relancer, et atteindre la carte.
 
+### Une tête par joueur
+
+Quatre lignes de texte, c'est un formulaire ; quatre visages, c'est une table.
+Chaque joueur — humain, bot, ami qui frappe à la porte — a donc un portrait à
+côté de son nom, dans le salon, sur sa carte pendant la partie, au tableau
+d'arrivée et devant ce qu'il dit dans le chat.
+
+Le pion garde sa couleur et sa forme : c'est lui qu'on retrouve sur le plateau,
+et une tête de trois millimètres au coin d'une case ne serait la tête de
+personne. Le portrait dit **qui**, le pion dit **lesquels sont à lui**.
+
+Le portrait **se tire du nom**, et de rien d'autre. Ce n'est pas un raccourci :
+un tirage au sort vivrait dans l'état du salon, il faudrait le transmettre, le
+fusionner à chaque changement d'hôte, et un ami resté sur la version d'avant
+verrait quatre cases vides. Le nom, lui, est déjà là et arrive partout en même
+temps — chaque téléphone dessine le même visage dans son coin, sans qu'on ait à
+en dire un mot sur le réseau. Le hasard n'y perd rien : personne ne devine ce
+que donne « Léa », et Léa a la même tête d'une partie à l'autre. Qui n'aime pas
+la sienne se renomme, et en tire une autre.
+
+Les dessins viennent de **DiceBear** (jeu *Big Smile* d'Ashley Seo) et sont
+empaquetés avec le jeu : rien n'est appelé en ligne, les portraits marchent dans
+le métro comme le reste. Voir `src/ui/avatar.ts` et `THIRD-PARTY.md`.
+
 ## La feuille de match
 
 L'écran de fin ne dit pas seulement qui a gagné : il donne, par joueur, les
@@ -330,6 +354,7 @@ src/net/      transport pair-à-pair et orchestration de la partie
 src/ui/       écrans, plateau, animations
   rules-text.ts le règlement complet — un document, pas des libellés
   qr.ts         le carré du salon : un encodeur QR entier, sans dépendance
+  avatar.ts     le portrait d'un joueur, tiré de son nom
 ```
 
 **Un seul arbitre.** L'appareil hôte détient l'état et applique les coups ; les

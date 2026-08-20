@@ -13,6 +13,8 @@
     "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.3",
     "trystero": "^0.25.3"
   },
   "devDependencies": {

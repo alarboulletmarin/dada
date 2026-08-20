@@ -29,6 +29,7 @@ import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
 import { icon, type IconName } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
+import { avatar } from './avatar.ts'
 import { qrCode, type Qr } from './qr.ts'
 import { renderRulebook } from './rulebook.ts'
 import { swipeAway } from './swipe.ts'
@@ -977,6 +978,10 @@ export class App {
           'div',
           { class: `seat${p.connected ? '' : ' offline'}` },
           this.token(p.seat),
+          // Le portrait touche le champ du nom, et change avec lui : on se
+          // renomme jusqu'à tomber sur une tête qui plaît, et c'est la moitié
+          // du plaisir de cet écran.
+          avatar(p.name, 34),
           nameField,
           h('span', {
             class: 'tag',
@@ -1098,7 +1103,10 @@ export class App {
           h(
             'div',
             { class: 'request__who' },
-            this.token(null, 'ghost'),
+            // Son portrait plutôt qu'un pion vide : il n'a pas encore de siège,
+            // donc pas de couleur, et « quelqu'un demande à entrer » se lit
+            // mieux avec une tête qu'avec un rond en pointillés.
+            avatar(request.name, 34),
             h('strong', { text: request.name }),
           ),
           h(
@@ -2252,6 +2260,7 @@ export class App {
           style: this.seatVars(seat),
         },
         this.token(seat),
+        avatar(p.name, 28),
         h(
           'div',
           { class: 'body' },
@@ -3036,6 +3045,7 @@ export class App {
               },
               h('span', { class: 'n', text: String(i + 1) }),
               this.token(seat),
+              avatar(state.players.find((p) => p.seat === seat)?.name ?? '', 34),
               h('span', { class: 'who', text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
               h('span', { class: 'score', text: `${done(seat)}/${state.variant.pawnsPerPlayer}` }),
             ),
@@ -3296,7 +3306,20 @@ export class App {
         class: `chat__msg${mine ? ' mine' : ''}${grouped ? ' grouped' : ''}${solo ? ' solo' : ''}`,
         style: seat === undefined ? {} : this.seatVars(seat),
       },
-      grouped || mine ? null : h('span', { class: 'chat__author', text: message.name }),
+      grouped || mine
+        ? null
+        : h(
+            'span',
+            { class: 'chat__author' },
+            // La bête de l'auteur, dans sa pastille : le nom seul obligeait à
+            // relire pour savoir qui parlait, alors que la table entière est
+            // déjà rangée par bêtes sur l'écran d'à côté.
+            // Le portrait suit le nom PORTÉ PAR LE MESSAGE, pas le siège : c'est
+            // déjà le principe de la ligne d'à côté, et un renommage ne doit pas
+            // rhabiller ce qui a été dit avant.
+            avatar(message.name, 16),
+            h('span', { text: message.name }),
+          ),
       h(
         'div',
         { class: 'chat__bubble' },
