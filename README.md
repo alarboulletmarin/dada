@@ -8,7 +8,7 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 391 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR
+npm test         # 398 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR, portraits
 npm run build    # vérification de types puis build de production
 ```
 
@@ -271,6 +271,44 @@ tour à coup unique redemande une confirmation jusqu'à la fin de la partie. Le
 cas qui fixe la durée est « rien à jouer, mais un rejeu en main » : il faut lire
 la ligne, comprendre qu'on peut relancer, et atteindre la carte.
 
+### Une tête par joueur
+
+Quatre lignes de texte, c'est un formulaire ; quatre visages, c'est une table.
+Chaque joueur — humain, bot, ami qui frappe à la porte — a donc un portrait à
+côté de son nom, dans le salon, sur sa carte pendant la partie, au tableau
+d'arrivée et devant ce qu'il dit dans le chat.
+
+Le pion garde sa couleur et sa forme : c'est lui qu'on retrouve sur le plateau,
+et une tête de trois millimètres au coin d'une case ne serait la tête de
+personne. Le portrait dit **qui**, le pion dit **lesquels sont à lui**.
+
+Le portrait est **tiré au sort** à la création du siège : une nouvelle partie
+donne une nouvelle table de têtes. Et il se **relance** — dans le salon, le
+portrait est lui-même le bouton qui le change, avec une pastille au coin pour le
+dire. On tape jusqu'à en trouver une qui plaît, la sienne ou n'importe laquelle
+si l'on est l'hôte.
+
+**Ce qui voyage n'est pas le dessin, c'est le numéro du tirage** — un entier de
+seize bits par siège, dans le salon, à côté du nom. Chaque téléphone recompose
+le portrait de son côté et retombe forcément sur le même. Un dessin transmis
+pèserait deux kilo-octets par joueur et par publication du salon, pour une image
+que tout le monde sait refaire.
+
+Le nom entre dans le calcul avec le tirage, et il y sert : à tirage égal, Léa a
+la même tête, et se renommer suffit à en changer. Sans lui, deux sièges créés
+dans la même milliseconde ne se distingueraient que par un nombre.
+
+Le tirage sort d'un `Math.random()`, seul endroit du jeu qui s'y autorise — la
+règle de la graine déterministe vaut pour l'état de la **partie**, qui doit se
+rejouer à l'identique ; un portrait n'entre dans aucune décision de règle et ne
+se rejoue jamais. Le champ est optionnel : un ami resté sur la version d'avant
+envoie un salon qui n'en porte pas, et les portraits retombent alors sur le nom
+seul plutôt que de disparaître.
+
+Les dessins viennent de **DiceBear** (jeu *Big Smile* d'Ashley Seo) et sont
+empaquetés avec le jeu : rien n'est appelé en ligne, les portraits marchent dans
+le métro comme le reste. Voir `src/ui/avatar.ts` et `THIRD-PARTY.md`.
+
 ## La feuille de match
 
 L'écran de fin ne dit pas seulement qui a gagné : il donne, par joueur, les
@@ -330,6 +368,7 @@ src/net/      transport pair-à-pair et orchestration de la partie
 src/ui/       écrans, plateau, animations
   rules-text.ts le règlement complet — un document, pas des libellés
   qr.ts         le carré du salon : un encodeur QR entier, sans dépendance
+  avatar.ts     le portrait d'un joueur, tiré de son nom
 ```
 
 **Un seul arbitre.** L'appareil hôte détient l'état et applique les coups ; les

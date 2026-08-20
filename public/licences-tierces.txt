@@ -5,7 +5,8 @@ Le code de Dada est distribué sous licence GNU AGPL-3.0-or-later
 (fichier LICENSE du dépôt : https://github.com/alarboulletmarin/dada).
 
 Ce fichier couvre ce que le site servi redistribue avec lui et qui porte ses
-propres conditions : la bibliothèque pair-à-pair et les deux fontes empaquetées.
+propres conditions : la bibliothèque pair-à-pair, les deux fontes empaquetées,
+et la fabrique de portraits avec le jeu de dessins qu'elle assemble.
 La minification efface les commentaires du source, donc sans ce fichier le
 bundle partirait avec le code et sans les notices que ces licences exigent.
 
@@ -38,6 +39,53 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+DiceBear — fabrique de portraits (le code qui assemble les pièces)
+Copyright (c) Florian Körner
+Licence : MIT
+Source : https://github.com/dicebear/dicebear
+--------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2024 Florian Körner
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+Big Smile — le dessin des portraits (coupes, teints, bouches, accessoires)
+Copyright (c) Ashley Seo — http://www.ashleyseo.com/
+Licence : Creative Commons Attribution 4.0 International (CC BY 4.0)
+Source : https://www.figma.com/community/file/881358461963645496
+--------------------------------------------------------------------------------
+
+Les pièces de ce jeu de dessins sont redistribuées telles quelles et
+assemblées à l'exécution selon le nom du joueur ; aucune n'est retouchée.
+
+Vous êtes autorisé à partager et adapter ce matériel, y compris à des fins
+commerciales, à condition de créditer l'auteur, d'indiquer si des
+modifications ont été apportées, et de fournir un lien vers la licence.
+
+Texte complet de la licence :
+https://creativecommons.org/licenses/by/4.0/legalcode
 
 --------------------------------------------------------------------------------
 Baloo 2 — fonte des titres
