@@ -29,6 +29,7 @@ import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
 import { icon, type IconName } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
+import { qrCode, type Qr } from './qr.ts'
 import { renderRulebook } from './rulebook.ts'
 import { swipeAway } from './swipe.ts'
 import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
@@ -106,6 +107,51 @@ const SHAPE_PATHS: Record<BoardShape, string> = {
   // porte huit. Une vignette n'a pas à être une maquette, elle a à être lisible.
   serpent:
     'M12 3.2c2 2 5.6.4 7 1.8s-.2 5 1.8 7c-2 2-.4 5.6-1.8 7s-5-.2-7 1.8c-2-2-5.6-.4-7-1.8s.2-5-1.8-7c2-2 .4-5.6 1.8-7s5 .2 7-1.8Z',
+}
+
+/**
+ * La marge blanche autour d'un QR, en modules.
+ *
+ * Quatre, comme le veut le standard : c'est elle qui dit au lecteur où le
+ * symbole s'arrête. Un carré collé au bord de sa boîte se lit mal, et parfois
+ * pas du tout — elle fait donc partie du dessin, et non du remplissage CSS
+ * qui l'entoure.
+ */
+const QR_QUIET = 4
+
+/**
+ * Le symbole, en un seul tracé.
+ *
+ * Un rectangle par module ferait deux mille nœuds et laisserait, au moindre
+ * arrondi de rendu, des coutures blanches entre les modules voisins — assez
+ * pour qu'un lecteur hésite. Un tracé unique dont les carrés se touchent n'a
+ * pas ces coutures, et `crispEdges` cale ce qui reste sur la grille de pixels.
+ */
+function qrSvg(qr: Qr): SVGSVGElement {
+  const span = qr.size + QR_QUIET * 2
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', `0 0 ${span} ${span}`)
+  svg.setAttribute('shape-rendering', 'crispEdges')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+
+  const paper = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+  paper.setAttribute('width', String(span))
+  paper.setAttribute('height', String(span))
+  paper.setAttribute('fill', '#fff')
+
+  let d = ''
+  for (let y = 0; y < qr.size; y++) {
+    for (let x = 0; x < qr.size; x++) {
+      if (qr.dark[y * qr.size + x]) d += `M${x + QR_QUIET} ${y + QR_QUIET}h1v1h-1z`
+    }
+  }
+  const modules = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  modules.setAttribute('d', d)
+  modules.setAttribute('fill', '#000')
+
+  svg.append(paper, modules)
+  return svg
 }
 
 /**
@@ -1156,8 +1202,25 @@ export class App {
     )
   }
 
-  /** Le code, en grand, avec de quoi l'envoyer en un geste. */
+  /**
+   * Le code, en grand, avec les deux façons d'inviter.
+   *
+   * Elles ne s'adressent pas aux mêmes gens, et c'est pourquoi elles ne sont
+   * pas sur la même ligne. Le QR est pour la table : on tend le téléphone, on
+   * vise, on est dedans — aucun code à dicter, aucune faute de frappe
+   * possible. Partager et copier sont pour les absents, à qui il faut de
+   * toute façon envoyer quelque chose.
+   *
+   * Le carré ne s'affiche pas tout seul, pas plus que le code ne se copie
+   * tout seul : il prend un écran entier, et un salon qui l'ouvrirait de
+   * lui-même cacherait la table à celui qui la tient.
+   */
   private codeCard(code: string): HTMLElement {
+    // Un lien d'invitation ne dépasse jamais la version 9 du standard ; si
+    // l'adresse d'hébergement était démesurée, le bouton disparaît plutôt que
+    // de promettre un carré qu'on ne saurait pas dessiner.
+    const qr = qrCode(this.linkFor(code))
+
     return h(
       'div',
       { class: 'card' },
@@ -1167,11 +1230,21 @@ export class App {
         { class: 'code-boxes' },
         ...code.split('').map((c) => h('span', { text: c })),
       ),
+      qr &&
+        h(
+          'button',
+          {
+            class: 'btn small green',
+            on: { click: () => this.showQr(code, qr) },
+          },
+          icon('qr', 22),
+          t('lobby.qr'),
+        ),
       h(
         'div',
         { class: 'row' },
         h('button', {
-          class: 'btn small green',
+          class: 'btn small',
           text: t('lobby.share'),
           on: { click: () => void this.share(code) },
         }),
@@ -1183,6 +1256,77 @@ export class App {
       ),
       h('p', { class: 'hint', text: t('lobby.code.hint') }),
     )
+  }
+
+  /**
+   * Le QR de la partie, en grand.
+   *
+   * **Noir sur blanc, quel que soit le thème.** Ce carré n'est pas un dessin :
+   * c'est une cible pour un appareil photo. Un QR clair sur fond sombre est
+   * lu par certains lecteurs et par d'autres non, et l'on ne saurait pas
+   * lesquels — la plaque reste donc blanche même la nuit, et l'écran qui
+   * s'allume est ce qui se scanne le mieux.
+   *
+   * **L'écran reste allumé.** On tend le téléphone à trois personnes qui
+   * cherchent leur appareil photo : la veille arriverait exactement là.
+   */
+  private showQr(code: string, qr: Qr): void {
+    if (document.querySelector('.overlay.qr')) return
+
+    const close = (): void => {
+      removeEventListener('keydown', onKey)
+      setKeepAwake(this.screen === 'play')
+      overlay.remove()
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') close()
+    }
+
+    const grab = h(
+      'div',
+      { class: 'sheet__grab' },
+      h('span', { class: 'sheet__grip', attrs: { 'aria-hidden': 'true' } }),
+      h('h2', { class: 'qr__title', text: t('lobby.qr.title') }),
+    )
+    const sheet = h(
+      'div',
+      { class: 'sheet qr__sheet' },
+      this.sheetClose(close),
+      grab,
+      h(
+        'div',
+        {
+          class: 'qr__plaque',
+          attrs: { role: 'img', 'aria-label': t('lobby.qr.aria', { code: code.split('').join(' ') }) },
+        },
+        qrSvg(qr),
+      ),
+      h('p', { class: 'hint center', text: t('lobby.qr.hint') }),
+      // Le code sous le carré, et non à sa place : celui qui est assis en face
+      // scanne, celui qui est au bout de la table lit. Deux gestes, un écran.
+      h(
+        'div',
+        { class: 'code-boxes' },
+        ...code.split('').map((c) => h('span', { text: c })),
+      ),
+    )
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay qr',
+        attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('lobby.qr.title') },
+        on: {
+          click: (ev) => {
+            if (ev.target === overlay) close()
+          },
+        },
+      },
+      sheet,
+    )
+    swipeAway(grab, { moves: sheet, way: 'down', tapAway: false, onDismiss: close })
+    addEventListener('keydown', onKey)
+    setKeepAwake(true)
+    document.body.append(overlay)
   }
 
   /** La pastille d'une variante : le dé, le pion, l'éclair. */

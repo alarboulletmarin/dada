@@ -8,15 +8,16 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 353 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause
+npm test         # 391 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR
 npm run build    # vérification de types puis build de production
 ```
 
 ## Comment jouer
 
 - **Sur cet appareil** — un seul téléphone qu'on se passe. Aucun réseau requis.
-- **En ligne** — l'un crée une partie, les autres saisissent le code à 8 caractères
-  (ou ouvrent le lien partagé) ; l'hôte les accepte à sa table. Jusqu'à 4 joueurs.
+- **En ligne** — l'un crée une partie, les autres saisissent le code à 8 caractères,
+  ouvrent le lien partagé, ou scannent le QR code que l'hôte affiche ; l'hôte les
+  accepte à sa table. Jusqu'à 4 joueurs.
 - **Ordinateurs** — l'hôte peut compléter la table quand on n'est que deux ou trois.
 
 Sur un seul téléphone, la partie se met **en pause** : le bot qui allait jouer, le
@@ -328,6 +329,7 @@ src/net/      transport pair-à-pair et orchestration de la partie
   presence.ts   les délais : dix secondes pour jouer, quand un bot prend la main
 src/ui/       écrans, plateau, animations
   rules-text.ts le règlement complet — un document, pas des libellés
+  qr.ts         le carré du salon : un encodeur QR entier, sans dépendance
 ```
 
 **Un seul arbitre.** L'appareil hôte détient l'état et applique les coups ; les
@@ -422,6 +424,42 @@ mobiles peuvent très bien ne jamais réussir à se joindre — l'app le dit alo
 franchement plutôt que de tourner dans le vide.
 
 En attendant, le mode « sur cet appareil » fonctionne toujours, hors ligne inclus.
+
+## Le code, le lien, le carré
+
+Trois portes vers le même salon, parce qu'inviter n'est pas toujours la même
+chose. Le **code** se dicte au téléphone à qui est loin. Le **lien** s'envoie
+dans la conversation où l'on se donne rendez-vous. Le **QR code**, lui, est pour
+ceux qui sont déjà là : on tend l'écran, ils visent, ils sont dedans. Rien à
+dicter, rien à retaper, aucune faute de frappe sur un code à huit caractères.
+
+**Il ne s'affiche pas tout seul.** Le carré prend un écran entier, et l'hôte qui
+tient la table a autre chose à y regarder — les demandes qui arrivent, les
+sièges qui se remplissent. C'est donc un bouton, comme le code est un bouton :
+on le montre pendant les dix secondes où les autres cherchent leur appareil
+photo, puis on le referme d'un geste vers le bas.
+
+**Encodé ici, pas importé.** `qr.ts` est un encodeur complet — mode octet,
+correction M, versions 1 à 9 — pour quatre cents lignes, commentaires compris. La
+moindre bibliothèque du genre en sert quarante versions et huit modes, pèse
+davantage, et coûterait une dépendance de plus dans un projet qui n'en a qu'une.
+Un témoin figé dans `qr.test.ts` fixe le symbole d'un lien d'invitation module
+par module : il a été vérifié contre un encodeur du commerce, qui rend
+exactement cette grille, et relu par un lecteur, qui y retrouve le lien.
+
+**Noir sur blanc, même la nuit.** Ce carré n'est pas un élément de décor, c'est
+une cible d'appareil photo : un QR clair sur fond sombre est lu par certains
+lecteurs et par d'autres non, et l'on ne saurait pas lesquels. La plaque reste
+donc blanche quel que soit le thème — et l'écran ne s'éteint pas tant qu'elle
+est ouverte, sinon la veille tomberait exactement au moment où trois personnes
+sont en train de viser.
+
+**Pas de lecteur dans le jeu.** Scanner un QR est un geste que l'appareil photo
+de tous les téléphones sait faire depuis l'écran d'accueil, sans rien ouvrir.
+Le faire nous-mêmes demanderait la permission caméra, ne marcherait que sur les
+navigateurs qui connaissent `BarcodeDetector` — Chrome, en somme — et
+remplacerait un geste que les gens ont déjà par un geste qu'il faudrait leur
+apprendre.
 
 ## Qui entre dans le salon
 
