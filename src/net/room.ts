@@ -13,6 +13,7 @@
 import { getRelaySockets, joinRoom, selfId } from 'trystero/nostr'
 import type { BoardShape } from '../game/board.ts'
 import type { Action, GameState, Seat } from '../game/types.ts'
+import { turnServers } from './turn.ts'
 
 /**
  * Le nom de scène du jeu sur les relais publics : c'est lui qui isole nos
@@ -115,13 +116,11 @@ export type Room = {
  * (voir .env.example). Un compte gratuit à identifiants statiques suffit : les
  * fournisseurs à jetons éphémères exigent un serveur, ce que ce jeu n'a pas.
  */
-const turnConfig = (() => {
-  const urls = import.meta.env.VITE_TURN_URLS
-  const username = import.meta.env.VITE_TURN_USER
-  const credential = import.meta.env.VITE_TURN_PASS
-  if (!urls || !username || !credential) return undefined
-  return [{ urls: urls.split(',').map((u) => u.trim()), username, credential }]
-})()
+const turnConfig = turnServers(
+  import.meta.env.VITE_TURN_URLS,
+  import.meta.env.VITE_TURN_USER,
+  import.meta.env.VITE_TURN_PASS,
+)
 
 /**
  * Relais Nostr pour la mise en relation.
