@@ -11,6 +11,10 @@
  * forme, celles qu'on retrouve sur le plateau, et c'est à lui qu'on reconnaît
  * SES chevaux. Le portrait, lui, dit QUI c'est. Les deux voisinent.
  *
+ * Il est **tiré au sort** — à la création du siège, et à chaque appui sur le
+ * bouton « relancer » du salon. Ce qui voyage n'est pas le dessin mais le
+ * numéro du tirage : voir `avatarUri` juste plus bas.
+ *
  * **Ce sont les seuls dessins du jeu qui ne sortent pas d'ici.** Le reste de
  * l'iconographie est tracé à la main dans `icons.ts`, et pour de bonnes raisons
  * — mais une icône de barre d'outils tient en quatre traits d'encre, pas un
@@ -41,20 +45,28 @@ const DRAWN = new Map<string, string>()
 /**
  * Le portrait d'un nom, en `data:` — l'image entière, sans requête.
  *
- * Tiré du nom et de rien d'autre : pas d'un `Math.random()` au moment de
- * s'asseoir, ni d'un champ de plus dans le salon. Deux raisons, et la seconde
- * est la vraie : un tirage vivrait dans l'état du salon, il faudrait le
- * transmettre, le fusionner à chaque changement d'hôte, et un ami resté sur la
- * version d'avant verrait quatre cases vides. Un nom, lui, est déjà là et
- * arrive partout en même temps ; chacun dessine le même visage dans son coin,
- * sans qu'on ait à en dire un mot sur le réseau.
+ * Deux ingrédients, et pas un de plus : le **nom**, et le **tirage** du siège
+ * (`face` dans le salon, voir `room.ts`). Ce qui n'est PAS ici est aussi
+ * important : aucun dessin ne voyage sur le réseau, seulement ce petit nombre.
+ * Chaque téléphone recompose le portrait de son côté et retombe forcément sur
+ * le même — un dessin transmis pèserait deux kilo-octets par joueur et par
+ * publication du salon, pour une image que tout le monde sait refaire.
  *
- * Le hasard n'y perd rien — personne ne devine ce que donne « Léa » — et on y
- * gagne une identité stable : d'une partie à l'autre, Léa a la même tête. Qui
- * n'aime pas la sienne se renomme, et en tire une autre.
+ * Le tirage est ce qui rend les visages **aléatoires** : il est tiré au sort à
+ * la création du siège, donc une nouvelle partie donne une nouvelle table de
+ * têtes, et le bouton « relancer » du salon en redemande un.
+ *
+ * Le nom est ce qui les rend **stables** : à tirage égal, Léa a la même tête,
+ * et se renommer suffit à en changer. Sans lui, deux sièges créés dans la même
+ * milliseconde ne se distingueraient que par un nombre.
+ *
+ * `face` vaut 0 par défaut, et c'est un vrai cas : un ami qui frappe à la porte
+ * n'a pas encore de siège, donc pas de tirage — on lui montre le portrait de
+ * son nom seul, en attendant qu'un siège lui en donne un. Un pair resté sur une
+ * version d'avant n'en envoie pas non plus.
  */
-export function avatarUri(name: string): string {
-  const seed = name.trim().toLowerCase()
+export function avatarUri(name: string, face = 0): string {
+  const seed = `${name.trim().toLowerCase()}#${face}`
   const drawn = DRAWN.get(seed)
   if (drawn !== undefined) return drawn
   const uri = createAvatar(bigSmile, { seed }).toDataUri()
@@ -70,9 +82,9 @@ export function avatarUri(name: string): string {
  * déplaçable, aussi : sur un plateau où l'on fait glisser des chevaux, une
  * image qu'on peut arracher de sa carte n'a rien à faire.
  */
-export function avatar(name: string, size = 30): HTMLImageElement {
+export function avatar(name: string, face = 0, size = 30): HTMLImageElement {
   const img = new Image(size, size)
-  img.src = avatarUri(name)
+  img.src = avatarUri(name, face)
   img.alt = ''
   img.className = 'avatar'
   img.draggable = false

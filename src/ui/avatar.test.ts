@@ -26,6 +26,24 @@ describe('portraits', () => {
     expect(avatarUri('  Léa ')).toBe(avatarUri('léa'))
   })
 
+  it('change de visage quand le tirage change', () => {
+    // C'est tout l'effet du bouton « relancer », et celui d'une partie neuve :
+    // même nom, tirage différent, visage différent.
+    expect(avatarUri('Léa', 1)).not.toBe(avatarUri('Léa', 2))
+  })
+
+  it('rend le même visage pour le même couple nom + tirage', () => {
+    // La vraie garantie : deux téléphones qui reçoivent le même salon dessinent
+    // la même table de portraits, sans que le dessin ait voyagé.
+    expect(avatarUri('Léa', 4242)).toBe(avatarUri('Léa', 4242))
+  })
+
+  it('sans tirage, retombe sur le portrait du nom seul', () => {
+    // Le cas d'un ami qui frappe à la porte — pas encore de siège, donc pas de
+    // tirage — et celui d'un pair resté sur une version d'avant ce champ.
+    expect(avatarUri('Nino')).toBe(avatarUri('Nino', 0))
+  })
+
   it('accepte un nom vide sans rien casser', () => {
     // Un siège en cours de renommage passe par la chaîne vide : le champ se
     // vide avant d'être retapé, et l'écran se redessine entre les deux.

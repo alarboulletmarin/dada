@@ -898,6 +898,41 @@ input:disabled {
   opacity: 0.55;
 }
 
+/* Le portrait d'un siège, quand il se relance : c'est le portrait lui-même qui
+   prend le clic, et la pastille du coin dit qu'il le prend. Voir le salon dans
+   `app.ts` pour pourquoi ce n'est pas un bouton posé à côté. */
+
+.seat__face {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.seat__face:active {
+  transform: translateY(2px);
+}
+
+/* Elle mord sur le bord du portrait plutôt que de se ranger à côté : posée à
+   l'extérieur, elle poussait le champ du nom d'une pastille entière. */
+.seat__reface {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--ink);
+}
+
 .seat input {
   flex: 1;
   min-width: 0;

@@ -697,6 +697,26 @@ export class Session {
     this.listeners.onChange()
   }
 
+  /**
+   * Relance le portrait d'un siège.
+   *
+   * Mêmes droits que le renommage : son occupant, ou l'hôte. Un nouveau tirage
+   * et non le suivant d'une liste — il n'y a pas de liste, le jeu de visages est
+   * une combinatoire, et « le suivant » ne voudrait rien dire.
+   *
+   * Comme un renommage, ça repasse par le salon publié : le portrait change
+   * chez tout le monde en même temps, sinon la table verrait quatre visages
+   * différents pour la même personne.
+   */
+  reface(seat: Seat): void {
+    const player = this.lobby.players.find((p) => p.seat === seat)
+    if (!player) return
+    if (!this.isHost && player.clientId !== this.self) return
+    player.face = drawFace()
+    this.publishLobby()
+    this.listeners.onChange()
+  }
+
   addSeat(kind: 'human' | 'bot'): void {
     if (!this.isHost || this.lobby.started || this.lobby.players.length >= MAX_SEATS) return
     const seat = this.freeSeat()
@@ -1057,5 +1077,23 @@ function seatFor(
   kind: 'human' | 'bot',
   peerId: string | null = null,
 ): LobbyPlayer {
-  return { seat, name, clientId, peerId, kind, connected: true, botFill: false }
+  return { seat, name, clientId, peerId, kind, connected: true, botFill: false, face: drawFace() }
+}
+
+/**
+ * Un visage au hasard, pour un siège qui vient d'être créé.
+ *
+ * `Math.random()` alors que tout le reste du jeu tire ses nombres d'une graine
+ * (voir `rng.ts`) : c'est délibéré, et ça ne contredit rien. La règle vaut pour
+ * l'état de la PARTIE, qui doit se rejouer à l'identique depuis sa graine ; un
+ * portrait n'entre dans aucune décision de règle, ne se rejoue jamais, et sa
+ * valeur n'a pas besoin d'être recalculable — elle est tirée une fois par
+ * l'appareil qui crée le siège, puis transmise avec le salon comme un nom.
+ *
+ * Un entier court : il voyage en JSON à chaque publication du salon, et seize
+ * bits suffisent largement à ne jamais retomber deux fois de suite sur le même
+ * visage.
+ */
+function drawFace(): number {
+  return Math.floor(Math.random() * 0x10000)
 }

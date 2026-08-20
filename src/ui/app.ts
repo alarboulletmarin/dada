@@ -457,6 +457,19 @@ export class App {
     return { '--seat': `var(--seat-${seat})`, '--on': `var(--on-${seat})` } as Partial<CSSStyleDeclaration>
   }
 
+  /**
+   * Le tirage du portrait d'un siège, lu dans le SALON.
+   *
+   * Et non dans l'état de la partie, qui n'en porte pas : les noms y sont figés
+   * au lancement, alors que le salon continue de vivre derrière — c'est lui qui
+   * enregistre un renommage ou un appui sur « relancer », et il est le seul des
+   * deux à exister avant le premier lancer. 0 pour un siège inconnu, ce qui
+   * revient au portrait du nom seul.
+   */
+  private faceAt(seat: Seat): number {
+    return this.session?.lobby.players.find((p) => p.seat === seat)?.face ?? 0
+  }
+
   private token(seat: Seat | null, extra = ''): HTMLElement {
     return h('span', {
       class: `token${extra ? ` ${extra}` : ''}`,
@@ -978,10 +991,31 @@ export class App {
           'div',
           { class: `seat${p.connected ? '' : ' offline'}` },
           this.token(p.seat),
-          // Le portrait touche le champ du nom, et change avec lui : on se
-          // renomme jusqu'à tomber sur une tête qui plaît, et c'est la moitié
-          // du plaisir de cet écran.
-          avatar(p.name, 34),
+          // Le portrait EST le bouton qui le relance — sur les sièges qu'on a
+          // le droit de toucher, les mêmes que pour le nom.
+          //
+          // Un bouton posé à côté aurait été un troisième objet dans une rangée
+          // qui en porte déjà quatre, et à la taille des autres il aurait pesé
+          // plus lourd que le portrait qu'il change. La tête qu'on n'aime pas
+          // et le geste qui la change sont donc au même endroit : on tape
+          // dessus jusqu'à en trouver une qui plaît. La pastille du coin est là
+          // pour dire que ça se tape — sans elle, rien ne distingue un portrait
+          // qu'on peut relancer d'un portrait qui se regarde.
+          editable
+            ? h(
+                'button',
+                {
+                  class: 'seat__face',
+                  attrs: {
+                    'aria-label': t('lobby.reface', { name: p.name }),
+                    title: t('lobby.reface.short'),
+                  },
+                  on: { click: () => session.reface(p.seat) },
+                },
+                avatar(p.name, p.face ?? 0, 34),
+                h('span', { class: 'seat__reface' }, icon('replay', 11)),
+              )
+            : avatar(p.name, p.face ?? 0, 34),
           nameField,
           h('span', {
             class: 'tag',
@@ -1106,7 +1140,7 @@ export class App {
             // Son portrait plutôt qu'un pion vide : il n'a pas encore de siège,
             // donc pas de couleur, et « quelqu'un demande à entrer » se lit
             // mieux avec une tête qu'avec un rond en pointillés.
-            avatar(request.name, 34),
+            avatar(request.name, 0, 34),
             h('strong', { text: request.name }),
           ),
           h(
@@ -2260,7 +2294,7 @@ export class App {
           style: this.seatVars(seat),
         },
         this.token(seat),
-        avatar(p.name, 28),
+        avatar(p.name, this.faceAt(seat), 28),
         h(
           'div',
           { class: 'body' },
@@ -3045,7 +3079,7 @@ export class App {
               },
               h('span', { class: 'n', text: String(i + 1) }),
               this.token(seat),
-              avatar(state.players.find((p) => p.seat === seat)?.name ?? '', 34),
+              avatar(state.players.find((p) => p.seat === seat)?.name ?? '', this.faceAt(seat), 34),
               h('span', { class: 'who', text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
               h('span', { class: 'score', text: `${done(seat)}/${state.variant.pawnsPerPlayer}` }),
             ),
@@ -3314,10 +3348,12 @@ export class App {
             // La bête de l'auteur, dans sa pastille : le nom seul obligeait à
             // relire pour savoir qui parlait, alors que la table entière est
             // déjà rangée par bêtes sur l'écran d'à côté.
-            // Le portrait suit le nom PORTÉ PAR LE MESSAGE, pas le siège : c'est
-            // déjà le principe de la ligne d'à côté, et un renommage ne doit pas
-            // rhabiller ce qui a été dit avant.
-            avatar(message.name, 16),
+            // Le nom vient du MESSAGE et le tirage du SIÈGE, et les deux ont
+            // raison. Un renommage ne doit pas rhabiller ce qui a été dit avant
+            // — c'est déjà le principe de la ligne d'à côté — alors qu'un appui
+            // sur « relancer » change la tête de quelqu'un, y compris celle
+            // qu'il avait en parlant. 0 si son siège n'existe plus.
+            avatar(message.name, seat === undefined ? 0 : this.faceAt(seat), 16),
             h('span', { text: message.name }),
           ),
       h(
