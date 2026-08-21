@@ -80,6 +80,10 @@ const fr = {
     "L'hôte doit vous accepter à sa table. Le code amène jusqu'à la porte, c'est lui qui l'ouvre.",
   'join.denied': "L'hôte a refusé",
   'join.denied.hint': "Vous n'entrerez pas dans cette partie. Vérifiez le code, ou demandez-lui un nouveau lien.",
+  'join.watching': 'Vous regardez la partie',
+  'join.watching.hint':
+    "La table est pleine, ou la partie a déjà commencé : il n'y a pas de siège pour vous cette fois-ci. Vous pouvez suivre la partie, ou revenir avec un autre code.",
+  'join.name.hint': 'Vos amis vous reconnaîtront à ce prénom.',
 
   'lobby.title': 'Salon',
   'lobby.code': 'Code à partager',
@@ -119,6 +123,11 @@ const fr = {
   'link.otherCode': 'Autre code',
   'link.failed': 'La connexion a échoué.',
   'link.blocked': 'Vos deux réseaux refusent la connexion directe.',
+  'link.host.lost': "Connexion à l'hôte perdue",
+  'link.host.lost.hint': 'Reconnexion en cours… Votre siège reste le vôtre.',
+  'link.reconnect': 'Reconnecter',
+  'link.silent.one': '{name} ne répond plus',
+  'link.silent': '{n} joueurs ne répondent plus',
 
   'chat.title': 'Chat',
   'chat.placeholder': 'Écrire un message…',
@@ -166,6 +175,9 @@ const fr = {
   'play.bot': 'tenu par un bot',
   'play.takeBack': 'Reprendre',
   'play.takeBack.label': 'Reprendre la main sur vos chevaux',
+  'play.timeout': 'Temps écoulé',
+  'play.timeout.hint': 'le tour de {name} saute',
+  'play.timeout.you': 'votre tour saute',
   'play.pause': 'Mettre la partie en pause',
 
   'pause.title': 'Partie en pause',
@@ -334,6 +346,10 @@ const fr = {
 
   'notice.hostTaken': "Vous êtes désormais l'hôte de la partie.",
   'notice.seatToBot': 'Un bot prend la place de {name}.',
+  'notice.seatToBot.you': 'Un bot prend votre place — touchez « Reprendre » pour la récupérer.',
+  'notice.linkLost': "Coup non transmis : le lien avec l'hôte est perdu.",
+  'notice.tooLate': 'Trop tard — votre tour venait de sauter.',
+  'notice.noGame': "L'arbitre reprend la partie en main — réessayez dans un instant.",
   'notice.seatBack': '{name} reprend sa place.',
 
   'theme.auto': 'Auto',
@@ -407,6 +423,10 @@ const en: Partial<Record<Key, string>> = {
     'The host has to let you in. The code takes you to the door; they open it.',
   'join.denied': 'The host said no',
   'join.denied.hint': 'You will not join this game. Check the code, or ask them for a fresh link.',
+  'join.watching': 'You are watching',
+  'join.watching.hint':
+    'The table is full, or the game has already started: there is no seat for you this time. You can follow along, or come back with another code.',
+  'join.name.hint': 'Your friends will recognise you by this first name.',
 
   'lobby.title': 'Lobby',
   'lobby.code': 'Code to share',
@@ -444,6 +464,11 @@ const en: Partial<Record<Key, string>> = {
   'link.otherCode': 'Another code',
   'link.failed': 'The connection failed.',
   'link.blocked': 'Both networks refuse a direct connection.',
+  'link.host.lost': 'Connection to the host lost',
+  'link.host.lost.hint': 'Reconnecting… Your seat stays yours.',
+  'link.reconnect': 'Reconnect',
+  'link.silent.one': '{name} is not answering',
+  'link.silent': '{n} players are not answering',
 
   'chat.title': 'Chat',
   'chat.placeholder': 'Type a message…',
@@ -491,6 +516,9 @@ const en: Partial<Record<Key, string>> = {
   'play.bot': 'held by a bot',
   'play.takeBack': 'Take over',
   'play.takeBack.label': 'Take your horses back from the bot',
+  'play.timeout': 'Time is up',
+  'play.timeout.hint': '{name}’s turn is skipped',
+  'play.timeout.you': 'your turn is skipped',
   'play.pause': 'Pause the game',
 
   'pause.title': 'Game paused',
@@ -658,6 +686,10 @@ const en: Partial<Record<Key, string>> = {
 
   'notice.hostTaken': 'You are now the host of the game.',
   'notice.seatToBot': 'A bot takes over for {name}.',
+  'notice.seatToBot.you': 'A bot takes your seat — tap “Take over” to get it back.',
+  'notice.linkLost': 'Move not sent: the link to the host is down.',
+  'notice.tooLate': 'Too late — your turn had just been skipped.',
+  'notice.noGame': 'The host is picking the game back up — try again in a moment.',
   'notice.seatBack': '{name} is back.',
 
   'theme.auto': 'Auto',

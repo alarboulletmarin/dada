@@ -202,6 +202,9 @@ const NOTICE_KEY: Record<NoticeCode, Key> = {
   moveExists: 'error.moveExists',
   linkFailed: 'link.failed',
   linkBlocked: 'link.blocked',
+  linkLost: 'notice.linkLost',
+  tooLate: 'notice.tooLate',
+  noGame: 'notice.noGame',
   hostTaken: 'notice.hostTaken',
   seatToBot: 'notice.seatToBot',
   seatBack: 'notice.seatBack',
@@ -261,6 +264,8 @@ export class App {
     boostCounts: HTMLElement[]
     hand: HTMLElement
     pauseBtn: HTMLButtonElement | null
+    /** Ce que le réseau a à dire, entre la barre du haut et le plateau. */
+    linkBar: HTMLElement
   } | null = null
   private name = localStorage.getItem(NAME_KEY) ?? ''
   /** Ce qu'on fera de la variante choisie sur l'écran « on joue à quoi ? ». */
@@ -302,6 +307,9 @@ export class App {
   private clockFrame: number | null = null
   /** La feuille de pause, tant qu'elle est à l'écran. */
   private pauseSheet: HTMLElement | null = null
+  /** Un bot tenait déjà notre siège à la passe précédente : sans ce souvenir,
+   *  la nouvelle se redirait à chaque changement d'état. */
+  private botHeldMySeat = false
 
   constructor(private root: HTMLElement) {}
 
@@ -313,15 +321,43 @@ export class App {
     addEventListener('hashchange', () => {
       const code = location.hash.replace('#', '').toUpperCase()
       if (!code || code === this.session?.lobby.code) return
-      this.closeChat()
-      this.session?.destroy()
-      this.session = null
-      this.renderJoin(code)
+      // Le même démontage que « Quitter », moins le retour à l'accueil : sans
+      // lui, les calques, la feuille de pause et l'écran maintenu allumé
+      // restaient là, posés sur la partie suivante.
+      this.teardown()
+      this.enterCode(code)
+    })
+
+    // Un téléphone qui se rendort gèle ses minuteries et laisse mourir ses
+    // liens WebRTC sans prévenir personne. Au retour, on se represente.
+    addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') this.session?.wakeUp()
+    })
+    addEventListener('online', () => {
+      this.session?.wakeUp()
+      if (this.screen === 'play') this.update()
+    })
+    // Le bandeau de lien doit pouvoir le dire tout de suite. Seulement en
+    // partie : ailleurs, un rafraîchissement fermerait l'écran qu'on lisait.
+    addEventListener('offline', () => {
+      if (this.screen === 'play') this.update()
     })
 
     const code = location.hash.replace('#', '').toUpperCase()
-    if (code) this.renderJoin(code)
+    if (code) this.enterCode(code)
     else this.renderHome()
+  }
+
+  /**
+   * Un code arrivé par un lien.
+   *
+   * Si c'est la partie qu'on vient de quitter, on y retourne directement : le
+   * siège est encore le nôtre, le prénom aussi, et redemander « Rejoindre »
+   * n'aurait servi qu'à faire retaper ce qu'on savait déjà.
+   */
+  private enterCode(code: string): void {
+    if (code === readInvite()?.code) return this.openOnline(code, false)
+    this.renderJoin(code)
   }
 
   // ─────────────────────────── session ───────────────────────────
@@ -334,8 +370,17 @@ export class App {
     }
   }
 
+  /**
+   * Le prénom est retenu à la frappe, et non au moment de continuer : changer
+   * de thème, de langue, ou aller lire les mentions redessine l'accueil, et la
+   * saisie repartait de l'ancien nom sous les doigts de qui venait de le taper.
+   *
+   * Aucun repli ici : « Joueur » est le nom d'un joueur qui n'a rien tapé, pas
+   * celui d'un joueur en train d'effacer. Le repli se pose à l'ouverture d'une
+   * partie, où il a un sens.
+   */
   private saveName(value: string): void {
-    this.name = value.trim() || 'Joueur'
+    this.name = value.trim()
     localStorage.setItem(NAME_KEY, this.name)
   }
 
@@ -349,25 +394,37 @@ export class App {
   private openLocal(): void {
     this.session = Session.local(this.name || 'Joueur 1', this.listeners())
     this.session.setVariant(this.variantId)
-    this.session.addSeat('bot')
+    this.session.addSeat('bot', t('common.bot', { n: 2 }))
     this.update()
   }
 
   private openOnline(code: string, asHost: boolean): void {
-    if (asHost) history.replaceState(null, '', `#${code}`)
+    // Pour tout le monde, et pas seulement pour l'hôte : un invité qui
+    // rechargeait sa page perdait le code de la table où il était assis.
+    history.replaceState(null, '', `#${code}`)
     this.session = Session.online(code, this.name || 'Joueur', asHost, this.listeners())
     if (asHost) this.session.setVariant(this.variantId)
     this.update()
   }
 
-  private quit(): void {
+  /**
+   * Tout ce qu'une partie laisse derrière elle : calques, minuteries, feuille
+   * de pause, écran maintenu allumé. Factorisé parce qu'on en sort par deux
+   * portes — « Quitter », et le lien d'un ami ouvert en pleine partie — et que
+   * la seconde n'en balayait que la moitié.
+   */
+  private teardown(): void {
     if (this.autoTimer) clearTimeout(this.autoTimer)
     this.autoTimer = null
     this.autoAt = -1
     document.querySelector('.cardnotes')?.remove()
+    document.querySelector('.overlay.podium')?.remove()
     this.closeHandTray()
     this.closePause()
     this.armed = null
+    // Avant de fermer quoi que ce soit : plus d'écran de jeu, donc plus rien à
+    // y reposer.
+    this.screen = null
     this.closeChat()
     this.chatUnread = 0
     this.chatBubbles.forEach((b) => clearTimeout(b.timer))
@@ -379,7 +436,12 @@ export class App {
     this.mounts = null
     this.screen = null
     this.lastDie = null
+    this.botHeldMySeat = false
     setKeepAwake(false)
+  }
+
+  private quit(): void {
+    this.teardown()
     history.replaceState(null, '', location.pathname)
     this.renderHome()
   }
@@ -395,7 +457,13 @@ export class App {
     // tour. Ce qu'on a manqué se rattrape en une passe au retour (`backToGame`).
     if (DETOURS.has(this.screen)) return
 
-    if (session.game && session.lobby.started) {
+    // Le spectateur suit la partie — c'est ce que la carte « vous regardez »
+    // lui promet, et l'hôte lui envoie déjà l'état. Sans siège il n'a ni main
+    // ni tour : le plateau se rend tout seul en lecture seule, et le bandeau
+    // rappelle où il en est. Une demande en attente ou refusée, en revanche,
+    // n'a rien à regarder : le salon, lui, sait dire pourquoi (voir `askCard`).
+    const seated = session.joinStatus === 'unknown' || session.joinStatus === 'watching'
+    if (session.game && session.lobby.started && seated) {
       if (this.screen !== 'play') this.renderPlay()
       this.refreshPlay(session.game)
     } else {
@@ -514,6 +582,9 @@ export class App {
   private askQuit(): void {
     const session = this.session
     if (!session) return this.quit()
+    // Sans siège — en attente, refusé, spectateur — il n'y a rien à quitter et
+    // personne à prévenir : la question serait une porte de plus à pousser.
+    if (session.joinStatus !== 'unknown') return this.quit()
 
     const playing = session.lobby.started && session.game !== null && session.game.phase !== 'finished'
     const others = session.lobby.players.filter((p) => p.clientId !== session.self).length
@@ -560,6 +631,7 @@ export class App {
         maxlength: '16',
         'aria-label': t('home.name.placeholder'),
       },
+      on: { input: () => this.saveName(nameInput.value) },
     })
 
     const go = (mode: 'online' | 'local') => {
@@ -832,6 +904,17 @@ export class App {
       },
     })
     const submit = h('button', { class: 'btn blue', text: t('join.action') })
+    // Sans ce champ, tous ceux qui arrivaient par un lien partagé s'asseyaient
+    // sous le nom « Joueur » : l'accueil, où le prénom se tape, avait été sauté.
+    const nameInput = h('input', {
+      value: this.name,
+      attrs: {
+        placeholder: t('home.name.placeholder'),
+        maxlength: '16',
+        'aria-label': t('home.name.placeholder'),
+      },
+      on: { input: () => this.saveName(nameInput.value) },
+    })
 
     const paint = () => {
       value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH)
@@ -851,6 +934,7 @@ export class App {
 
     const join = () => {
       if (value.length < MIN_CODE_LENGTH) return this.notify('join.tooShort')
+      this.saveName(nameInput.value)
       this.openOnline(value, false)
     }
     submit.addEventListener('click', join)
@@ -880,6 +964,13 @@ export class App {
           boxes,
           input,
         ),
+        h(
+          'div',
+          { class: 'field' },
+          h('span', { class: 'label', text: t('home.name') }),
+          nameInput,
+        ),
+        h('p', { class: 'hint', text: t('join.name.hint') }),
         submit,
         h('p', {
           class: 'hint center push',
@@ -903,11 +994,44 @@ export class App {
     // très petits écrans, et il doit rester où on l'avait laissé.
     const wasLobby = this.screen === 'lobby'
     const scrollTop = wasLobby ? this.root.querySelector('.screen')?.scrollTop : 0
+    // La feuille de match d'une manche précédente n'a rien à faire au-dessus du
+    // salon de la suivante : côté invité, elle restait posée là et le salon se
+    // redessinait dessous, invisible.
+    document.querySelector('.overlay.podium')?.remove()
     this.screen = 'lobby'
     const { lobby } = session
     const online = session.mode === 'online'
     const waiting = online && lobby.players.length === 0
     const variant = VARIANTS.find((v) => v.id === lobby.variantId) ?? VARIANTS[0]!
+
+    // Sans siège, il n'y a pas de salon : la liste des joueurs, les réglages et
+    // « en attente du lancement » décrivaient une table où l'on n'entrera
+    // peut-être jamais. Seule la réponse qu'on attend compte.
+    if (online && session.joinStatus !== 'unknown') {
+      fill(
+        this.root,
+        h(
+          'div',
+          { class: 'screen' },
+          h(
+            'div',
+            { class: 'topbar' },
+            this.backButton(() => this.askQuit(), t('lobby.quit')),
+            h('h2', { text: t('lobby.title') }),
+          ),
+          this.askCard(session),
+        ),
+      )
+      return
+    }
+
+    // Un champ en cours de saisie ne se reconstruit pas sous les doigts : le
+    // salon se redessine en entier au moindre remous, et chaque remous écrasait
+    // le prénom à moitié tapé.
+    const focused = this.root.querySelector<HTMLInputElement>('.seat input:focus')
+    const typing = focused
+      ? { seat: focused.dataset.seat ?? '', value: focused.value, at: focused.selectionStart }
+      : null
 
     const seats = h(
       'div',
@@ -916,7 +1040,11 @@ export class App {
         const editable = session.isHost || p.clientId === session.self
         const nameField = h('input', {
           value: p.name,
-          attrs: { maxlength: '16', 'aria-label': t('lobby.rename', { n: p.seat + 1 }) },
+          attrs: {
+            maxlength: '16',
+            'aria-label': t('lobby.rename', { n: p.seat + 1 }),
+            'data-seat': String(p.seat),
+          },
           on: {
             change: () =>
               session.rename(p.seat, nameField.value.trim() || t('common.player', { n: p.seat + 1 })),
@@ -993,12 +1121,17 @@ export class App {
                     h('button', {
                       class: 'btn small',
                       text: t('lobby.addPlayer'),
-                      on: { click: () => session.addSeat('human') },
+                      on: {
+                        click: () =>
+                          session.addSeat('human', t('common.player', { n: lobby.players.length + 1 })),
+                      },
                     }),
                     h('button', {
                       class: 'btn small',
                       text: t('lobby.addBot'),
-                      on: { click: () => session.addSeat('bot') },
+                      on: {
+                        click: () => session.addSeat('bot', t('common.bot', { n: lobby.players.length + 1 })),
+                      },
                     }),
                   )
                 : null,
@@ -1025,6 +1158,12 @@ export class App {
       ),
     )
     if (scrollTop) this.root.querySelector('.screen')!.scrollTop = scrollTop
+    if (!typing) return
+    const again = this.root.querySelector<HTMLInputElement>(`.seat input[data-seat="${typing.seat}"]`)
+    if (!again) return
+    again.value = typing.value
+    again.focus()
+    if (typing.at !== null) again.setSelectionRange(typing.at, typing.at)
   }
 
   /**
@@ -1080,12 +1219,13 @@ export class App {
   private askCard(session: Session): HTMLElement | null {
     if (session.joinStatus === 'unknown') return null
 
-    if (session.joinStatus === 'denied') {
+    if (session.joinStatus === 'denied' || session.joinStatus === 'watching') {
+      const watching = session.joinStatus === 'watching'
       return h(
         'div',
         { class: 'card' },
-        h('h3', { text: t('join.denied') }),
-        h('p', { class: 'hint', text: t('join.denied.hint') }),
+        h('h3', { text: t(watching ? 'join.watching' : 'join.denied') }),
+        h('p', { class: 'hint', text: t(watching ? 'join.watching.hint' : 'join.denied.hint') }),
         h('button', {
           class: 'btn small',
           text: t('link.otherCode'),
@@ -1403,6 +1543,9 @@ export class App {
     const close = (): void => {
       removeEventListener('keydown', onKey)
       overlay.remove()
+      // La partie a pu se terminer pendant qu'on lisait les cartes : plus aucun
+      // état n'arrivera pour rappeler la feuille de match.
+      this.showPodiumIfOver()
     }
     const onKey = (ev: KeyboardEvent): void => {
       if (ev.key === 'Escape') close()
@@ -1554,6 +1697,9 @@ export class App {
   private renderPlay(): void {
     this.screen = 'play'
     setKeepAwake(true)
+    // Une manche qui commence n'a pas à démarrer sous la feuille de match de la
+    // précédente.
+    document.querySelector('.overlay.podium')?.remove()
 
     const boardHost = h('div')
     // Les deux rangées se distinguent par une classe et non par leur rang : la
@@ -1618,6 +1764,10 @@ export class App {
     // La pause n'existe que sur un seul téléphone : voir `canPause` côté
     // session. En ligne, un bouton qui ne figerait que son propre écran
     // mentirait sur ce qu'il fait.
+    // Vide et replié tant que le réseau se tient bien : il n'a rien à dire, et
+    // une ligne réservée « au cas où » aurait rogné le plateau toute la partie.
+    const linkBar = h('div', { class: 'linkbar', attrs: { role: 'status', 'aria-live': 'polite' } })
+
     const pauseBtn = this.session!.mode === 'local'
       ? h(
           'button',
@@ -1653,6 +1803,7 @@ export class App {
             icon('help'),
           ),
         ),
+        linkBar,
         top,
         // Le plateau ne se dimensionne pas sur la largeur mais sur la place qui
         // reste : c'est ce créneau qui la mesure (voir `.board-slot`). Sans lui,
@@ -1677,6 +1828,7 @@ export class App {
       boostCounts: [low.count, high.count],
       hand,
       pauseBtn,
+      linkBar,
     }
     this.armed = null
     this.shownDice = null
@@ -1785,8 +1937,98 @@ export class App {
     this.scheduleObvious(state, moves)
 
     this.announce(state)
+    this.paintLinkBar()
+    this.tellSeatToBot()
 
     if (state.phase === 'finished') this.renderPodium(state)
+  }
+
+  /**
+   * Ce que le réseau a à dire, en pleine partie.
+   *
+   * C'était le trou le plus coûteux : un invité coupé de l'hôte ne voyait
+   * strictement rien. Il touchait le dé, rien ne bougeait, il recommençait —
+   * pendant que l'hôte, de son côté, comptait des tours sautés et finissait par
+   * confier son siège à un bot. Deux phrases, deux points de vue : « je n'ai
+   * plus l'hôte » chez l'invité, « je n'ai plus X » chez l'hôte.
+   */
+  private paintLinkBar(): void {
+    const session = this.session
+    const bar = this.mounts?.linkBar
+    if (!bar || !session) return
+
+    const online = session.mode === 'online'
+    // Le téléphone n'a plus de réseau du tout : le dire franchement, et ne pas
+    // proposer un bouton qui ne peut rien faire. C'est aussi vrai chez l'hôte,
+    // qui n'a pourtant pas d'hôte à perdre.
+    const offline = online && !navigator.onLine
+    const lost = online && !session.isHost && session.link !== 'linked'
+    const watching = session.joinStatus === 'watching'
+    const silent = session.silentNames
+
+    if (lost || offline) {
+      fill(
+        bar,
+        h(
+          'div',
+          { class: 'linkbar__text' },
+          h('strong', { text: t(lost ? 'link.host.lost' : 'link.lost') }),
+          h('span', { text: t(offline ? 'link.lost.offline' : 'link.host.lost.hint') }),
+        ),
+        offline
+          ? null
+          : h('button', {
+              class: 'btn small green',
+              text: t('link.reconnect'),
+              on: { click: () => session.retry() },
+            }),
+      )
+    } else if (watching) {
+      fill(
+        bar,
+        h(
+          'div',
+          { class: 'linkbar__text' },
+          h('strong', { text: t('join.watching') }),
+          h('span', { text: t('lobby.waitHost') }),
+        ),
+      )
+    } else if (silent.length > 0) {
+      fill(
+        bar,
+        h(
+          'div',
+          { class: 'linkbar__text' },
+          h('strong', {
+            text:
+              silent.length === 1
+                ? t('link.silent.one', { name: silent[0]! })
+                : t('link.silent', { n: silent.length }),
+          }),
+        ),
+      )
+    } else {
+      bar.replaceChildren()
+    }
+
+    bar.classList.toggle('show', lost || offline || watching || silent.length > 0)
+    // Informé, pas alarmé : le spectateur et l'hôte n'ont rien à réparer, et la
+    // partie continue autour d'eux. Le rouge est pour celui qui, lui, ne joue
+    // plus.
+    bar.classList.toggle('linkbar--quiet', !lost && !offline)
+  }
+
+  /**
+   * « Un bot prend votre place. »
+   *
+   * À la deuxième personne, et chez le seul intéressé : la nouvelle vient du
+   * salon publié, pas d'un message adressé, et l'hôte est souvent le seul à
+   * savoir. On la dit une fois — pas à chaque état reçu.
+   */
+  private tellSeatToBot(): void {
+    const held = this.session?.seatToTakeBack !== null && this.session?.seatToTakeBack !== undefined
+    if (held && !this.botHeldMySeat) this.notify('notice.seatToBot.you')
+    this.botHeldMySeat = held
   }
 
   /**
@@ -1884,6 +2126,17 @@ export class App {
           who: entry.actor,
           title: t('play.voided'),
           desc: t('play.voided.hint', { n: event.sixes }),
+        })
+      } else if (event.kind === 'timeout') {
+        // Un tour qui saute sans un mot ressemble à une partie qui bafouille :
+        // le dé change de main, personne n'a rien joué, et rien ne le dit.
+        notes.push({
+          kind: 'malus',
+          who: entry.actor,
+          title: t('play.timeout'),
+          desc: mine(entry.seat)
+            ? t('play.timeout.you')
+            : t('play.timeout.hint', { name: entry.actor }),
         })
       } else if (event.kind === 'capture') {
         // Un cheval disparaît d'un bout du plateau et reparaît dans une écurie.
@@ -2842,7 +3095,10 @@ export class App {
   }
 
   private renderPodium(state: GameState): void {
-    if (document.querySelector('.overlay')) return
+    // On ne teste que le podium, et non « un calque quelconque » : le chat ou le
+    // catalogue des pouvoirs ouverts au moment de la victoire empêchaient la
+    // feuille de match d'apparaître, et plus rien ne la rappelait ensuite.
+    if (document.querySelector('.overlay.podium')) return
     const session = this.session!
     const winner = state.players.find((p) => p.seat === state.ranking[0])
     const lastStep = geometryFor(state.variant).lastStep
@@ -2856,7 +3112,7 @@ export class App {
 
     const overlay = h(
       'div',
-      { class: 'overlay' },
+      { class: 'overlay podium' },
       h(
         'div',
         { class: 'sheet' },
@@ -3018,6 +3274,27 @@ export class App {
   }
 
   /**
+   * Fermer le chat **d'un geste** — et non parce qu'on quitte la partie.
+   *
+   * La distinction n'est pas théorique : `teardown()` ferme le chat lui aussi,
+   * et rappeler la feuille de match depuis là collait un podium tout neuf par
+   * dessus l'écran d'accueil, sur une partie qui n'existait plus.
+   */
+  private dismissChat(): void {
+    this.closeChat()
+    this.showPodiumIfOver()
+  }
+
+  /**
+   * La partie s'est terminée pendant qu'un calque couvrait l'écran : plus aucun
+   * état n'arrivera pour rappeler la feuille de match. On la repose en fermant.
+   */
+  private showPodiumIfOver(): void {
+    const state = this.session?.game
+    if (state?.phase === 'finished' && this.screen === 'play') this.renderPodium(state)
+  }
+
+  /**
    * Le chat s'ouvre en feuille par le bas plutôt qu'en boîte centrée : le
    * pouce est là, le plateau reste visible au-dessus, et le clavier qui monte
    * pousse la feuille au lieu de la couper en deux.
@@ -3050,7 +3327,7 @@ export class App {
         class: 'overlay chat',
         on: {
           click: (ev) => {
-            if (ev.target === overlay) this.closeChat()
+            if (ev.target === overlay) this.dismissChat()
           },
         },
       },
@@ -3067,7 +3344,11 @@ export class App {
           h('span', { style: { flex: '1' } }),
           h(
             'button',
-            { class: 'icon-btn', attrs: { 'aria-label': t('common.close') }, on: { click: () => this.closeChat() } },
+            {
+              class: 'icon-btn',
+              attrs: { 'aria-label': t('common.close') },
+              on: { click: () => this.dismissChat() },
+            },
             icon('close', 20),
           ),
         ),

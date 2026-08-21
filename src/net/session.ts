@@ -22,12 +22,25 @@ import {
   AWAY_TO_BOT_MS,
   isBotSeat,
   shouldHandToBot,
+  SILENCE_MS,
+  TICK_MS,
   turnLeft,
   TURN_GRACE_MS,
   TURN_MS,
 } from './presence.ts'
 import { canAdmit, welcomeFor } from './admission.ts'
-import { clientId, joinGameRoom, type ChatMessage, type Lobby, type LobbyPlayer, type Room } from './room.ts'
+import {
+  clientId,
+  joinGameRoom,
+  type Ack,
+  type ChatMessage,
+  type Intent,
+  type IntentError,
+  type Lobby,
+  type LobbyPlayer,
+  type Room,
+  type StateMessage,
+} from './room.ts'
 import { clearInvite, clearSave, writeInvite, writeSave, type Save } from './save.ts'
 
 /**
@@ -69,6 +82,26 @@ const BOT_DELAY = 1150
  */
 const LINK_TIMEOUT = 15000
 
+/**
+ * Délai de réémission d'une intention non acquittée.
+ *
+ * Un coup part une fois, et s'il se perd le joueur ne le sait pas : il voit un
+ * dé qui ne bouge pas, retape, et l'hôte compte pendant ce temps un tour sauté.
+ * Sept dixièmes de seconde couvrent un aller-retour très large sans doubler le
+ * trafic d'une table qui va bien — l'hôte, lui, reconnaît une réémission et ne
+ * joue le coup qu'une fois.
+ */
+const INTENT_RETRY_MS = 700
+/** Au-delà, ce n'est plus un creux : le lien est coupé, et il faut le dire. */
+const INTENT_GIVE_UP_MS = 5000
+
+/**
+ * Intentions dont on garde le verdict, pour répondre à une réémission sans
+ * rejouer le coup. Une table de quatre ne joue pas cent coups par seconde :
+ * de quoi couvrir les réémissions récentes suffit largement.
+ */
+const ACK_MEMORY = 64
+
 export type SessionMode = 'local' | 'online'
 
 /** Où en est la mise en relation, pour que l'écran d'attente puisse le dire. */
@@ -83,8 +116,14 @@ export type JoinRequest = { clientId: string; name: string; peer: string }
  * `unknown` couvre les deux cas où la question ne se pose pas : l'hôte, et
  * l'invité qui a déjà son siège. Un invité sans siège et sans réponse est
  * simplement en train de chercher — c'est `link` qui le dit.
+ *
+ * `watching` n'est pas un refus : la table est pleine ou la partie a commencé,
+ * il n'y a rien à demander à personne. Sans cette réponse, le pair se
+ * representait à chaque publication du salon, et chaque publication en
+ * déclenchait une autre — une tempête que quatre allers-retours suffisaient à
+ * déclencher.
  */
-export type AskStatus = 'unknown' | 'pending' | 'denied'
+export type AskStatus = 'unknown' | 'pending' | 'denied' | 'watching'
 
 /** De quoi ouvrir un canal — la vraie implémentation, ou un double de test. */
 export type RoomFactory = (code: string, onError?: (message: string) => void) => Room
@@ -96,8 +135,10 @@ export type RoomFactory = (code: string, onError?: (message: string) => void) =>
  */
 export type NoticeCode =
   | GameError
+  | IntentError
   | 'linkFailed'
   | 'linkBlocked'
+  | 'linkLost'
   | 'hostTaken'
   | 'seatToBot'
   | 'seatBack'
@@ -147,8 +188,36 @@ export class Session {
   private missed = new Map<Seat, number>()
   /** Relève d'un siège abandonné, par siège : chaque pair l'arme, l'hôte l'exécute. */
   private awayTimers = new Map<Seat, ReturnType<typeof setTimeout>>()
+  /** Depuis quand ce siège ne dit plus rien. La minuterie ci-dessus donne le
+   *  coup d'œil rapide ; celle-ci reste vraie quand ce n'est pas son tour. */
+  private awaySince = new Map<Seat, number>()
+  /** Le battement de l'hôte, et la surveillance du silence chez les invités. */
+  private beatTimer: ReturnType<typeof setInterval> | null = null
+  /** Côté hôte : dernier message applicatif reçu, par identité d'appareil. */
+  private lastSeen = new Map<string, number>()
+  /** Côté hôte : aller-retour lissé, par identité d'appareil. */
+  private rtt = new Map<string, number>()
+  /** Côté invité : dernier message venu de l'hôte en titre. */
+  private lastHostAt = 0
+  /** Côté invité : par où l'hôte nous parle. Le salon porte bien un `peerId`,
+   *  mais c'est l'hôte qui le tient à jour — et il vaut `null` dès qu'il nous a
+   *  crus partis, au moment précis où l'on a besoin de le joindre. */
+  private hostPeerId: string | null = null
+  /** Côté invité : la grâce laissée à l'hôte avant d'en élire un autre. */
+  private hostGrace: ReturnType<typeof setTimeout> | null = null
+  /** Côté invité : intentions parties, en attente d'accusé de réception. */
+  private outbox = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Côté hôte : verdicts déjà rendus, pour répondre sans rejouer le coup. */
+  private judged = new Map<string, Ack>()
+  /** Côté hôte : le dernier état qu'on a fait sauter, par siège, et quand. */
+  private skipped = new Map<Seat, { seq: number; at: number }>()
+  private nonces = 0
+  /** Tentatives de reconnexion : seule la dernière a le droit d'aboutir. */
+  private attempts = 0
   /** Partie figée à la demande du joueur. Voir `setPaused`. */
   private frozen = false
+  /** La session est close : plus rien ne doit se reconnecter derrière. */
+  private closed = false
   /** Retenu pour pouvoir refaire une tentative sans repasser par l'accueil. */
   private myName = ''
 
@@ -174,7 +243,12 @@ export class Session {
     // D'une partie en ligne on ne garde que le code : le siège reste le nôtre
     // même après un départ, encore faut-il pouvoir revenir le prendre.
     if (this.mode === 'online') {
-      if (this.game && this.lobby.started && this.game.phase !== 'finished') writeInvite(this.lobby.code)
+      // Seul humain de la table : il n'y a pas de partie à retrouver, seulement
+      // des bots qui s'éteindront avec l'onglet. « Revenir dans la partie »
+      // aurait promis une salle où personne ne répond.
+      const others = this.lobby.players.some((p) => p.kind === 'human' && p.clientId !== this.self)
+      const alive = this.game !== null && this.lobby.started && this.game.phase !== 'finished'
+      if (alive && others) writeInvite(this.lobby.code)
       else clearInvite()
       return
     }
@@ -191,6 +265,8 @@ export class Session {
       {
         code: 'LOCAL',
         hostClientId: self,
+        epoch: 0,
+        round: 0,
         variantId: 'petits-chevaux',
         players: [seatFor(0, name, self, 'human')],
         started: false,
@@ -241,6 +317,8 @@ export class Session {
     const lobby: Lobby = {
       code,
       hostClientId: asHost ? self : '',
+      epoch: 0,
+      round: 0,
       variantId: 'petits-chevaux',
       players: asHost ? [seatFor(0, name, self, 'human')] : [],
       started: false,
@@ -252,13 +330,58 @@ export class Session {
     return session
   }
 
-  /** Nouvelle tentative de mise en relation, après un échec. */
+  /**
+   * Nouvelle tentative de mise en relation, après un échec.
+   *
+   * On **attend** la fermeture du salon précédent. Rejoindre le même code avant
+   * que Trystero n'ait fini de fermer rendait le même objet, détruit une
+   * fraction de seconde plus tard : le bouton « Réessayer » raccrochait au nez
+   * de la tentative qu'il venait de lancer.
+   */
   retry(): void {
     if (this.mode !== 'online') return
-    this.room?.leave()
+    const previous = this.room
     this.room = null
-    this.connect(this.lobby.code, this.myName)
+    this.link = 'searching'
+    // Deux réveils coup sur coup — `visibilitychange` puis `online` — ouvraient
+    // deux salons de plus, dont un seul était refermé. L'orphelin restait
+    // branché, et ses battements rassuraient une session qui ne l'écoutait plus.
+    const attempt = ++this.attempts
+    // Les coups en attente visent un état d'avant la coupure : les réémettre
+    // après coup ne produirait qu'un refus incompréhensible.
+    this.dropOutbox()
     this.listeners.onChange()
+    void Promise.resolve(previous?.leave()).then(() => {
+      if (this.closed || attempt !== this.attempts) return
+      this.connect(this.lobby.code, this.myName)
+      this.listeners.onChange()
+    })
+  }
+
+  private dropOutbox(): void {
+    this.outbox.forEach((timer) => clearTimeout(timer))
+    this.outbox.clear()
+  }
+
+  /**
+   * Retour au premier plan, ou retour du réseau.
+   *
+   * Un téléphone en veille gèle ses minuteries et laisse mourir ses liens
+   * WebRTC sans prévenir personne. Au réveil on se represente — l'hôte
+   * déduplique, c'est sans conséquence s'il nous voyait déjà — et si plus aucun
+   * pair n'est joignable alors que la table compte d'autres humains, on refait
+   * carrément le canal.
+   */
+  wakeUp(): void {
+    if (this.mode !== 'online' || !this.room) return
+    this.room.send('hello', { clientId: this.self, name: this.myName })
+    // L'hôte, lui, ne cherche personne : ses amis viennent à lui, et refaire son
+    // salon à chaque retour au premier plan couperait la table qui l'attend —
+    // y compris quand il joue seul contre des bots, où `peers()` est vide par
+    // construction.
+    if (this.isHost) return
+    const others = this.lobby.players.some((p) => p.kind === 'human' && p.clientId !== this.self)
+    if (others && this.room.peers().length === 0) this.retry()
   }
 
   /** Relais de signalisation joignables — zéro veut dire « pas de réseau ». */
@@ -273,6 +396,7 @@ export class Session {
     const room = join(code, (error) => this.reportLinkError(error))
     this.room = room
     this.myName = name
+    this.lastHostAt = Date.now()
 
     // L'hôte, lui, attend ses amis : son attente n'a pas de raison d'échouer.
     // L'invité, en revanche, cherche quelqu'un de précis, qui devrait répondre.
@@ -286,39 +410,49 @@ export class Session {
     const me = this.lobby.players.find((p) => p.clientId === this.self)
     if (me) me.peerId = room.selfId
 
+    // Un salon qu'on vient de quitter garde ses écouteurs vivants jusqu'à ce que
+    // `leave()` aboutisse : sans ce garde, un battement tardu de l'ancien canal
+    // venait rassurer une session qui ne l'écoutait plus.
+    const current = (): boolean => this.room === room
+
     room.on('hello', (hello, peer) => {
-      if (!this.isHost) return
-      this.welcome(hello.clientId, hello.name, peer)
+      if (!current()) return
+      this.noteAlive(hello.clientId, peer)
+      if (this.isHost) return this.welcome(hello.clientId, hello.name, peer)
+      // Un membre de la table qui se represente alors qu'on n'est pas l'arbitre :
+      // c'est souvent l'hôte lui-même, revenu d'un rechargement de page et sans
+      // aucun souvenir de sa table. Le salon qu'on lui renvoie le renomme
+      // arbitre, avec les sièges de tout le monde intacts. On ne le fait que
+      // pour qui a déjà un siège : la composition de la table n'a pas à fuiter
+      // vers un inconnu que l'hôte n'a pas accepté.
+      if (!this.lobby.players.some((p) => p.clientId === hello.clientId)) return
+      room.send('lobby', this.tableSeenBy(hello.clientId, peer), peer)
     })
 
     room.on('join', (verdict) => {
-      if (verdict.clientId !== this.self) return
+      if (!current() || verdict.clientId !== this.self) return
+      this.noteHostAlive()
       this.askStatus = verdict.status
       this.listeners.onChange()
     })
 
     room.on('lobby', (lobby) => {
-      // Seul l'hôte fait autorité sur la composition de la table.
-      if (this.isHost) return
-      this.lobby = lobby
-      // Un salon où je n'ai pas de siège : soit ma demande attend, soit l'hôte
-      // a changé et le nouveau n'en sait rien. On se represente — c'est aussi
-      // ce qui rattrape un `hello` perdu, et l'hôte déduplique.
-      if (lobby.players.some((p) => p.clientId === this.self)) this.askStatus = 'unknown'
-      else if (this.askStatus !== 'denied') {
-        room.send('hello', { clientId: this.self, name: this.myName })
-      }
-      // Un bot vient peut-être de prendre le siège dont c'est le tour : il n'y
-      // a plus personne à décompter. Le tour en cours, lui, garde son échéance.
-      this.armTurnClock()
-      this.listeners.onChange()
+      if (!current()) return
+      this.onLobby(lobby)
     })
 
-    room.on('state', (state) => {
-      if (this.isHost) return
-      // Un état plus ancien peut arriver après un changement d'hôte : on l'ignore.
-      if (this.game && state.seq < this.game.seq) return
-      this.game = state
+    room.on('state', (message, peer) => {
+      if (!current()) return
+      // L'arbitre, lui, n'adopte l'état de personne — sauf s'il vient de
+      // reprendre la main les mains vides (voir `adoptRelayedState`).
+      if (this.isHost) return this.adoptRelayedState(message)
+      // **De l'arbitre en titre, et de lui seul.** Une époque inventée ne fait
+      // pas un arbitre : n'importe quel pair pouvait sinon imposer un état à
+      // toute la table, museler le vrai hôte, et détourner les intentions.
+      if (message.from !== this.lobby.hostClientId) return
+      if (this.stale(message)) return
+      this.noteHostAlive(peer)
+      this.game = message.game
       // Le compte à rebours repart à la réception, AVANT le rendu : c'est lui
       // qui dit à l'écran s'il y a un contour à peindre. Chacun compte sur sa
       // propre horloge, sans jamais avoir à la comparer à celle des autres.
@@ -326,19 +460,90 @@ export class Session {
       this.listeners.onChange()
     })
 
-    room.on('intent', (intent) => {
-      if (!this.isHost) return
-      const seat = this.seatOfClient(intent.clientId)
-      if (seat === null) return
-      this.applyAsHost(intent.action, seat)
+    // Le battement de l'hôte. C'est lui, et non l'avis du transport, qui dit
+    // qui est encore là : Trystero déclare un pair perdu au bout de cinq
+    // secondes de silence ICE, puis ne dit plus rien — ni qu'il est revenu, ni
+    // qu'il ne l'est pas.
+    room.on('tick', (tick, peer) => {
+      if (!current()) return
+      const arbiter = this.lobby.hostClientId
+
+      // Un arbitre qui n'est pas celui qu'on reconnaît : règne périmé, ou
+      // prétendant au même règne. Il ne sait pas qu'il a perdu, et personne ne
+      // le lui dira jamais s'il ne reçoit plus les salons du vainqueur. On lui
+      // renvoie donc la table qu'on tient pour vraie : c'est ce qui le fait
+      // abdiquer proprement, avec la composition et le règne à jour.
+      const rival =
+        tick.epoch < this.lobby.epoch ||
+        (tick.epoch === this.lobby.epoch && tick.from !== arbiter)
+      if (arbiter && rival) {
+        room.send('lobby', this.tableSeenBy(tick.from, peer), peer)
+        return
+      }
+
+      if (this.isHost) {
+        // Un règne plus récent que le nôtre, et on se croit encore arbitre :
+        // on se represente, ce qui vaut demande de la table à jour. L'autre
+        // moitié de la réparation est juste au-dessus.
+        if (tick.epoch > this.lobby.epoch) {
+          room.send('hello', { clientId: this.self, name: this.myName }, peer)
+        }
+        return
+      }
+      if (!this.fromArbiter(tick.from, tick.epoch)) return
+      this.noteHostAlive(peer)
+      room.send('pong', { clientId: this.self, at: tick.at }, peer)
+
+      // L'arbitre annonce un état plus ancien que le nôtre — souvent : il n'en
+      // a aucun, parce qu'il vient de reprendre la main après un rechargement
+      // de page. On le lui rend. Sans cela il acquittait les coups sans rien
+      // appliquer, et la table se figeait sans un message.
+      if (this.game && this.lobby.started && tick.seq < this.game.seq) this.sendState(peer)
     })
 
-    room.on('chat', (message) => {
+    room.on('pong', (pong, peer) => {
+      if (!current() || !this.isHost) return
+      // L'aller-retour se mesure sur la seule horloge de l'hôte : `at` est
+      // reparti tel quel, il n'y a aucune horloge à accorder. Plafonné, parce
+      // qu'un téléphone qui se réveille renvoie le pong du battement d'avant :
+      // sans borne, l'hôte en déduisait deux minutes de latence et n'osait plus
+      // faire sauter un seul tour.
+      const sample = Math.min(Date.now() - pong.at, SILENCE_MS)
+      const previous = this.rtt.get(pong.clientId)
+      this.rtt.set(pong.clientId, previous === undefined ? sample : previous * 0.7 + sample * 0.3)
+      this.noteAlive(pong.clientId, peer)
+    })
+
+    room.on('intent', (intent, peer) => {
+      if (!current()) return
+      this.noteAlive(intent.clientId, peer)
+      if (!this.isHost) return
+      // Un coup décidé sous un autre règne visait une autre partie.
+      if (intent.epoch !== this.lobby.epoch) return
+      this.onIntent(intent, peer)
+    })
+
+    room.on('ack', (ack) => {
+      if (!current()) return
+      const waiting = this.outbox.get(ack.nonce)
+      if (!waiting) return
+      this.noteHostAlive()
+      clearTimeout(waiting)
+      this.outbox.delete(ack.nonce)
+      // L'erreur s'affiche chez celui qui a joué, et non chez l'arbitre : c'est
+      // lui qu'elle concerne, et lui seul qui peut en faire quelque chose.
+      if (!ack.ok && ack.error) this.listeners.onError({ code: ack.error })
+    })
+
+    room.on('chat', (message, peer) => {
+      if (!current()) return
+      this.noteAlive(message.clientId, peer)
       this.chatLog.push(message)
       this.listeners.onChat(message)
     })
 
     room.onPeerJoin((peer) => {
+      if (!current()) return
       this.link = 'linked'
       if (this.linkTimer) clearTimeout(this.linkTimer)
       this.linkTimer = null
@@ -346,7 +551,7 @@ export class Session {
       if (this.isHost) {
         // Le nouveau venu se présentera ; on lui envoie déjà la table.
         room.send('lobby', this.lobby, peer)
-        if (this.game) room.send('state', this.game, peer)
+        this.sendState(peer)
       } else {
         // Le `hello` d'ouverture se perd s'il part avant qu'un pair soit joignable :
         // on se represente à chaque arrivée, l'hôte déduplique par clientId.
@@ -356,27 +561,305 @@ export class Session {
     })
 
     room.onPeerLeave((peer) => {
+      if (!current()) return
       // Une demande dont l'auteur est parti n'a plus d'objet : l'accepter
       // donnerait un siège fantôme, occupé par personne.
       if (this.requests.some((r) => r.peer === peer)) {
         this.requests = this.requests.filter((r) => r.peer !== peer)
         this.listeners.onChange()
       }
+      if (this.hostPeerId === peer) this.hostPeerId = null
       const player = this.lobby.players.find((p) => p.peerId === peer)
-      if (player) {
-        player.connected = false
-        player.peerId = null
-        // Chaque pair arme la relève, seul celui qui sera hôte à l'échéance
-        // l'exécutera : le départ de l'hôte lui-même reste ainsi couvert.
-        this.armBotTakeover(player.seat)
-      }
-      if (player?.clientId === this.lobby.hostClientId) this.electHost()
-      else if (this.isHost) this.publishLobby()
+      // Le transport n'a qu'un avis, et c'est le battement qui tranche — mais un
+      // départ franc n'a aucune raison d'attendre huit secondes de silence.
+      if (player) this.markAway(player)
+
+      // Perdre le lien de l'hôte ne fait pas de nous l'arbitre : c'est
+      // peut-être nous qui sommes isolés. On le laisse revenir (voir
+      // `armHostGrace`), et on le dit à l'écran en attendant.
+      if (player?.clientId === this.lobby.hostClientId && !this.isHost) {
+        this.link = 'lost'
+        this.armHostGrace()
+      } else if (this.isHost) this.publishLobby()
       this.onGameChanged()
       this.listeners.onChange()
     })
 
+    if (this.beatTimer) clearInterval(this.beatTimer)
+    this.beatTimer = setInterval(() => this.beat(), TICK_MS)
     room.send('hello', { clientId: this.self, name })
+  }
+
+  // ───────────────────────── battement de cœur ─────────────────────────
+
+  /**
+   * Toutes les deux secondes : l'hôte bat la mesure et fait le tour de sa
+   * table ; les autres vérifient qu'ils l'entendent encore.
+   */
+  private beat(): void {
+    if (!this.room || this.mode !== 'online') return
+    if (this.isHost) {
+      this.room.send('tick', {
+        from: this.self,
+        epoch: this.lobby.epoch,
+        seq: this.game?.seq ?? -1,
+        at: Date.now(),
+      })
+      this.sweep()
+      return
+    }
+    if (!this.lobby.hostClientId) return
+    if (Date.now() - this.lastHostAt <= SILENCE_MS) return
+    // Personne n'est « parti » — c'est bien le problème : le lien est mort sans
+    // que rien ne le dise, et le joueur tapait dans le vide en croyant jouer.
+    if (this.link !== 'lost') {
+      this.link = 'lost'
+      this.listeners.onChange()
+    }
+    this.armHostGrace()
+  }
+
+  /** Côté hôte : qui ne s'est plus manifesté depuis assez longtemps ? */
+  private sweep(): void {
+    const now = Date.now()
+    let changed = false
+    for (const player of this.lobby.players) {
+      if (player.kind === 'bot' || player.clientId === this.self || !player.connected) continue
+      if (now - (this.lastSeen.get(player.clientId) ?? 0) <= SILENCE_MS) continue
+      this.markAway(player)
+      changed = true
+    }
+    if (!changed) return
+    this.publishLobby()
+    this.onGameChanged()
+    this.listeners.onChange()
+  }
+
+  /**
+   * Un message est arrivé de cet appareil : il est là.
+   *
+   * N'importe lequel suffit — un `pong`, une intention, un mot dans le chat.
+   * Et si un bot tenait son siège, il le lui rend sur-le-champ : attendre un
+   * `hello` en bonne et due forme, c'était laisser le bot jouer un tour de plus
+   * pendant que le revenant regardait.
+   */
+  private noteAlive(id: string, peer?: string): void {
+    this.lastSeen.set(id, Date.now())
+    if (!this.isHost) return
+    const player = this.lobby.players.find((p) => p.clientId === id)
+    if (!player) return
+
+    const wasAway = !player.connected || player.botFill
+    if (peer) player.peerId = peer
+    player.connected = true
+    this.reclaim(player)
+    if (!wasAway) return
+    this.publishLobby()
+    this.onGameChanged()
+    this.listeners.onChange()
+  }
+
+  /** Un message venu de l'hôte en titre : le lien tient, la grâce s'annule. */
+  private noteHostAlive(peer?: string): void {
+    this.lastHostAt = Date.now()
+    if (this.isHost) return
+    if (peer) this.hostPeerId = peer
+    this.clearHostGrace()
+    if (this.linkTimer) clearTimeout(this.linkTimer)
+    this.linkTimer = null
+    if (this.link === 'linked') return
+    this.link = 'linked'
+    this.listeners.onChange()
+  }
+
+  private markAway(player: LobbyPlayer): void {
+    player.connected = false
+    player.peerId = null
+    if (!this.awaySince.has(player.seat)) this.awaySince.set(player.seat, Date.now())
+    // Chaque pair arme la relève, seul celui qui sera hôte à l'échéance
+    // l'exécutera : le départ de l'hôte lui-même reste ainsi couvert.
+    this.armBotTakeover(player.seat)
+  }
+
+  private clearAway(seat: Seat): void {
+    const timer = this.awayTimers.get(seat)
+    if (timer) clearTimeout(timer)
+    this.awayTimers.delete(seat)
+    this.awaySince.delete(seat)
+  }
+
+  // ───────────────────────── salon reçu, règne comparé ─────────────────────────
+
+  /**
+   * Un salon publié par quelqu'un d'autre.
+   *
+   * C'est ici que se règle le « split brain » : deux appareils coupés l'un de
+   * l'autre pouvaient se croire tous les deux arbitres, chacun ignorant les
+   * salons de l'autre — et chacun mettant un bot sur le siège de l'autre. Le
+   * règne le plus récent l'emporte ; à égalité, le plus petit identifiant, un
+   * ordre que les deux calculent à l'identique sans avoir à se parler.
+   */
+  private onLobby(lobby: Lobby): void {
+    if (lobby.epoch < this.lobby.epoch) return
+    if (this.isHost) {
+      if (lobby.epoch === this.lobby.epoch && lobby.hostClientId >= this.lobby.hostClientId) return
+      // On rend l'arbitrage, pas son siège : le clientId reste l'identité.
+      this.stopHosting()
+      this.adopt(lobby)
+      this.noteHostAlive()
+      this.room?.send('hello', { clientId: this.self, name: this.myName })
+      return
+    }
+
+    // Deux prétendants au même règne peuvent être joignables tous les deux : le
+    // même départage que ci-dessus, sinon le salon d'un invité changerait de
+    // main à chaque message reçu.
+    const known = this.lobby.hostClientId
+    if (known && lobby.epoch === this.lobby.epoch && lobby.hostClientId > known) return
+
+    const handover = lobby.hostClientId !== known
+    const wasClosed = this.lobby.started || this.lobby.players.length >= MAX_SEATS
+    const free = lobby.players.length < MAX_SEATS
+    this.noteHostAlive()
+    this.adopt(lobby)
+    // Un nouvel arbitre n'a pas la liste d'attente de l'ancien, et ne sait
+    // peut-être rien de nous. On se represente — une fois, au changement, et
+    // non à chaque publication : c'était la tempête de `hello` d'avant.
+    //
+    // Un refusé a une réponse définitive et ne redemande rien : c'est son
+    // insistance qui nourrissait la tempête. Un spectateur, non — il n'a jamais
+    // été refusé, la table était seulement pleine ou lancée. Quand elle se
+    // rouvre, il redemande, une seule fois par réouverture.
+    const reopened = this.askStatus === 'watching' && wasClosed && !lobby.started && free
+    if (this.askStatus === 'denied') return
+    if (handover || reopened) this.room?.send('hello', { clientId: this.self, name: this.myName })
+  }
+
+  private adopt(lobby: Lobby): void {
+    // Une nouvelle manche a été annoncée : la partie d'avant n'existe plus.
+    // Sans cela l'invité gardait son état final, rejetait le premier état de la
+    // manche suivante — plus petit — et restait devant son podium.
+    if (!lobby.started) this.game = null
+    this.lobby = lobby
+    if (lobby.players.some((p) => p.clientId === this.self)) this.askStatus = 'unknown'
+    // Un siège que le salon montre connecté n'attend plus de relève : sans
+    // cela, un invité promu hôte héritait de minuteries fantômes qui mettaient
+    // un bot sur des sièges occupés.
+    for (const player of lobby.players) if (player.connected) this.clearAway(player.seat)
+    // Un bot vient peut-être de prendre le siège dont c'est le tour : il n'y
+    // a plus personne à décompter. Le tour en cours, lui, garde son échéance.
+    this.armTurnClock()
+    this.listeners.onChange()
+  }
+
+  /**
+   * Ce message vient-il de quelqu'un qui fait autorité ?
+   *
+   * L'arbitre en titre, ou un règne plus récent — dont le salon est déjà en
+   * route, l'hôte publiant toujours la table avant l'état. Sans ce filtre, un
+   * second arbitre à égalité d'époque imposait son état à toute la table, et le
+   * battement de n'importe quel pair masquait la mort de l'hôte.
+   */
+  private fromArbiter(from: string, epoch: number): boolean {
+    if (epoch > this.lobby.epoch) return true
+    return from === this.lobby.hostClientId
+  }
+
+  /** Cet état est-il plus vieux que ce qu'on sait déjà ? */
+  private stale(message: StateMessage): boolean {
+    if (message.epoch !== this.lobby.epoch) return message.epoch < this.lobby.epoch
+    // Le numéro d'état repart de zéro à chaque manche : entre deux manches, il
+    // ne dit plus rien de l'ancienneté.
+    if (message.round !== this.lobby.round) return message.round < this.lobby.round
+    return this.game !== null && message.game.seq < this.game.seq
+  }
+
+  /**
+   * Tout ce qu'un hôte tenait et qu'un invité n'a plus à tenir — **l'état de la
+   * partie compris**.
+   *
+   * Le garder serait ne pas abdiquer : le nouvel arbitre repart d'un numéro
+   * plus petit, tous ses états seraient rejetés comme périmés, et l'ex-hôte
+   * jouerait des coups datés d'une partie que plus personne ne joue. Le `hello`
+   * qui suit l'abdication déclenche la reprise de siège, donc le renvoi de
+   * l'état : le trou ne dure qu'un aller-retour.
+   */
+  private stopHosting(): void {
+    this.game = null
+    if (this.turnTimer) clearTimeout(this.turnTimer)
+    this.turnTimer = null
+    if (this.botTimer) clearTimeout(this.botTimer)
+    this.botTimer = null
+    this.awayTimers.forEach((timer) => clearTimeout(timer))
+    this.awayTimers.clear()
+    this.awaySince.clear()
+    this.missed.clear()
+    this.judged.clear()
+    this.skipped.clear()
+    this.requests = []
+  }
+
+  private sendState(to?: string): void {
+    if (!this.game) return
+    this.room?.send(
+      'state',
+      { from: this.self, epoch: this.lobby.epoch, round: this.lobby.round, game: this.game },
+      to,
+    )
+  }
+
+  /**
+   * Le pair de l'arbitre, avec un repli.
+   *
+   * Le salon porte un `peerId` par siège, mais c'est l'arbitre qui l'entretient,
+   * et il le met à `null` dès qu'il nous a crus partis — exactement l'instant où
+   * l'on cherche à le joindre. On garde donc de notre côté le pair d'où viennent
+   * ses battements. Sans ce repli, un envoi sans cible partait à la cantonade.
+   */
+  private hostPeer(): string | undefined {
+    const seated = this.lobby.players.find((p) => p.clientId === this.lobby.hostClientId)?.peerId
+    return seated ?? this.hostPeerId ?? undefined
+  }
+
+  /**
+   * La table telle qu'on la connaît, corrigée de ce qu'on vient d'apprendre.
+   *
+   * Notre copie est une photo, et elle peut dater : celle où ce joueur était
+   * parti et où un bot tenait son siège. La lui renvoyer telle quelle, à la
+   * seconde où il se manifeste, c'est lui annoncer qu'il a été remplacé — et
+   * chez un hôte qui revient d'un rechargement de page, c'est le premier
+   * message qu'il lit.
+   */
+  private tableSeenBy(id: string, peer: string): Lobby {
+    return {
+      ...this.lobby,
+      players: this.lobby.players.map((p) =>
+        p.clientId === id ? { ...p, connected: true, botFill: false, peerId: peer } : p,
+      ),
+    }
+  }
+
+  /**
+   * L'arbitre adopte l'état qu'un joueur lui rend.
+   *
+   * Un seul cas, et il est étroit : on vient de reprendre la couronne les mains
+   * vides — rechargement de page, salon relayé par un invité — alors que la
+   * partie est lancée. Sans cela on acquittait les coups sans rien appliquer, et
+   * la table se figeait sans le moindre message. Hors de ce cas, l'arbitre
+   * n'adopte l'état de personne : c'est lui qui le fabrique.
+   */
+  private adoptRelayedState(message: StateMessage): void {
+    if (this.game !== null || !this.lobby.started) return
+    if (message.epoch !== this.lobby.epoch || message.round !== this.lobby.round) return
+    // Et seulement d'un joueur de la table : un état venu de nulle part n'a pas
+    // à devenir la partie de tout le monde.
+    if (!this.lobby.players.some((p) => p.clientId === message.from)) return
+
+    this.game = message.game
+    // Rediffusé aussitôt : à partir de maintenant, c'est la référence.
+    this.sendState()
+    this.onGameChanged()
+    this.listeners.onChange()
   }
 
   /** L'hôte accueille un pair : nouveau siège, ou reprise du siège d'origine. */
@@ -395,6 +878,11 @@ export class Session {
    * symptôme d'un NAT symétrique sans serveur TURN.
    */
   private reportLinkError(error: string): void {
+    // Trystero signale une tentative ratée, pas une panne générale : en pleine
+    // partie, ou avec des pairs déjà au bout du fil, c'est une paire parmi
+    // d'autres qui n'a pas abouti. L'annoncer faisait clignoter « la connexion
+    // a échoué » chez l'hôte d'une table qui tournait très bien.
+    if (this.lobby.started || (this.room?.peers().length ?? 0) > 0) return
     this.link = 'lost'
     if (this.linkTimer) clearTimeout(this.linkTimer)
     this.linkTimer = null
@@ -414,9 +902,12 @@ export class Session {
       // qu'il revienne d'un départ ou qu'il reprenne la main après une absence.
       // Aucun accord à redemander : un rechargement de page n'est pas une
       // arrivée, et une porte qui claque dans le dos serait la pire des règles.
+      // Se represénter est un geste explicite : la série de tours sautés repart
+      // de zéro, ce qu'un simple message de présence ne fait pas.
+      this.missed.set(known.seat, 0)
       this.reclaim(known)
       this.publishLobby()
-      if (this.game) this.room?.send('state', this.game)
+      this.sendState()
       this.onGameChanged()
       this.listeners.onChange()
       return
@@ -437,12 +928,14 @@ export class Session {
       return
     }
 
-    // Refusé, table pleine ou partie lancée : le pair regarde. On lui envoie
-    // quand même la table, faute de quoi il resterait devant un écran d'attente
-    // sans jamais savoir pourquoi.
-    if (verdict.kind === 'refused') this.room?.send('join', { clientId: id, status: 'denied' }, peer)
+    // Refusé, table pleine ou partie lancée : le pair regarde. On le lui dit —
+    // sans réponse, il se representait à chaque publication du salon, et chaque
+    // publication en déclenchait une autre. On lui envoie aussi la table, faute
+    // de quoi il resterait devant un écran d'attente sans savoir pourquoi.
+    const status = verdict.kind === 'refused' ? 'denied' : 'watching'
+    this.room?.send('join', { clientId: id, status }, peer)
     this.room?.send('lobby', this.lobby, peer)
-    if (this.game) this.room?.send('state', this.game, peer)
+    this.sendState(peer)
   }
 
   private admission() {
@@ -479,8 +972,9 @@ export class Session {
     this.requests = this.requests.filter((r) => r.clientId !== id)
     this.refused.delete(id)
     this.lobby.players.push(seatFor(this.freeSeat(), request.name, id, 'human', request.peer))
+    this.lastSeen.set(id, Date.now())
     this.publishLobby()
-    if (this.game) this.room?.send('state', this.game)
+    this.sendState()
     this.onGameChanged()
     this.listeners.onChange()
   }
@@ -501,22 +995,61 @@ export class Session {
   }
 
   /**
-   * L'hôte est parti : on en désigne un nouveau de façon déterministe, pour que
-   * tous les pairs aboutissent au même résultat sans se concerter. Chacun ayant
-   * une copie complète de l'état, la partie reprend sans rien perdre.
+   * La grâce laissée à l'hôte avant d'en désigner un autre.
+   *
+   * Sans elle, un invité qui perdait son seul lien vers l'hôte s'élisait
+   * aussitôt : la table se retrouvait avec deux arbitres qui s'ignoraient, et
+   * chacun mettait un bot sur le siège de l'autre. C'est exactement le symptôme
+   * rapporté par une vraie table. La même durée que la relève par un bot : ce
+   * sont les deux faces d'une seule question — « est-il vraiment parti ? »
+   */
+  private armHostGrace(): void {
+    if (this.mode !== 'online' || this.isHost || this.hostGrace) return
+    this.hostGrace = setTimeout(() => {
+      this.hostGrace = null
+      this.electHost()
+    }, AWAY_TO_BOT_MS)
+  }
+
+  private clearHostGrace(): void {
+    if (this.hostGrace) clearTimeout(this.hostGrace)
+    this.hostGrace = null
+  }
+
+  /**
+   * L'hôte n'est pas revenu : on en désigne un nouveau de façon déterministe,
+   * pour que tous les pairs aboutissent au même résultat sans se concerter.
+   * Chacun ayant une copie complète de l'état, la partie reprend sans rien
+   * perdre — et le nouveau règne porte un numéro, pour que l'ancien hôte sache
+   * s'effacer s'il réapparaît.
    */
   private electHost(): void {
     const gone = this.lobby.hostClientId
+    if (gone === this.self) return
     const candidates = this.lobby.players
-      .filter((p) => p.kind === 'human' && p.connected && !p.botFill)
+      .filter((p) => p.kind === 'human' && p.clientId !== gone && p.connected && !p.botFill)
       .map((p) => p.clientId)
       .sort()
 
-    const next = candidates[0]
-    if (!next) return
+    // Le même ordre pour tout le monde : ce n'est pas à nous d'être élu.
+    if (candidates[0] !== this.self) return
 
-    this.lobby.hostClientId = next
-    if (next !== this.self) return
+    // Et surtout : celui qui ne voit plus la moitié de la table n'est pas
+    // l'arbitre, c'est lui qui est isolé. S'élire dans ce cas, c'est fabriquer
+    // le second hôte qui mettra des bots sur les sièges des autres.
+    const others = this.lobby.players.filter(
+      (p) => p.kind === 'human' && p.clientId !== gone && p.clientId !== this.self,
+    )
+    if (others.filter((p) => p.connected).length * 2 < others.length) return
+
+    this.lobby.hostClientId = this.self
+    this.lobby.epoch += 1
+    // On n'a jamais reçu un mot des autres invités : ils ne parlaient qu'à
+    // l'ancien arbitre. Sans cette mise à l'heure, le premier tour de table les
+    // déclarait tous absents — et un « Lancer » dans cette fenêtre mettait un
+    // bot sur chaque siège.
+    const now = Date.now()
+    for (const p of this.lobby.players) if (p.connected) this.lastSeen.set(p.clientId, now)
 
     // Les sièges que l'ancien hôte avait ajoutés — bots, joueurs partageant son
     // téléphone — portaient son identifiant : plus personne ne les jouerait.
@@ -536,10 +1069,12 @@ export class Session {
       p.connected = true
     }
 
+    this.link = 'linked'
     this.listeners.onError({ code: 'hostTaken' })
     this.publishLobby()
-    if (this.game) this.room?.send('state', this.game)
+    this.sendState()
     this.onGameChanged()
+    this.listeners.onChange()
   }
 
   private publishLobby(): void {
@@ -583,6 +1118,18 @@ export class Session {
   /** Un bot tient-il un siège qui nous appartient, et qu'on pourrait reprendre ? */
   get seatToTakeBack(): Seat | null {
     return this.lobby.players.find((p) => p.botFill && this.mine(p.seat))?.seat ?? null
+  }
+
+  /**
+   * Les joueurs que l'hôte n'entend plus. Vide chez les autres : eux ne savent
+   * pas qui l'hôte entend, et l'inventer donnerait deux écrans qui se
+   * contredisent au même moment.
+   */
+  get silentNames(): string[] {
+    if (!this.isHost) return []
+    return this.lobby.players
+      .filter((p) => p.kind === 'human' && p.clientId !== this.self && !p.connected)
+      .map((p) => p.name)
   }
 
   /**
@@ -697,10 +1244,16 @@ export class Session {
     this.listeners.onChange()
   }
 
-  addSeat(kind: 'human' | 'bot'): void {
+  /**
+   * `label` vient de l'appelant : la couche réseau ne connaît pas la langue du
+   * joueur, et un « Bot 2 » en dur dans un salon français ou anglais aurait été
+   * la seule chaîne du jeu à ne pas être traduite. Un repli existe pour les
+   * tests, qui n'ont pas de dictionnaire sous la main.
+   */
+  addSeat(kind: 'human' | 'bot', label?: string): void {
     if (!this.isHost || this.lobby.started || this.lobby.players.length >= MAX_SEATS) return
     const seat = this.freeSeat()
-    const name = kind === 'bot' ? `Bot ${seat + 1}` : `Joueur ${seat + 1}`
+    const name = label ?? (kind === 'bot' ? `Bot ${seat + 1}` : `Joueur ${seat + 1}`)
     // En local, un siège « humain » est simplement un joueur de plus sur cet appareil.
     this.lobby.players.push(seatFor(seat, name, this.self, kind))
     this.publishLobby()
@@ -724,7 +1277,12 @@ export class Session {
 
     this.frozen = false
     this.missed.clear()
+    this.skipped.clear()
     this.lobby.started = true
+    // Un siège que personne ne tient au moment du lancement est un siège
+    // confié : sans cela la table perdait dix secondes de pendule à chaque tour
+    // d'un absent, et personne n'avait décidé de le remplacer.
+    for (const p of this.lobby.players) if (p.kind === 'human' && !p.connected) p.botFill = true
     this.game = createGame({
       players: this.lobby.players.map((p) => ({
         seat: p.seat,
@@ -738,7 +1296,7 @@ export class Session {
     })
 
     this.publishLobby()
-    this.room?.send('state', this.game)
+    this.sendState()
     this.onGameChanged()
     this.listeners.onChange()
   }
@@ -752,8 +1310,99 @@ export class Session {
       return
     }
 
-    if (this.isHost) this.applyAsHost(action, seat)
-    else this.room?.send('intent', { clientId: this.self, action })
+    if (this.isHost) {
+      const error = this.applyAsHost(action, seat)
+      if (error) this.listeners.onError({ code: error })
+      return
+    }
+    // Envoyer dans le vide n'est pas jouer. Sans ce refus, le joueur coupé de
+    // l'hôte tapait le dé, ne voyait rien bouger, recommençait — et l'hôte
+    // comptait pendant ce temps des tours sautés à son crédit.
+    if (this.link === 'lost') {
+      this.listeners.onError({ code: 'linkLost' })
+      return
+    }
+    this.sendIntent(action)
+  }
+
+  /**
+   * Une intention part, et repart jusqu'à ce que l'hôte en accuse réception.
+   *
+   * Elle porte le numéro de l'état sur lequel le joueur a décidé — l'hôte
+   * reconnaît ainsi un coup parti à temps mais arrivé tard — et un jeton unique,
+   * qui rend la réémission sans danger.
+   */
+  private sendIntent(action: Action): void {
+    const nonce = `${this.self}:${++this.nonces}`
+    const intent: Intent = {
+      clientId: this.self,
+      epoch: this.lobby.epoch,
+      action,
+      seq: this.game?.seq ?? -1,
+      nonce,
+    }
+    const giveUpAt = Date.now() + INTENT_GIVE_UP_MS
+
+    // Adressée à l'arbitre, et **jamais** à la cantonade : une intention réémise
+    // cinq fois vers trois pairs, c'est quinze messages pour un coup — et un
+    // second arbitre qui traînerait l'appliquerait aussi. Sans cible connue on
+    // n'envoie rien : le coup repartira au prochain essai, ou l'abandon dira
+    // franchement que le lien est coupé.
+    const send = (): void => {
+      const to = this.hostPeer()
+      if (to !== undefined) this.room?.send('intent', intent, to)
+    }
+
+    const again = (): void => {
+      if (Date.now() >= giveUpAt) {
+        this.outbox.delete(nonce)
+        this.listeners.onError({ code: 'linkLost' })
+        return
+      }
+      send()
+      this.outbox.set(nonce, setTimeout(again, INTENT_RETRY_MS))
+    }
+
+    send()
+    this.outbox.set(nonce, setTimeout(again, INTENT_RETRY_MS))
+  }
+
+  /** L'hôte reçoit une intention : il tranche une fois, et répond à l'émetteur. */
+  private onIntent(intent: Intent, peer: string): void {
+    const seat = this.seatOfClient(intent.clientId)
+    if (seat === null) return
+
+    // Une intention réémise ne se rejoue pas : on redit ce qu'on avait répondu.
+    // Sans cela, un accusé perdu faisait jouer le coup une seconde fois.
+    const already = this.judged.get(intent.nonce)
+    if (already) return this.room?.send('ack', already, peer)
+
+    const answer = this.judge(intent, seat)
+    this.judged.set(intent.nonce, answer)
+    if (this.judged.size > ACK_MEMORY) {
+      const oldest = this.judged.keys().next().value
+      if (oldest !== undefined) this.judged.delete(oldest)
+    }
+    this.room?.send('ack', answer, peer)
+  }
+
+  private judge(intent: Intent, seat: Seat): Ack {
+    // Le coup était bon, il est arrivé après le couperet. **Jouer tard prouve
+    // la présence**, et c'est tout ce qu'on demande à ce joueur : la série de
+    // tours sautés repart de zéro. L'ancien code lui répondait « ce n'est pas
+    // votre tour » — chez l'hôte, en plus — et lui collait un bot au troisième.
+    //
+    // Le pardon dure ce que dure un aller-retour, et pas plus : il couvre un
+    // coup qui était déjà en vol quand le couperet est tombé. Sans cette
+    // limite, un joueur systématiquement en retard n'a jamais laissé sa place,
+    // et la table payait onze secondes par tour pour toujours.
+    const late = this.skipped.get(seat)
+    if (late?.seq === intent.seq && Date.now() - late.at <= this.graceFor(intent.clientId)) {
+      this.missed.set(seat, 0)
+      return { nonce: intent.nonce, ok: false, error: 'tooLate' }
+    }
+    const error = this.applyAsHost(intent.action, seat)
+    return error ? { nonce: intent.nonce, ok: false, error } : { nonce: intent.nonce, ok: true }
   }
 
   /**
@@ -771,21 +1420,28 @@ export class Session {
     this.listeners.onChat(message)
   }
 
-  private applyAsHost(action: Action, seat: Seat): void {
-    if (!this.game) return
+  /**
+   * L'arbitre applique un coup. Il rend le refus plutôt que de l'afficher :
+   * l'erreur d'un coup distant concerne celui qui l'a joué, et elle s'affichait
+   * chez l'hôte — qui n'y pouvait rien et ne comprenait pas d'où elle sortait.
+   */
+  private applyAsHost(action: Action, seat: Seat): IntentError | null {
+    // Arbitre sans partie : cela n'arrive qu'un instant, le temps qu'un joueur
+    // nous rende l'état. Répondre « c'est fait » serait le pire des mensonges —
+    // c'est ce qui figeait la table sans un message d'erreur.
+    if (!this.game) return 'noGame'
 
     const { state, error } = apply(this.game, action, seat)
-    if (error) {
-      this.listeners.onError({ code: error })
-      return
-    }
+    if (error) return error
 
     // Jouer, c'est être là : la série de tours sautés repart de zéro.
     this.missed.set(seat, 0)
+    this.skipped.delete(seat)
     this.game = state
-    this.room?.send('state', state)
+    this.sendState()
     this.onGameChanged()
     this.listeners.onChange()
+    return null
   }
 
   /** L'hôte joue pour les sièges tenus par un bot. */
@@ -819,8 +1475,23 @@ export class Session {
 
   /** Tout ce qui suit un changement d'état : à qui de jouer, et jusqu'à quand. */
   private onGameChanged(): void {
+    this.checkTurnHolder()
     this.scheduleBot()
     this.armTurnClock()
+  }
+
+  /**
+   * Le tour arrive sur un siège que personne ne tient plus.
+   *
+   * C'est le seul moment où l'absence coûte quelque chose à la table : tant que
+   * ce n'est pas son tour, un joueur parti ne gêne personne, et lui retirer son
+   * siège pendant qu'un autre joue, c'est le remplacer pour rien.
+   */
+  private checkTurnHolder(): void {
+    if (!this.isHost || !this.game) return
+    const since = this.awaySince.get(this.game.turn)
+    if (since === undefined) return
+    this.considerBotTakeover(this.game.turn, Date.now() - since)
   }
 
   /**
@@ -865,13 +1536,29 @@ export class Session {
     // appareil : c'est le voyage de son coup qu'elle couvre. Sur un siège d'ici,
     // elle ne ferait qu'une seconde et demie de décompte à zéro avant que rien
     // ne se passe.
-    const grace = player!.clientId === this.self ? 0 : TURN_GRACE_MS
+    const grace = player!.clientId === this.self ? 0 : this.graceFor(player!.clientId)
     const seq = game!.seq
     this.turnTimer = setTimeout(() => {
       this.turnTimer = null
       if (!this.game || this.game.seq !== seq || this.game.turn !== seat) return
       this.skipIdleTurn(seat!)
     }, TURN_MS + grace)
+  }
+
+  /**
+   * La marge que l'hôte s'accorde avant de trancher, pour ce joueur-là.
+   *
+   * Une seconde et demie fixe supposait un réseau qui ne l'est pas : sur un
+   * relais TURN en 4G, l'aller de l'état plus le retour de l'intention passent
+   * les deux secondes, et le coup joué à temps arrivait après le couperet. La
+   * marge suit donc l'aller-retour mesuré, sans jamais descendre sous l'ancien
+   * plancher.
+   */
+  private graceFor(id: string): number {
+    // Bornée des deux côtés : un réseau lent mérite qu'on l'attende, pas qu'on
+    // suspende la partie. Au-delà de trois fois le plancher, ce n'est plus une
+    // marge, c'est un tour qui ne saute jamais.
+    return Math.min(3 * TURN_GRACE_MS, Math.max(TURN_GRACE_MS, 2 * (this.rtt.get(id) ?? 0)))
   }
 
   /**
@@ -882,8 +1569,12 @@ export class Session {
   private skipIdleTurn(seat: Seat): void {
     if (!this.game) return
     this.missed.set(seat, (this.missed.get(seat) ?? 0) + 1)
+    // On retient l'état qu'on vient de sauter, et l'heure : un coup joué pour
+    // CET état-là, s'il arrive dans la foulée, prouve que le joueur était bien
+    // devant son écran.
+    this.skipped.set(seat, { seq: this.game.seq, at: Date.now() })
     this.game = forceSkipTurn(this.game, seat)
-    this.room?.send('state', this.game)
+    this.sendState()
     this.considerBotTakeover(seat)
     this.onGameChanged()
     this.listeners.onChange()
@@ -913,11 +1604,17 @@ export class Session {
     if (this.mode !== 'online' || !this.isHost || !this.lobby.started) return
     const player = this.lobby.players.find((p) => p.seat === seat)
     if (!player) return
+    // Une absence ne se paie qu'à son tour ; trois tours sautés, en revanche,
+    // sont déjà la réponse à la question et n'attendent rien.
+    if (awayFor !== null && this.game?.turn !== seat) return
     if (!shouldHandToBot(player, { missed: this.missed.get(seat) ?? 0, awayFor })) return
 
     player.botFill = true
     this.publishLobby()
-    this.listeners.onError({ code: 'seatToBot', name: player.name })
+    // Pas à l'intéressé : son écran le lui dit à la deuxième personne, avec le
+    // bouton qui reprend le siège (voir `seatToTakeBack`). Un « un bot prend la
+    // place de Camille » chez Camille se lisait comme la nouvelle d'à côté.
+    if (!this.mine(seat)) this.listeners.onError({ code: 'seatToBot', name: player.name })
     this.onGameChanged()
     this.listeners.onChange()
   }
@@ -928,12 +1625,10 @@ export class Session {
    * represénter.
    */
   private reclaim(player: LobbyPlayer): void {
-    const away = this.awayTimers.get(player.seat)
-    if (away) clearTimeout(away)
-    this.awayTimers.delete(player.seat)
-    this.missed.set(player.seat, 0)
+    this.clearAway(player.seat)
     if (!player.botFill) return
     player.botFill = false
+    this.missed.set(player.seat, 0)
     this.listeners.onError({ code: 'seatBack', name: player.name })
   }
 
@@ -947,6 +1642,7 @@ export class Session {
     if (!player || !this.mine(seat)) return
 
     if (this.isHost) {
+      this.missed.set(seat, 0)
       this.reclaim(player)
       player.connected = true
       this.publishLobby()
@@ -962,8 +1658,13 @@ export class Session {
     if (!this.isHost) return
     this.frozen = false
     this.lobby.started = false
+    // Le numéro de manche est ce qui dit aux invités que le prochain état, qui
+    // repart de zéro, n'est pas un vieil état en retard.
+    this.lobby.round += 1
     this.game = null
     this.missed.clear()
+    this.skipped.clear()
+    this.judged.clear()
     // Une nouvelle manche rend son siège à qui est encore là : seuls les absents
     // repartent avec un bot à leur place.
     for (const p of this.lobby.players) if (p.connected) p.botFill = false
@@ -974,14 +1675,24 @@ export class Session {
 
   /** Ferme la session. `forget` efface la sauvegarde : c'est un abandon. */
   destroy(forget = false): void {
+    this.closed = true
     if (this.botTimer) clearTimeout(this.botTimer)
     if (this.linkTimer) clearTimeout(this.linkTimer)
     if (this.turnTimer) clearTimeout(this.turnTimer)
+    this.linkTimer = null
+    if (this.beatTimer) clearInterval(this.beatTimer)
+    this.beatTimer = null
+    this.skipped.clear()
+    this.hostPeerId = null
+    this.clearHostGrace()
+    this.outbox.forEach((timer) => clearTimeout(timer))
+    this.outbox.clear()
     this.awayTimers.forEach((timer) => clearTimeout(timer))
     this.awayTimers.clear()
+    this.awaySince.clear()
     this.turnEndsAt = null
     this.turnFor = null
-    this.room?.leave()
+    void this.room?.leave()
     this.room = null
     if (forget) {
       clearSave()

@@ -16,6 +16,8 @@ const seat = (n: Seat, clientId: string): LobbyPlayer => ({
 const lobbyOf = (players: LobbyPlayer[], started = false): Lobby => ({
   code: 'ABCDEFGH',
   hostClientId: 'hote',
+  epoch: 0,
+  round: 0,
   variantId: 'petits-chevaux',
   players,
   started,

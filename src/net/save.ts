@@ -14,7 +14,15 @@ import type { Lobby } from './room.ts'
 
 const KEY = 'dada.save'
 const INVITE_KEY = 'dada.invite'
-/** 2 : l'état porte le compteur de tours passés à l'écurie (`stuck`). */
+/**
+ * 2 : l'état porte le compteur de tours passés à l'écurie (`stuck`).
+ *
+ * Le numéro ne monte que quand le **moteur** change. Le salon a gagné depuis un
+ * règne (`epoch`) et un numéro de manche (`round`), mais ces deux-là ne servent
+ * qu'en ligne — où rien n'est sauvegardé — et se comblent à la lecture. Monter
+ * le format pour eux aurait jeté toutes les parties locales en cours, sans rien
+ * régler.
+ */
 const VERSION = 2
 /**
  * Au-delà, la partie qu'on avait quittée est finie depuis longtemps : proposer
@@ -49,6 +57,10 @@ export function readSave(): Save | null {
     // mieux vaut l'oublier que de restaurer un état à moitié compris.
     if (save.v !== VERSION || !save.game || !save.lobby) return null
     if (save.game.phase === 'finished') return null
+    // Champs de salon apparus après coup : ils n'ont de sens qu'en ligne, et
+    // leur absence ne rend pas la partie moins jouable.
+    save.lobby.epoch ??= 0
+    save.lobby.round ??= 0
     return save
   } catch {
     return null
@@ -61,17 +73,6 @@ export function clearSave(): void {
   } catch {
     // Sans conséquence : au pire la sauvegarde périmée sera écartée à la lecture.
   }
-}
-
-/** « il y a 3 min », pour que la reprise dise de quand elle date. */
-export function since(at: number): string {
-  const min = Math.round((Date.now() - at) / 60000)
-  if (min < 1) return "à l'instant"
-  if (min < 60) return `il y a ${min} min`
-  const hours = Math.round(min / 60)
-  if (hours < 24) return `il y a ${hours} h`
-  const days = Math.round(hours / 24)
-  return days === 1 ? 'hier' : `il y a ${days} jours`
 }
 
 // ─────────────────────────── partie en ligne quittée ───────────────────────────

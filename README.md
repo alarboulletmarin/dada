@@ -33,7 +33,7 @@ lit (voir `DETOURS` dans `app.ts`).
 | Variante | Plateau | Sortie | Particularités |
 |---|---|---|---|
 | **Petits chevaux** | 56 cases | 6 | Règle française. Une case, un cheval. Seules les cases de départ protègent. |
-| **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, deux pions par case, rejeu sur capture et sur arrivée. |
+| **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, plusieurs pions peuvent partager une case, rejeu sur capture et sur arrivée. |
 | **Rapide** | 40 cases | 1 ou 6 | Arrivée sans compte exact. Parties courtes, deux chevaux. |
 
 Les règles sont des **données**, pas du code : voir `src/game/variants.ts`. Ajouter
@@ -47,8 +47,10 @@ imprimés, avec un nombre de cases qu'on peut compter.
 Le plateau **français des petits chevaux** compte **56 cases, 14 par quart**. Son
 tracé passe par les quatre angles du carré central, ce qui le rend
 orthogonalement continu — un cheval y avance toujours d'un côté de case à la
-fois. Ses six marches d'escalier portent leur numéro, parce que la règle stricte
-demande le chiffre exact de la marche visée.
+fois. Ses six marches d'escalier portent leur numéro, comme sur le carton
+imprimé — c'est **du dessin, pas une règle** : on n'y monte pas marche par
+marche en tirant son chiffre, on y avance du nombre de cases indiqué par le dé,
+comme partout ailleurs. Seule l'arrivée demande le compte exact.
 
 Le plateau **international du Ludo** compte **52 cases, 13 par quart**. Il coupe
 ces quatre angles : le pion y tourne en diagonale, exactement comme sur un
@@ -67,9 +69,18 @@ qui amènerait un cheval sur une case tenue par un cheval qu'il ne peut pas mang
 — le sien, ou un adversaire sur sa case de départ — n'est tout simplement pas
 jouable. L'arrivée fait exception : c'est là que les quatre se rejoignent.
 
-**Aucun barrage**, nulle part. Le Ludo et la variante rapide laissent deux pions
-d'une même couleur partager une case ; cela ne dresse aucun mur. On franchit une
-pile, on peut s'arrêter dessus, et l'on y mange alors ce qui s'y trouvait.
+La règle vaut pour **tout ce qui déplace un cheval**, dé ou carte. Un galop qui
+tomberait sur une case tenue n'est pas jouable ; un faux pas qui reculerait
+dessus s'arrête avant. La seule case partagée, en règle française, est celle d'un
+cheval au bouclier : l'attaquant s'y arrête le temps d'un tour. Sans cette
+exception, le bouclier cesserait d'être « une capture encaissée » pour devenir un
+mur — et un mur que rien ne pourrait plus briser, puisque la charge qui le brise
+n'aurait jamais lieu.
+
+**Aucun barrage**, nulle part. Le Ludo et la variante rapide laissent plusieurs
+pions d'une même couleur partager une case — deux, trois, quatre s'il le faut ;
+cela ne dresse aucun mur. On franchit une pile, on peut s'arrêter dessus, et l'on
+y mange alors ce qui s'y trouvait.
 
 La règle internationale des barrages a existé ici, et elle a été retirée : deux
 pions qu'on ne peut ni manger ni contourner arrêtent la table entière, et une
@@ -129,11 +140,11 @@ bonus ne part tout seul : les quatre se gardent, le dé pipé compris.
 
 | Carte | | Garde | Effet |
 |---|---|---|---|
-| Bouclier | ×3 | main | Le cheval désigné encaisse la prochaine capture sans bouger. Le bouclier se brise à l'impact. |
-| Galop | ×3 | main | Le cheval désigné avance de 3 cases. Jamais au-delà de l'arrivée : gagner par accident serait pire que rien. |
+| Bouclier | ×3 | main | Le cheval désigné encaisse la prochaine capture sans bouger. Le bouclier se brise à l'impact. Il se pose sur un cheval **en piste** : à l'écurie comme dans l'escalier, rien ne peut l'atteindre, et la carte serait dépensée pour rien. Il ne protège pas du « Retour à l'écurie », qui n'est pas une capture. |
+| Galop | ×3 | main | Le cheval désigné avance de 3 cases, et il **arrive comme un coup de dé** : il mange ce qu'il rattrape, brise les boucliers, et renonce à la case que la règle lui refuse. Jamais au-delà de l'arrivée : gagner par accident serait pire que rien. Manger au galop ne fait pas rejouer, même au Ludo : une carte se joue dans le tour qu'on tient, elle n'en ouvre pas un second. |
 | Rejeu | ×2 | main | On relance le dé et on rejoue. La chaîne de 6 continue de compter. |
 | Dé pipé | ×2 | main | Un bonus de dé de plus dans la réserve de la table. Armé, il s'encaisse dans le geste suivant : petit nombre ou grand nombre. |
-| Faux pas | ×3 | — | Le cheval recule de 3 cases, sans jamais repasser par l'écurie. |
+| Faux pas | ×3 | — | Le cheval recule de 3 cases, sans jamais repasser par l'écurie. **On ne mange jamais en reculant** — un malus qui offrirait une capture serait un bonus. En règle française, si la case visée est tenue, le cheval s'arrête à la première case libre en deçà ; s'il n'y en a aucune, il reste où il est. |
 | Tour sauté | ×2 | — | Le prochain tour saute. Un seul. |
 | Retour à l'écurie | ×1 | — | Le cheval rentre. La carte la plus dure, et la seule de son espèce. |
 
@@ -171,6 +182,11 @@ personne ne vient le manger — une partie entière, s'il le faut ; un tour saut
 attend son tour. Ce qui dure se voit : l'anneau doublé sur le cheval, et sur la
 carte du joueur une pastille par effet en attente. Un effet qui dure sans se voir
 se lit comme un bug le jour où il se manifeste.
+
+**Un bouclier brisé n'est pas une capture.** Le cheval reste sur sa case, son
+propriétaire ne perd rien, aucun compteur ne bouge — et l'attaquant ne gagne donc
+pas le tour de rejeu que le Ludo accorde à qui mange. Une charge qui casse un
+bouclier est un tour dépensé pour ouvrir la voie, pas un coup gagnant.
 
 Un pouvoir qui déplace ne redéclenche pas la case où il amène le cheval : sans
 cette règle, deux cases voisines pourraient se renvoyer la balle sans fin.
@@ -324,8 +340,9 @@ src/game/     moteur pur — (état, action) → état. Aucun DOM, aucun réseau
 src/net/      transport pair-à-pair et orchestration de la partie
   room.ts       canaux WebRTC, code de partie, identité de l'appareil
   admission.ts  qui entre dans le salon, et à quelles conditions
-  session.ts    salon, arbitrage, minuterie de tour, relève des absents
-  presence.ts   les délais : dix secondes pour jouer, quand un bot prend la main
+  session.ts    salon, arbitrage, battement de cœur, minuterie, relève des absents
+  presence.ts   les délais : dix secondes pour jouer, quarante-cinq d'absence
+                avant qu'un bot n'entre, et le battement qui dit qui est là
 src/ui/       écrans, plateau, animations
   rules-text.ts le règlement complet — un document, pas des libellés
 ```
@@ -339,21 +356,59 @@ départ : `-1` à l'écurie, `0..55` sur le circuit, `56..61` dans l'escalier.
 Avancer, c'est additionner. La conversion vers une case du plateau vit dans
 `board.ts` et nulle part ailleurs.
 
+**Qui est encore là.** L'hôte bat la mesure : un `tick` toutes les deux
+secondes, un `pong` en retour, et la présence se mesure sur ces messages-là. Le
+transport, lui, ne donne qu'un avis — il déclare un pair perdu après cinq
+secondes de silence, puis ne dit plus rien, ni qu'il est revenu ni qu'il ne
+l'est pas. **N'importe quel message rend son siège** à qui revient, sans
+attendre de présentation en bonne et due forme. Et l'invité qui n'entend plus
+l'hôte le voit écrit en travers de la partie, avec un bouton pour rebrancher :
+avant, il tapait le dé dans le vide pendant qu'on comptait ses tours sautés.
+
 **Reprise après déconnexion.** Chaque appareil garde une copie complète de la
-partie. Si l'hôte s'en va, un nouveau est désigné de façon déterministe et la
-partie continue — les sièges que l'ancien hôte tenait pour d'autres (bots,
-joueurs sur son téléphone) passent au nouvel arbitre. Un joueur qui recharge sa
-page retrouve son siège : son identité est stockée localement, pas déduite de sa
-connexion. Quitter n'y change rien : le code de la partie reste sur l'appareil,
-et l'accueil propose d'y retourner tant qu'elle dure.
+partie. Si l'hôte s'en va, un nouveau est désigné de façon déterministe — mais
+**pas tout de suite, et pas par n'importe qui**. Pas tout de suite : perdre le
+lien de l'hôte, c'est peut-être être soi-même isolé, et le nouvel hôte est
+attendu quarante-cinq secondes, le temps d'une vraie reconnexion. Pas par
+n'importe qui : seul un candidat qui voit encore la moitié de la table s'élit,
+sans quoi c'est l'isolé qui se proclame arbitre.
+
+Chaque règne porte un numéro, et c'est lui qui empêche la table d'avoir deux
+arbitres : le règne le plus récent l'emporte, à égalité le plus petit
+identifiant, et l'hôte battu redevient invité **sans perdre son siège**. Sans ce
+numéro, deux appareils coupés l'un de l'autre s'ignoraient à jamais — et chacun
+mettait un bot sur le siège de l'autre.
+
+Un joueur qui recharge sa page retrouve son siège : son identité est stockée
+localement, pas déduite de sa connexion. Quitter n'y change rien : le code de la
+partie reste sur l'appareil, et l'accueil propose d'y retourner tant qu'elle
+dure.
 
 **Personne n'attend personne.** Un tour dure dix secondes ; passé le délai il
 saute, et rien n'est joué à la place du joueur — ne pas jouer est toute la
-peine. Trois tours sautés d'affilée, ou vingt secondes d'absence, et un bot
-tient le siège en attendant. Le siège reste celui de son joueur : il porte
-toujours son nom, et son retour — ou un appui sur « Reprendre » — le lui rend.
-Les durées sont dans `presence.ts`, l'arbitrage dans `session.ts` : le moteur,
-lui, ne connaît toujours pas l'horloge.
+peine. Trois tours sautés d'affilée, et un bot tient le siège. Une absence, elle,
+ne coûte le siège qu'au bout de quarante-cinq secondes **et seulement quand c'est
+son tour** : tant qu'un autre joue, un joueur parti ne gêne personne, et le
+remplacer d'avance ne serait que le remplacer pour rien.
+
+**Un coup joué à temps compte, même arrivé tard.** Chaque coup part avec le
+numéro de l'état sur lequel le joueur a décidé, et un jeton qui permet de le
+réémettre sans risque de le jouer deux fois ; l'hôte en accuse réception, et
+c'est chez celui qui a joué — non chez l'arbitre — que s'affiche un éventuel
+refus. Si le coup arrive après le couperet, le tour est perdu mais **la série de
+tours sautés repart de zéro** — à condition que le coup fût bien en vol quand le
+couperet est tombé : jouer tard prouve la présence, jouer une minute après ne
+prouve plus rien. La marge que l'hôte s'accorde suit d'ailleurs l'aller-retour
+mesuré avec ce joueur-là, entre une seconde et demie et quatre secondes et
+demie : une valeur fixe supposait un réseau qui ne l'est pas et sanctionnait le
+plus lent — c'est-à-dire celui qui avait le plus besoin qu'on l'attende — tandis
+qu'une marge sans plafond aurait suffi à un téléphone endormi pour suspendre la
+partie de tout le monde.
+
+Le siège reste celui de son joueur : il porte toujours son nom, et son retour —
+ou un appui sur « Reprendre » — le lui rend. Les durées sont dans `presence.ts`,
+l'arbitrage dans `session.ts` : le moteur, lui, ne connaît toujours pas
+l'horloge.
 
 ## Déployer
 

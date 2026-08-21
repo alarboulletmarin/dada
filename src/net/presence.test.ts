@@ -4,6 +4,8 @@ import {
   isBotSeat,
   MISSED_TURNS_TO_BOT,
   shouldHandToBot,
+  SILENCE_MS,
+  TICK_MS,
   turnLeft,
   TURN_MS,
   type SeatPresence,
@@ -55,6 +57,25 @@ describe('relève par un bot', () => {
   it('ne relève pas un siège déjà tenu par un bot', () => {
     expect(shouldHandToBot(human({ kind: 'bot' }), { missed: 9, awayFor: 9e5 })).toBe(false)
     expect(shouldHandToBot(human({ botFill: true }), { missed: 9, awayFor: 9e5 })).toBe(false)
+  })
+
+  /**
+   * Le délai doit couvrir une vraie reconnexion, pas une reconnexion théorique :
+   * changer de réseau impose de se réannoncer sur les relais, de refaire une
+   * offre, de retrouver un chemin ICE. Quarante secondes n'ont rien d'anormal.
+   */
+  it('laisse le temps de changer de réseau avant de rendre le siège à un bot', () => {
+    expect(AWAY_TO_BOT_MS).toBeGreaterThanOrEqual(40_000)
+  })
+})
+
+describe('battement de cœur', () => {
+  it('laisse passer plusieurs battements avant de déclarer un silence', () => {
+    expect(SILENCE_MS).toBeGreaterThanOrEqual(3 * TICK_MS)
+  })
+
+  it('ne déclare pas un joueur parti avant de le savoir silencieux', () => {
+    expect(AWAY_TO_BOT_MS).toBeGreaterThan(SILENCE_MS)
   })
 })
 

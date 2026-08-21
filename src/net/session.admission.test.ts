@@ -56,7 +56,7 @@ function fakeRoom() {
     onPeerLeave: (cb) => {
       onLeave = cb
     },
-    leave: () => {},
+    leave: async () => {},
   }
 
   return {
@@ -210,6 +210,8 @@ describe("l'invité devant la porte", () => {
       {
         code: 'ABCDEFGH',
         hostClientId: 'hote',
+        epoch: 0,
+        round: 0,
         variantId: 'petits-chevaux',
         started: false,
         players: [
@@ -233,6 +235,8 @@ describe("l'invité devant la porte", () => {
       {
         code: 'ABCDEFGH',
         hostClientId: 'nouvel-hote',
+        epoch: 0,
+        round: 0,
         variantId: 'petits-chevaux',
         started: false,
         players: [
@@ -252,6 +256,8 @@ describe("l'invité devant la porte", () => {
       {
         code: 'ABCDEFGH',
         hostClientId: 'hote',
+        epoch: 0,
+        round: 0,
         variantId: 'petits-chevaux',
         started: false,
         players: [

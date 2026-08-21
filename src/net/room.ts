@@ -12,7 +12,7 @@
 
 import { getRelaySockets, joinRoom, selfId } from 'trystero/nostr'
 import type { BoardShape } from '../game/board.ts'
-import type { Action, GameState, Seat } from '../game/types.ts'
+import type { Action, GameError, GameState, Seat } from '../game/types.ts'
 import { turnServers } from './turn.ts'
 
 /**
@@ -49,6 +49,25 @@ export type LobbyPlayer = {
 export type Lobby = {
   code: string
   hostClientId: string
+  /**
+   * Numéro de règne de l'hôte.
+   *
+   * Sans lui, deux appareils coupés l'un de l'autre pouvaient se croire tous
+   * les deux arbitres et n'avaient aucun moyen d'en sortir : chacun ignorait
+   * les salons de l'autre, et chacun mettait un bot sur le siège de l'autre.
+   * L'époque donne un ordre à ces deux vérités — celle du règne le plus récent
+   * gagne, et le perdant redevient invité sans perdre son siège.
+   */
+  epoch: number
+  /**
+   * Numéro de manche, incrémenté à chaque revanche.
+   *
+   * Le numéro d'état (`seq`) repart de zéro à chaque nouvelle partie : sans ce
+   * compteur-ci, un invité qui gardait l'état final de la manche précédente
+   * rejetait le premier état de la suivante comme périmé, et restait devant son
+   * podium pendant que les autres jouaient.
+   */
+  round: number
   variantId: string
   /**
    * Réglages de table, décidés par l'hôte avant le lancement. Ils voyagent avec
@@ -68,13 +87,60 @@ export type Hello = { clientId: string; name: string }
 /**
  * Réponse de l'hôte à qui demande une place.
  *
- * `pending` : la demande est posée, l'hôte n'a pas encore tranché.
- * `denied`  : refusée. Il n'y a pas de `granted` — un siège accordé se voit
- *             dans le salon publié, et deux façons de dire la même chose
- *             finiraient par se contredire.
+ * `pending`  : la demande est posée, l'hôte n'a pas encore tranché.
+ * `denied`   : refusée.
+ * `watching` : table pleine ou partie lancée — il n'y a rien à trancher, et
+ *              sans cette réponse le pair se representait indéfiniment.
+ * Il n'y a pas de `granted` — un siège accordé se voit dans le salon publié, et
+ * deux façons de dire la même chose finiraient par se contredire.
  */
-export type JoinVerdict = { clientId: string; status: 'pending' | 'denied' }
-export type Intent = { clientId: string; action: Action }
+export type JoinVerdict = { clientId: string; status: 'pending' | 'denied' | 'watching' }
+
+/**
+ * L'état de la partie, tel qu'il voyage.
+ *
+ * L'enveloppe porte le règne et la manche : le moteur n'a pas à les connaître —
+ * il ne sait rien du réseau — mais le destinataire, lui, a besoin des deux pour
+ * décider si cet état-là est plus récent que le sien.
+ *
+ * Et `from`, l'identité de l'expéditeur : un identifiant de pair ne dit rien de
+ * qui arbitre, et sans ce champ n'importe qui pouvait imposer son état à toute
+ * la table. Ce n'est pas une signature — le modèle reste « on se fait confiance
+ * entre amis » — c'est ce qui permet d'ignorer un ancien arbitre qui s'ignore.
+ */
+export type StateMessage = { from: string; epoch: number; round: number; game: GameState }
+
+/**
+ * Une intention de coup, adressée à l'hôte.
+ *
+ * `seq` dit sur quel état elle se fonde — l'hôte reconnaît ainsi un coup parti
+ * à temps mais arrivé tard. `nonce` la rend rejouable sans risque : l'invité
+ * réémet jusqu'à l'accusé de réception, l'hôte n'applique qu'une fois. `epoch`
+ * dit sous quel règne elle a été décidée : un coup destiné à l'arbitre d'avant
+ * n'a pas à s'appliquer à la partie de celui d'après.
+ */
+export type Intent = { clientId: string; epoch: number; action: Action; seq: number; nonce: string }
+
+/** Accusé de réception d'une intention, renvoyé au seul émetteur. */
+export type Ack = { nonce: string; ok: boolean; error?: IntentError }
+
+/**
+ * Ce qui peut être reproché à une intention.
+ *
+ * Ni l'une ni l'autre n'est une faute de jeu : `tooLate` dit que le coup était
+ * bon mais qu'il est arrivé après le couperet, `noGame` que l'arbitre n'a pas
+ * encore la partie sous les yeux — il vient de reprendre la main et attend
+ * qu'on la lui rende. Les taire serait pire : un accusé de réception favorable
+ * sur un coup que personne n'a appliqué fige la table sans un message.
+ */
+export type IntentError = GameError | 'tooLate' | 'noGame'
+
+/** Battement de l'hôte. `at` revient tel quel dans le `pong` : l'hôte mesure
+ *  ainsi un aller-retour sur sa seule horloge, sans jamais avoir à la comparer
+ *  à celle des autres. */
+export type Tick = { from: string; epoch: number; seq: number; at: number }
+export type Pong = { clientId: string; at: number }
+
 /** Le nom voyage avec chaque message : un renommage en cours de partie ne
  *  doit pas réécrire l'historique déjà affiché chez les autres. */
 export type ChatMessage = { clientId: string; name: string; text: string; at: number }
@@ -83,8 +149,11 @@ type Messages = {
   hello: Hello
   join: JoinVerdict
   lobby: Lobby
-  state: GameState
+  state: StateMessage
   intent: Intent
+  ack: Ack
+  tick: Tick
+  pong: Pong
   chat: ChatMessage
 }
 
@@ -97,7 +166,9 @@ export type Room = {
   on: <K extends keyof Messages>(kind: K, cb: (data: Messages[K], peer: string) => void) => void
   onPeerJoin: (cb: (peer: string) => void) => void
   onPeerLeave: (cb: (peer: string) => void) => void
-  leave: () => void
+  /** Rendue : rejoindre le même salon avant que l'ancien ne soit vraiment fermé
+   *  rend le même objet, détruit une fraction de seconde plus tard. */
+  leave: () => Promise<void>
 }
 
 /**
@@ -127,8 +198,10 @@ const turnConfig = turnServers(
  *
  * Trystero tire ses relais parmi quarante-sept par défaut, mais le tirage est
  * déterministe : tous les joueurs de cette app tapent toujours les mêmes cinq,
- * sans repli si l'un tombe — et il y en a un de mort. On monte la redondance
- * pour en ouvrir davantage.
+ * sans repli si l'un tombe — et il y en a un de mort. Huit au lieu de cinq :
+ * la signalisation ne coûte que quelques messages éphémères, et c'est elle qui
+ * décide si deux amis se trouvent ou passent la soirée devant un écran qui
+ * tourne.
  *
  * On garde la liste par défaut plutôt qu'une sélection maison : les relais les
  * plus connus sont aussi les plus filtrants, et refusent en pratique de relayer
@@ -136,7 +209,7 @@ const turnConfig = turnServers(
  * à la main : une liste de six relais réputés ne mettait plus deux pairs en
  * relation, là où les défauts le font en deux secondes.
  */
-const relayConfig = undefined
+const relayConfig = { redundancy: 8 }
 
 /**
  * Vue neutre d'un canal Trystero. Le cast est confiné ici : au-dessus, `send`
@@ -161,8 +234,11 @@ export function joinGameRoom(code: string, onError?: (message: string) => void):
     hello: room.makeAction<Hello>('hello') as unknown as AnyChannel,
     join: room.makeAction<JoinVerdict>('join') as unknown as AnyChannel,
     lobby: room.makeAction<Lobby>('lobby') as unknown as AnyChannel,
-    state: room.makeAction<GameState>('state') as unknown as AnyChannel,
+    state: room.makeAction<StateMessage>('state') as unknown as AnyChannel,
     intent: room.makeAction<Intent>('intent') as unknown as AnyChannel,
+    ack: room.makeAction<Ack>('ack') as unknown as AnyChannel,
+    tick: room.makeAction<Tick>('tick') as unknown as AnyChannel,
+    pong: room.makeAction<Pong>('pong') as unknown as AnyChannel,
     chat: room.makeAction<ChatMessage>('chat') as unknown as AnyChannel,
   }
 
@@ -187,9 +263,7 @@ export function joinGameRoom(code: string, onError?: (message: string) => void):
     onPeerLeave: (cb) => {
       room.onPeerLeave = cb
     },
-    leave: () => {
-      void room.leave()
-    },
+    leave: () => room.leave(),
   }
 }
 

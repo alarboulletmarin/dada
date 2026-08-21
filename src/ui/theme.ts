@@ -17,12 +17,6 @@ const THEMES: Theme[] = ['auto', 'light', 'dark']
 /** Couleur de la barre système, pour que le navigateur suive le jeu. */
 const BAR: Record<'light' | 'dark', string> = { light: '#FBF2DF', dark: '#1E1712' }
 
-export const THEME_LABEL: Record<Theme, string> = {
-  auto: 'Auto',
-  light: 'Clair',
-  dark: 'Sombre',
-}
-
 /** L'icône de chaque thème, prise dans le jeu d'icônes maison. */
 export const THEME_ICON: Record<Theme, IconName> = { auto: 'auto', light: 'sun', dark: 'moon' }
 
