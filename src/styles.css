@@ -604,6 +604,66 @@ input:disabled {
   background: var(--cream);
 }
 
+/* Le bouton d'accueil qui porte sa ligne d'aide.
+
+   Le libellé et l'aide s'empilent DANS le bouton — une seule cible tactile,
+   pas deux : une phrase posée sous un bouton, c'est un demi-doigt de texte
+   inerte juste là où le pouce descend. Le bouton pousse donc sa hauteur au
+   lieu de comprimer son libellé, et `min-height` reste le plancher.
+
+   Rien ne se centre verticalement à la main : `.btn` est déjà un `flex`
+   centré, il ne change que de direction. Le `gap` de dix pixels, lui, doit
+   tomber — deux lignes de la même phrase ne s'écartent pas comme une icône
+   d'un mot. */
+.btn--hinted {
+  flex-direction: column;
+  gap: 0;
+  /* Le contenu mène la hauteur, `min-height` n'est plus qu'un plancher : la
+     marge intérieure peut donc être serrée sans écraser quoi que ce soit. */
+  min-height: 0;
+  padding-block: 5px;
+  line-height: 1.1;
+}
+
+.btn__hint {
+  max-width: 34ch;
+  font-family: var(--body);
+  font-size: clamp(11.5px, 1.6svh, 13px);
+  font-weight: 700;
+  line-height: 1.2;
+  /* La couleur du bouton, en retrait : sur le rouge et le bleu c'est la crème
+     qui s'atténue, sur le papier c'est l'encre. Une teinte fixe aurait été
+     illisible sur l'un des trois. */
+  color: inherit;
+  opacity: 0.72;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Le mot d'accueil de la première ouverture. Pas une carte de plus dans la
+   pile : un bloc de texte cerné d'un trait léger, qui se lit et qu'on oublie.
+   Il n'a pas de bouton pour se fermer — il part tout seul à la première
+   partie lancée (voir `welcomeCard` dans `app.ts`). */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: clamp(6px, 1.1svh, 12px) 14px;
+  border: var(--bw) dashed rgba(var(--ink-rgb), 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(var(--ink-rgb), 0.03);
+}
+
+.welcome p {
+  font-size: clamp(13px, 1.9svh, 15px);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--muted-strong);
+  text-align: center;
+  text-wrap: balance;
+}
+
 /* Reprise de partie : le bouton, et juste dessous de quoi savoir laquelle. */
 .resume {
   display: flex;
@@ -712,6 +772,35 @@ input:disabled {
 .badge.b3 {
   background: var(--yellow);
   color: var(--on-1);
+}
+
+/* La quatrième : le violet, la seule couleur de la palette qui n'appartient à
+   aucun siège — c'est le camp, pas un joueur. */
+.badge.b4 {
+  background: var(--purple);
+  color: var(--on-1);
+}
+
+/* Deux pions penchés l'un vers l'autre : la variante tient dans cette image,
+   et un seul pion aurait redit le Ludo. Ils se chevauchent pour tenir dans la
+   pastille sans que chacun rétrécisse jusqu'à l'illisible. */
+.badge__pair {
+  display: flex;
+  align-items: center;
+}
+
+.badge__pair .token {
+  width: 22px;
+  height: 24px;
+}
+
+.badge__pair .token:first-child {
+  transform: rotate(-11deg);
+}
+
+.badge__pair .token:last-child {
+  margin-left: -7px;
+  transform: rotate(11deg);
 }
 
 /* La même pastille, en rappel : dans le salon elle n'annonce plus le jeu, elle
@@ -973,6 +1062,40 @@ input:disabled {
   font-size: 14px;
   font-weight: 800;
   color: var(--muted);
+}
+
+/* En équipes, la place à table est une règle : 0 et 2 contre 1 et 3. L'étiquette
+   passe devant le pion, là où l'œil descend la colonne des sièges, et les deux
+   camps se distinguent au fond autant qu'au texte — le liseré de gauche est ce
+   qu'on lit en diagonale sans lire les mots. */
+.seat[data-team] {
+  /* Quatre objets se partageaient déjà la rangée — pion, portrait, nom, rôle —
+     et le nom est le seul qui puisse rétrécir. L'étiquette d'équipe est donc
+     taillée au plus court, et les écarts se resserrent : « Bot 2 » tronqué en
+     « Bo » aurait été payer l'information d'équipe avec une autre. */
+  gap: 8px;
+  padding-left: 10px;
+  border-left-width: 9px;
+}
+
+.seat--team-0 {
+  border-left-color: var(--purple);
+}
+
+.seat--team-1 {
+  border-left-color: var(--muted-strong);
+}
+
+.seat__team {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.07);
+  font-family: var(--title);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--muted-strong);
+  white-space: nowrap;
 }
 
 /* Le pion : un galet arrondi, plus haut que large, cerné d'encre. La forme
@@ -1505,6 +1628,40 @@ input:disabled {
 .pcard__mark--skip {
   border-color: var(--red);
   color: var(--red);
+}
+
+/* La marque d'équipe sur la carte d'un joueur : une lettre, et rien de plus.
+   La couleur du siège reste la sienne — c'est elle qu'on retrouve sur le
+   plateau — donc le camp ne peut pas passer par le fond de la carte. Une
+   pastille dans le coin haut, hors du flux, ne coûte pas un pixel à la ligne
+   du nom, qui est déjà serrée à quatre cartes sur un téléphone. */
+.pcard__team {
+  position: absolute;
+  top: -7px;
+  left: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 15px;
+  padding: 0 4px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font-family: var(--title);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pcard--team-0 .pcard__team {
+  background: var(--purple);
+  color: var(--on-1);
+}
+
+.pcard--team-1 .pcard__team {
+  background: var(--ink);
+  color: var(--card);
 }
 
 .pcard.out {
@@ -2822,6 +2979,196 @@ input:disabled {
   color: var(--on-0);
 }
 
+/* ─────────────────────────── réactions ───────────────────────────
+
+   Six emoji au bout d'un éventail, et des bulles qui surgissent sur la carte
+   de leur auteur. Tout est en `transform` et en `opacity` : rien de ce qui
+   bouge ici ne fait recalculer une ligne du plateau. */
+
+/* Le créneau garde sa place dans la barre : c'est le bouton qu'on voit, et
+   l'éventail se déploie par-dessus le reste sans pousser personne. */
+.react-slot {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* La zone qui parle aux lecteurs d'écran et à eux seuls. Pas `display: none`,
+   qui la rendrait muette : elle est là, elle ne se voit pas. */
+.react-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* L'éventail : un pivot sans dimensions au centre du bouton, six boutons posés
+   sur un quart de cercle. L'arc part vers le bas (90°) et finit vers la gauche
+   (180°) — les deux seules directions libres pour un bouton collé au coin haut
+   droit de l'écran.
+
+   Au-dessus des rangées de joueurs (3) et du plateau, sous les feuilles (36) :
+   il se referme tout seul, il n'a pas à couvrir ce qui attend une décision. */
+.react-fan {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 30;
+  width: 0;
+  height: 0;
+}
+
+.react-fan__btn {
+  --a: calc(90deg + var(--i) * 18deg);
+  --r: 116px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  padding: 0;
+  border: var(--bw) solid var(--ink);
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 3px 0 var(--shade);
+  font-size: 23px;
+  line-height: 1;
+  /* La double rotation place le bouton sur l'arc sans le faire tourner sur
+     lui-même : un emoji couché serait illisible. */
+  transform: rotate(var(--a)) translateX(var(--r)) rotate(calc(-1 * var(--a)));
+  animation: react-out 0.22s cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
+  /* Ils sortent l'un après l'autre, du plus proche du pouce au plus loin :
+     c'est ce décalage qui fait un éventail plutôt qu'une apparition. */
+  animation-delay: calc(var(--i) * 28ms);
+}
+
+.react-fan__btn:active {
+  background: var(--paper-deep);
+  transform: rotate(var(--a)) translateX(var(--r)) rotate(calc(-1 * var(--a))) scale(0.86);
+}
+
+/* Celui que la table propose après une capture : entouré, et un peu plus gros.
+   Il ne change pas de place — on doit pouvoir viser de mémoire. */
+.react-fan__btn.featured {
+  border-color: var(--red);
+  box-shadow: 0 3px 0 var(--shade), 0 0 0 4px color-mix(in srgb, var(--red) 28%, transparent);
+  font-size: 27px;
+}
+
+/* Se faire manger mérite qu'on insiste ; manger, non — on a déjà la main sur
+   le dé et le sourire aux lèvres. */
+.react-fan--eaten .react-fan__btn.featured {
+  animation:
+    react-out 0.22s cubic-bezier(0.2, 1.5, 0.4, 1) backwards,
+    react-beat 1s ease-in-out 0.3s 2;
+}
+
+@keyframes react-out {
+  from {
+    opacity: 0;
+    transform: rotate(var(--a)) translateX(0) rotate(calc(-1 * var(--a))) scale(0.4);
+  }
+}
+
+@keyframes react-beat {
+  50% {
+    box-shadow: 0 3px 0 var(--shade), 0 0 0 10px color-mix(in srgb, var(--red) 0%, transparent);
+  }
+}
+
+/* Le calque des bulles : posé en coordonnées d'écran, il ne dépend d'aucune
+   carte de joueur — celles-ci se refont à chaque état reçu (voir `app.ts`).
+   Sous les cartes qui volent (34) : une carte qui atterrit raconte un coup,
+   une réaction ne raconte que l'humeur de la table. */
+.react-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 33;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* La bulle : elle surgit du milieu de la carte, rebondit, grandit et s'estompe
+   en filant vers le plateau. `--life` et `--drift` viennent du JS. */
+.react-pop {
+  position: fixed;
+  margin: -22px 0 0 -22px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  line-height: 1;
+  /* Les emoji sont des images en couleur : une ombre portée les décolle du
+     plateau sans rien leur ajouter. */
+  filter: drop-shadow(0 2px 1px color-mix(in srgb, var(--shade) 70%, transparent));
+  animation: react-pop var(--life, 1800ms) cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes react-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(0);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(1.25) translateY(0);
+  }
+  24% {
+    transform: scale(1) translateY(0);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.15) translateY(calc(var(--drift, 34px) * 0.6));
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35) translateY(var(--drift, 34px));
+  }
+}
+
+/* Qui a demandé moins de mouvement garde l'information et perd le numéro : les
+   boutons se posent sans arc d'entrée, la bulle paraît et s'efface sans
+   rebondir ni se déplacer. Elle reste le temps qu'il faut pour être vue —
+   c'est ce qu'elle a à dire, pas la façon dont elle le dit, qui compte. */
+@media (prefers-reduced-motion: reduce) {
+  .react-fan__btn {
+    animation: none;
+  }
+
+  .react-fan--eaten .react-fan__btn.featured {
+    animation: none;
+  }
+
+  .react-fan__btn:active {
+    transform: rotate(var(--a)) translateX(var(--r)) rotate(calc(-1 * var(--a)));
+  }
+
+  .react-pop {
+    animation: react-fade var(--life, 1800ms) linear forwards;
+  }
+
+  @keyframes react-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    12%,
+    75% {
+      opacity: 1;
+    }
+  }
+}
+
 /* Confettis figés : cinq formes de guingois, comme jetées sur la page. */
 .confetti {
   display: flex;
@@ -2932,6 +3279,54 @@ input:disabled {
 
 .podium .rank.first .score {
   color: var(--ink);
+}
+
+/* En équipes, on gagne à deux : le classement se lit par camp, et le camp
+   gagnant est en tête. Un bloc, son nom, ses deux rangées — les rangées elles
+   ne changent pas d'un trait, c'est bien le même classement. */
+.podium--teams {
+  gap: 14px;
+}
+
+/* Un intertitre et ses deux rangées — pas une boîte dans la boîte : à 360
+   points de large, un cadre de plus mangeait vingt-six pixels sur la ligne du
+   nom, et « Joueur 1 » s'y tronquait en « Jou… ». Le titre suffit à séparer
+   les deux camps, et le gagnant se lit à son trait plein. */
+.podium__team {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.podium__team-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--title);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* Le filet qui court après le nom : il tient lieu de séparation entre les deux
+   camps, et son épaisseur dit lequel a gagné. */
+.podium__team-name::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(var(--ink-rgb), 0.18);
+}
+
+.podium__team--won .podium__team-name {
+  color: var(--ink);
+}
+
+.podium__team--won .podium__team-name::after {
+  height: 3px;
+  background: var(--ink);
 }
 
 /* ─────────────────────────── message flottant ─────────────────────────── */
@@ -3396,6 +3791,49 @@ input:disabled {
 
 .about__section p:last-child {
   margin-bottom: 0;
+}
+
+/* L'étiquette de variante d'une règle du règlement.
+
+   Elle vivait déjà dans le balisage (`rulebook.ts`) sans une ligne de style :
+   collée au titre, elle s'y lisait comme la fin du titre — « Un 1 suffit
+   aussiRapide ». La pastille reprend celle des cartes de l'écran de choix, en
+   plus petit ; c'est la même information, elle n'a pas à changer de forme. */
+.rulebook__tags {
+  display: inline-flex;
+  gap: 5px;
+  margin-left: 7px;
+  vertical-align: 2px;
+}
+
+.rulebook__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font-family: var(--body);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.rulebook__tag.tag-int {
+  background: var(--blue);
+  color: var(--cream);
+}
+
+.rulebook__tag.tag-express {
+  background: var(--yellow);
+  color: var(--on-1);
+}
+
+.rulebook__tag.tag-teams {
+  background: var(--purple);
+  color: var(--on-1);
 }
 
 .about__links {

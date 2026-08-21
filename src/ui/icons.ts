@@ -44,6 +44,11 @@ const ICONS = {
    *  gauche, la bulle penchait visiblement vers le coin haut-gauche de son
    *  bouton, alors même que sa boîte était centrée. */
   chat: '<rect x="3.4" y="4" width="17.2" height="12.2" rx="4.2"/><path d="M9.2 16.2v3l3.4-3"/>',
+  /** Réagir : un visage, à côté de la bulle qui écrit. Les deux yeux sont des
+   *  segments de longueur nulle — un point rond que `stroke-linecap` dessine,
+   *  comme celui du « ? » de l'aide. */
+  smile:
+    '<circle cx="12" cy="12" r="8.5"/><path d="M8.3 13.6a4.5 4.5 0 0 0 7.4 0"/><path d="M9.3 9.5v.1"/><path d="M14.7 9.5v.1"/>',
   /** Mettre en pause : deux barres pleines, comme sur un magnétophone. */
   pause:
     '<rect x="7.6" y="4.8" width="3" height="14.4" rx="1.5" fill="currentColor" stroke-linejoin="round"/><rect x="13.4" y="4.8" width="3" height="14.4" rx="1.5" fill="currentColor" stroke-linejoin="round"/>',

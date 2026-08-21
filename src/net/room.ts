@@ -155,9 +155,25 @@ export type IntentError = GameError | 'tooLate' | 'noGame'
 export type Tick = { from: string; epoch: number; seq: number; at: number }
 export type Pong = { clientId: string; at: number }
 
-/** Le nom voyage avec chaque message : un renommage en cours de partie ne
- *  doit pas réécrire l'historique déjà affiché chez les autres. */
-export type ChatMessage = { clientId: string; name: string; text: string; at: number }
+/**
+ * Le nom voyage avec chaque message : un renommage en cours de partie ne
+ * doit pas réécrire l'historique déjà affiché chez les autres.
+ *
+ * `kind` distingue une réaction d'un message écrit, et rien d'autre : une
+ * réaction EST un message de chat, avec un emoji pour texte. Un canal dédié
+ * aurait doublé le relais, le journal et la déduplication pour transporter la
+ * même chose — et surtout, un pair resté sur une version d'avant ignore un
+ * champ qu'il ne connaît pas : il reçoit une réaction comme le message d'un
+ * seul emoji qu'elle est, bulle de chat comprise. Une action Trystero de plus
+ * lui aurait simplement fait disparaître la moitié de la conversation.
+ */
+export type ChatMessage = {
+  clientId: string
+  name: string
+  text: string
+  at: number
+  kind?: 'reaction'
+}
 
 type Messages = {
   hello: Hello

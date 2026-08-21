@@ -8,9 +8,15 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 398 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR, portraits
+npm test         # 617 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR, portraits
 npm run build    # vérification de types puis build de production
 ```
+
+`npm test` lance deux environnements d'un coup. Le gros de la suite tourne sous
+`node`, sans DOM ; les **écrans** ont leurs propres tests, sous `jsdom`, dans les
+fichiers `src/ui/*.dom.test.ts` — ils montent la vraie `App` dans un `document`
+et suivent le parcours au doigt : accueil → salon → plateau, podium, feuille de
+guidage, bandeau de lien. Le montage commun vit dans `src/ui/test-dom.ts`.
 
 ## Comment jouer
 
@@ -19,6 +25,21 @@ npm run build    # vérification de types puis build de production
   ouvrent le lien partagé, ou scannent le QR code que l'hôte affiche ; l'hôte les
   accepte à sa table. Jusqu'à 4 joueurs.
 - **Ordinateurs** — l'hôte peut compléter la table quand on n'est que deux ou trois.
+
+Chacun de ces trois boutons porte, sous son libellé, la phrase qui dit à qui il
+s'adresse : « vous hébergez », « un ami a déjà créé la partie », « un seul
+appareil qu'on se passe ». Trois libellés de la même taille décrivent trois
+gestes et pas une seule situation — or personne n'arrive ici en se demandant
+quel geste faire, on arrive avec un lien qu'un ami a envoyé, ou tout seul un
+dimanche soir. L'aide vit **dans** le bouton, jamais dessous : une phrase posée
+sous une cible tactile est un demi-doigt de texte inerte là où le pouce descend.
+
+À la toute première ouverture — aucune partie jamais lancée sur cet appareil —
+un encart s'ajoute au-dessus des boutons : ce qu'est ce jeu, et par où l'essayer
+quand on est seul. Il n'a pas de bouton pour le fermer et disparaît au premier
+lancement de partie, pas à sa lecture : on ne demande à personne d'accuser
+réception avant de jouer. Sa mémoire est celle du guidage des pouvoirs
+(`guide.ts`, entrée `welcome`).
 
 Sur un seul téléphone, la partie se met **en pause** : le bot qui allait jouer, le
 temps de réflexion et le dé s'arrêtent tous ensemble. Elle n'est pas proposée en
@@ -29,16 +50,50 @@ Le règlement se consulte **pendant** une partie sans la déranger : les autres
 continuent de jouer derrière, et l'écran ne se referme pas sous les yeux de qui le
 lit (voir `DETOURS` dans `app.ts`).
 
-## Les trois jeux de règles
+## Les quatre jeux de règles
 
 | Variante | Plateau | Sortie | Particularités |
 |---|---|---|---|
 | **Petits chevaux** | 56 cases | 6 | Règle française. Une case, un cheval. Seules les cases de départ protègent. |
 | **Ludo** | 52 cases | 6 | Règle internationale. Cases étoilées sûres, plusieurs pions peuvent partager une case, rejeu sur capture et sur arrivée. |
 | **Rapide** | 40 cases | 1 ou 6 | Arrivée sans compte exact. Parties courtes, deux chevaux. |
+| **Équipes** | 52 cases | 6 | Le Ludo à deux contre deux, sièges opposés. Exactement quatre joueurs. |
 
 Les règles sont des **données**, pas du code : voir `src/game/variants.ts`. Ajouter
 la variante de votre famille tient en un objet de vingt lignes.
+
+### Équipes — deux contre deux
+
+Les sièges **0 et 2** contre les sièges **1 et 3** : les places qui se font face,
+comme à la belote. La table doit être complète — une équipe de un contre une
+équipe de deux ne serait pas une variante mais un handicap, et le moteur refuse
+la partie plutôt que de la commencer bancale.
+
+Tout le reste découle d'une seule idée : **le partenaire n'est pas un
+adversaire**. On ne le mange pas, ni au dé ni au galop ; on ne brise pas son
+bouclier ; on partage sa case au lieu d'en être bloqué, exactement comme un
+cheval de sa propre couleur au Ludo. Le camp d'en face est le seul contre lequel
+on joue, et c'est aussi le seul que peuvent viser les malus — qui, de toute
+façon, tombent sur le cheval qui a ramassé la carte, jamais sur un cheval choisi.
+
+**Un joueur qui a rentré ses quatre chevaux ne s'assied pas pour regarder.** À
+son tour, il lance le dé et déplace les chevaux de **son partenaire** : les coups
+qu'on lui propose sont ceux d'en face, et ses cartes peuvent désigner un cheval
+qui n'est pas le sien. Sa main, elle, reste la sienne — on prête ses tours, pas
+ses cartes. C'est ce qui empêche une partie en équipes de se terminer sur un
+joueur qui n'a plus rien à faire pendant que l'autre finit seul.
+
+**On gagne à deux.** L'équipe dont les huit chevaux sont rentrés l'emporte, et la
+partie s'arrête là : il n'y a pas de deuxième place à disputer entre deux camps.
+Le classement final porte les quatre sièges, l'équipe gagnante devant, chaque
+paire rangée par ordre d'arrivée. Le malus « tour sauté », lui, reste
+personnel : il punit le joueur, pas son camp.
+
+Côté moteur, la variante tient dans deux fonctions — `areAllies`, qui décide si
+un cheval est une proie ou un allié, et `activeSeatFor`, qui dit de qui l'on joue
+les chevaux. Partout où le code lisait « le siège dont c'est le tour » pour
+désigner des chevaux, il lit la seconde ; partout où il comparait deux
+propriétaires, il appelle la première. `teams.test.ts` fixe les cas limites.
 
 ### Les deux plateaux officiels
 
@@ -267,12 +322,58 @@ fait. C'est du **dessin, pas de la règle** : le moteur pose ce champ et ne le
 lit jamais, et `powers.test.ts` fixe les deux cas où il est écrit comme celui
 où il doit rester vide.
 
+**Et en équipes, l'écran dit de qui l'on joue les chevaux.** Un joueur qui a
+rentré ses quatre chevaux continue de lancer le dé, mais ce sont ceux de son
+partenaire qui se cerclent de vert — le plateau ne peut pas montrer ça, et sans
+un mot on le lit comme une panne. La ligne de tour porte donc la phrase entière
+(« À vous — vous jouez pour Sami », ou « Alan joue pour Sami »), et le moment du
+basculement s'annonce en haut de l'écran (« Alan a fini — il joue maintenant
+pour Sami »). Le moteur n'émet aucun événement pour cela : il allonge
+`finishers`, et c'est l'écart entre deux états que l'écran raconte, exactement
+comme `announced` fait celui du journal.
+
 **Les nouvelles s'empilent, elles ne se chassent pas.** Trois au plus, et de
 quatre à six secondes et demie selon ce qu'elles annoncent : un malus reste plus
 longtemps qu'un bonus, parce qu'un malus qu'on n'a pas eu le temps de lire se
 lit comme un bug le tour suivant, quand son effet se manifeste. Un tour de bot
 qui joue une carte, lance, avance et mange produisait quatre annonces dont on ne
 lisait aucune.
+
+**Une réaction se donne d'un doigt, sinon elle n'a pas lieu.** Le chat existe
+depuis le début, et il reste vide toute la partie : écrire demande d'ouvrir une
+feuille, de quitter le plateau des yeux, de viser un champ, de composer, de
+valider — cinq gestes pour dire « 😂 », pendant que le tour passe. Il y a donc
+six emoji au bout d'un éventail, dans la barre du haut, à côté du chat : un
+appui l'ouvre, un appui envoie, et trois secondes sans choix le referment. Rien
+ne s'interrompt, le dé ne bouge pas, la feuille de conversation ne s'ouvre
+jamais. La réaction reste malgré tout un message de chat — même canal, même
+auteur, même ligne dans l'historique (« Camille 😂 ») : deux canaux auraient
+donné deux ordres d'arrivée possibles pour deux choses qui vivent dans la même
+conversation, et un pair resté sur une version d'avant la reçoit simplement
+comme le message d'un seul emoji qu'elle est.
+
+**Et elle surgit sur la carte de son auteur, pas au milieu de l'écran.** Une
+réaction dit autant *qui* que *quoi* : quatre 😂 sortis du même endroit ne
+seraient qu'un brouhaha, et le centre de l'écran est justement la seule chose
+qu'on ne peut pas couvrir — c'est le plateau. La bulle rebondit, grandit et
+s'estompe en une seconde huit, vers le plateau, et s'empile si plusieurs
+arrivent. Deux freins la tiennent : sept dixièmes de seconde entre deux envois
+chez l'émetteur — un appui unique se répète très vite — et trois bulles
+simultanées au plus par siège chez le récepteur, parce que le premier frein vit
+chez quelqu'un d'autre. Ce qui dépasse n'est ni montré ni archivé : le ranger
+reviendrait à le déplacer.
+
+**Après une capture, la table propose.** Se faire manger, c'est regarder son
+cheval repartir de zéro pendant que le tour continue sans nous : c'est le seul
+moment du jeu où l'on a quelque chose à dire tout de suite, et le seul où l'on
+n'a pas une seconde pour aller le chercher. L'éventail s'ouvre donc seul deux
+secondes, 😱 entouré et battant ; plus sobrement, 🎉 entouré quand c'est nous
+qui mangeons. Un appui et c'est parti, sinon il se referme — une proposition,
+jamais une interruption. Une seule par capture, et **jamais pendant son propre
+tour** : faire pousser six boutons à côté du dé au moment précis où on le vise,
+c'est déplacer la cible. La décision tient dans une fonction pure
+(`ui/react.ts`) parce qu'elle dépend de quatre choses dont trois ne se voient
+nulle part — mon siège, mon nom dans le journal, à qui est la main.
 
 **Dix secondes, et on doit les voir passer.** Le temps de réflexion se lisait
 sur le contour de la carte du joueur actif : deux pixels et demi à 45 %

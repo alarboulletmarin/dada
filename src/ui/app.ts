@@ -7,7 +7,7 @@
  */
 
 import { BOARD_SHAPES, geometryFor, isBoardShape, type BoardShape } from '../game/board.ts'
-import { mercyOf, pawnId, pawnsOf, statsOf } from '../game/engine.ts'
+import { activeSeatFor, mercyOf, partnerOf, pawnId, pawnsOf, statsOf, teamOf } from '../game/engine.ts'
 import {
   bonusCount,
   DECK_SIZE,
@@ -18,11 +18,20 @@ import {
   type PowerId,
   type PowerKind,
 } from '../game/powers.ts'
-import { STABLE, type GameState, type Move, type Seat, type SeatStats, type Variant } from '../game/types.ts'
+import {
+  STABLE,
+  type GameState,
+  type LogEntry,
+  type Move,
+  type Seat,
+  type SeatStats,
+  type Team,
+  type Variant,
+} from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
-import { makeCode, type ChatMessage } from '../net/room.ts'
+import { joinGameRoom, makeCode, type ChatMessage } from '../net/room.ts'
 import { clearInvite, clearSave, readInvite, readSave } from '../net/save.ts'
-import { Session, type Notice, type NoticeCode } from '../net/session.ts'
+import { REACT_LIFE_MS, Session, type Notice, type NoticeCode, type RoomFactory } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
 import { armedReady, keepArmed, needsPawn, type Armed } from './aim.ts'
 import { BoardView, SEAT_MARKS } from './board-view.ts'
@@ -33,6 +42,7 @@ import { icon, type IconName } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
 import { avatar } from './avatar.ts'
 import { qrCode, type Qr } from './qr.ts'
+import { cueFor, REACTIONS, REACTION_KEYS, type Reaction, type ReactionCue } from './react.ts'
 import { renderRulebook } from './rulebook.ts'
 import { swipeAway } from './swipe.ts'
 import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
@@ -172,11 +182,26 @@ function aimMove(state: GameState, pawnId: string): Move {
 }
 
 /** Pastille de chaque variante : de la présentation, pas des règles. */
-const BADGES: Record<string, 'die' | 'pawn' | 'bolt'> = {
+const BADGES: Record<string, 'die' | 'pawn' | 'bolt' | 'pair'> = {
   'petits-chevaux': 'die',
   ludo: 'pawn',
   rapide: 'bolt',
+  // Deux pions, et pas un : c'est toute la variante, et cela se voit à la
+  // taille d'une pastille — un seul pion aurait été le Ludo une seconde fois.
+  equipes: 'pair',
 }
+
+/**
+ * De quelle équipe est ce siège, en une lettre.
+ *
+ * A et B, et non 1 et 2 : les sièges portent déjà des numéros, et « équipe 2 »
+ * à côté du « joueur 3 » se lit une fois de trop. `teamOf` est la seule source —
+ * l'appariement 0/2 contre 1/3 est une règle du moteur, pas une décision
+ * d'affichage.
+ */
+const TEAM_LETTER = ['A', 'B'] as const
+const teamLetter = (seat: Seat): string => TEAM_LETTER[teamOf(seat)]
+const teamLabel = (seat: Seat): string => t('lobby.team', { team: teamLetter(seat) })
 
 /**
  * La figure de chaque pouvoir.
@@ -230,6 +255,26 @@ const CHAT_BUBBLE_MAX = 200
  *  un seul nom, des bulles serrées. Au-delà, la conversation a repris. */
 const CHAT_GROUP_MS = 60_000
 
+/**
+ * Temps que l'éventail des réactions reste ouvert sans qu'on choisisse.
+ *
+ * Il se referme tout seul parce qu'il couvre le haut du plateau : ce n'est pas
+ * un tiroir qu'on range, c'est une main tendue qu'on retire. Trois secondes,
+ * c'est le temps de viser un emoji qu'on n'a pas choisi d'avance ; au-delà, la
+ * réaction n'était plus une réaction.
+ */
+const REACT_FAN_MS = 3000
+/**
+ * Et quand c'est la table qui l'ouvre, après une capture.
+ *
+ * Plus court : personne ne l'a demandé. Deux secondes suffisent à voir qu'on
+ * nous propose quelque chose et à taper, sans que l'écran reste encombré par
+ * une offre qu'on a déclinée en ne bougeant pas.
+ */
+const REACT_CUE_MS = 2000
+/** Décalage d'une bulle empilée sur la précédente, en pixels. */
+const REACT_STACK = 26
+
 /** Sous ce reste de temps de réflexion, la pendule vire au rouge. */
 const URGENT_LEFT = 0.3
 /**
@@ -265,6 +310,7 @@ const BUZZ_MS = 40
  */
 const NOTICE_KEY: Record<NoticeCode, Key> = {
   finished: 'error.finished',
+  teamsNeedFour: 'lobby.needFour',
   notYourTurn: 'error.notYourTurn',
   alreadyRolled: 'error.alreadyRolled',
   rollFirst: 'error.rollFirst',
@@ -295,6 +341,32 @@ function emojiOnly(text: string): boolean {
 }
 
 const variantName = (id: string) => t(`variant.${id}.name` as Key)
+
+/**
+ * Le calque des bulles de réaction.
+ *
+ * Elles ne vivent PAS dans la carte du joueur, alors qu'elles se posent dessus :
+ * les cartes sont refaites à chaque changement d'état, et un nœud réinséré dans
+ * le document repart au début de son animation — trois états reçus pendant une
+ * seconde huit auraient donné une bulle qui ne finit jamais d'apparaître. Elles
+ * sont donc posées en coordonnées d'écran sur un calque à part, comme les cartes
+ * qui volent, et la carte du joueur ne leur sert qu'à viser.
+ */
+const REACT_LAYER = 'react-layer'
+
+function reactLayer(): HTMLElement {
+  const found = document.querySelector<HTMLElement>(`.${REACT_LAYER}`)
+  if (found) return found
+  const host = h('div', { class: REACT_LAYER, attrs: { 'aria-hidden': 'true' } })
+  document.body.append(host)
+  return host
+}
+
+/** Le calque s'en va avec sa dernière bulle : rien ne reste par-dessus l'écran. */
+function sweepReactLayer(): void {
+  const host = document.querySelector<HTMLElement>(`.${REACT_LAYER}`)
+  if (host && host.children.length === 0) host.remove()
+}
 
 /**
  * « de Sami », mais « d'Ines » : l'élision, sinon la phrase accroche. L'anglais
@@ -352,7 +424,19 @@ type Sortie = {
 }
 
 export class App {
-  private session: Session | null = null
+  #session: Session | null = null
+
+  /**
+   * La session en cours, en lecture seule.
+   *
+   * L'écran la fabrique et la démonte lui-même — personne d'autre n'a le droit
+   * de la remplacer. Mais un banc d'essai qui monte un écran a besoin de lire
+   * ce qui s'y joue, et un test qui doit fouiller le DOM pour deviner l'état de
+   * la partie teste le DOM, pas la partie.
+   */
+  get session(): Session | null {
+    return this.#session
+  }
   private board: BoardView | null = null
   private screen: Screen | null = null
   private mounts: {
@@ -372,6 +456,15 @@ export class App {
     pauseBtn: HTMLButtonElement | null
     /** Ce que le réseau a à dire, entre la barre du haut et le plateau. */
     linkBar: HTMLElement
+    /**
+     * La zone qui dit à voix haute qui vient de réagir.
+     *
+     * Elle vit dans la ligne de tour — c'est là qu'on annonce déjà ce qui se
+     * passe — mais dans son propre nœud, et non dans celui du tour : ce
+     * dernier est réécrit à chaque passe d'affichage, et une réaction posée
+     * dedans serait effacée avant d'avoir été lue.
+     */
+    reactLive: HTMLElement | null
   } | null = null
   private name = localStorage.getItem(NAME_KEY) ?? ''
   /** Ce qu'on fera de la variante choisie sur l'écran « on joue à quoi ? ». */
@@ -379,6 +472,14 @@ export class App {
   private variantId = VARIANTS[0]!.id
   /** Dernier événement du journal déjà annoncé — voir `announce`. */
   private announced = -1
+  /**
+   * Les sièges qu'on savait déjà rentrés, en équipes.
+   *
+   * Le moteur n'émet pas d'événement pour « ce joueur a fini » — il tient une
+   * liste, `finishers`, et elle s'allonge. C'est donc l'écart entre deux états
+   * qui fait la nouvelle, exactement comme `announced` fait celle du journal.
+   */
+  private relayed: Seat[] = []
   /**
    * La carte armée : choisie, posée devant soi, pas encore jouée.
    *
@@ -406,6 +507,14 @@ export class App {
   private chatDot: HTMLElement | null = null
   /** Bulles actives par siège, avec leur minuterie d'effacement. */
   private chatBubbles = new Map<Seat, { text: string; timer: ReturnType<typeof setTimeout> }>()
+  /** L'éventail des réactions, quand il est déployé. */
+  private reactFan: HTMLElement | null = null
+  private reactFanTimer: ReturnType<typeof setTimeout> | null = null
+  /** Crans occupés par les bulles encore en l'air, par siège : c'est ce qui les
+   *  empile sans jamais en poser deux au même endroit. */
+  private reactStack = new Map<Seat, Set<number>>()
+  /** Dernière capture qui a valu une proposition : une seule par capture. */
+  private reactCued = -1
   /** Le contour qui se vide sur la carte du joueur dont c'est le tour. */
   private turnRing: HTMLElement | null = null
   /** Les secondes qui restent, affichées à la toute fin du décompte. */
@@ -437,7 +546,19 @@ export class App {
   /** La feuille de guidage qui attend son moment. Voir `flushGuide`. */
   private guidePending: { id: GuideId; power?: PowerId } | null = null
 
-  constructor(private root: HTMLElement) {}
+  /**
+   * `join` : par quoi l'on entre dans une salle.
+   *
+   * Le défaut est le vrai transport, et c'est le seul que la page utilise.
+   * L'argument existe pour les tests d'écran, qui montaient jusqu'ici un
+   * `vi.mock('../net/room.ts')` : remplacer un module entier pour un seul
+   * appel, c'est faire dépendre le banc d'essai du chemin d'import du jeu.
+   * `Session.online` acceptait déjà la fabrique — il ne manquait qu'un passage.
+   */
+  constructor(
+    private root: HTMLElement,
+    private join: RoomFactory = joinGameRoom,
+  ) {}
 
   start(): void {
     // Ouvrir le lien d'un ami alors que le jeu tourne déjà ne recharge pas la
@@ -513,14 +634,14 @@ export class App {
   private resumeSaved(): void {
     const save = readSave()
     if (!save) return this.renderHome()
-    this.session = Session.resume(save, this.listeners())
+    this.#session = Session.resume(save, this.listeners())
     this.update()
   }
 
   private openLocal(): void {
-    this.session = Session.local(this.name || 'Joueur 1', this.listeners())
-    this.session.setVariant(this.variantId)
-    this.session.addSeat('bot', t('common.bot', { n: 2 }))
+    const session = (this.#session = Session.local(this.name || 'Joueur 1', this.listeners()))
+    session.setVariant(this.variantId)
+    session.addSeat('bot', t('common.bot', { n: 2 }))
     this.update()
   }
 
@@ -528,8 +649,14 @@ export class App {
     // Pour tout le monde, et pas seulement pour l'hôte : un invité qui
     // rechargeait sa page perdait le code de la table où il était assis.
     history.replaceState(null, '', `#${code}`)
-    this.session = Session.online(code, this.name || 'Joueur', asHost, this.listeners())
-    if (asHost) this.session.setVariant(this.variantId)
+    const session = (this.#session = Session.online(
+      code,
+      this.name || 'Joueur',
+      asHost,
+      this.listeners(),
+      this.join,
+    ))
+    if (asHost) session.setVariant(this.variantId)
     this.update()
   }
 
@@ -564,9 +691,14 @@ export class App {
     this.chatUnread = 0
     this.chatBubbles.forEach((b) => clearTimeout(b.timer))
     this.chatBubbles.clear()
+    this.closeFan()
+    this.reactStack.clear()
+    this.reactCued = -1
+    // Les bulles en vol visent des cartes qui n'existent plus.
+    document.querySelector(`.${REACT_LAYER}`)?.remove()
     this.stopClock()
     this.session?.destroy()
-    this.session = null
+    this.#session = null
     this.board = null
     this.mounts = null
     this.screen = null
@@ -788,6 +920,27 @@ export class App {
       this.renderPick()
     }
 
+    /**
+     * Un bouton d'accueil et la phrase qui dit à qui il s'adresse.
+     *
+     * Trois libellés de la même taille décrivent trois gestes — « créer »,
+     * « rejoindre », « un seul téléphone » — et pas une seule situation. Or
+     * personne n'arrive ici en se demandant quel geste faire : on arrive avec
+     * un lien qu'un ami a envoyé, ou tout seul un dimanche soir. La ligne
+     * d'aide répond à ça, et à rien d'autre.
+     *
+     * Elle vit DANS le bouton : posée dessous, elle aurait fait une deuxième
+     * cible tactile juste sous celle qui compte, et un pouce qui vise le bas
+     * d'un bouton aurait touché du texte.
+     */
+    const homeButton = (key: 'home.create' | 'home.join' | 'home.local', tone: string, onClick: () => void) =>
+      h(
+        'button',
+        { class: `btn ${tone} btn--hinted`.trim(), on: { click: onClick } },
+        h('span', { class: 'btn__label', text: t(key) }),
+        h('span', { class: 'btn__hint', text: t(`${key}.hint` as Key) }),
+      )
+
     fill(
       this.root,
       h(
@@ -807,26 +960,27 @@ export class App {
         h(
           'div',
           { class: 'stack push' },
+          ...this.welcomeCard(),
           ...this.inviteCard(),
           ...this.resumeCard(),
-          h('button', { class: 'btn red', text: t('home.create'), on: { click: () => go('online') } }),
-          h('button', {
-            class: 'btn blue',
-            text: t('home.join'),
-            on: {
-              click: () => {
-                this.saveName(nameInput.value)
-                this.renderJoin('')
-              },
-            },
+          homeButton('home.create', 'red', () => go('online')),
+          homeButton('home.join', 'blue', () => {
+            this.saveName(nameInput.value)
+            this.renderJoin('')
           }),
-          h('button', { class: 'btn', text: t('home.local'), on: { click: () => go('local') } }),
+          homeButton('home.local', '', () => go('local')),
         ),
-        h('button', {
-          class: 'btn small',
-          text: t('home.rules'),
-          on: { click: () => this.renderRules(() => this.renderHome()) },
-        }),
+        // Le même bouton que le lien de l'encart de bienvenue : tant que
+        // celui-ci est là, il ne se dit qu'une fois. Deux « Comment on joue »
+        // sur un écran de six blocs, c'est un doute là où il n'y en avait pas —
+        // et sur un téléphone de 360 points, deux fois la place.
+        this.guide.seen('welcome')
+          ? h('button', {
+              class: 'btn small',
+              text: t('home.rules'),
+              on: { click: () => this.renderRules(() => this.renderHome()) },
+            })
+          : null,
         h(
           'div',
           { class: 'settings' },
@@ -881,6 +1035,35 @@ export class App {
         }),
       ),
     )
+  }
+
+  /**
+   * Le mot d'accueil de la toute première ouverture.
+   *
+   * Ce que les trois boutons ne peuvent pas dire : ce qu'est ce jeu, et par où
+   * l'essayer quand on est seul devant son téléphone. Une ligne, un lien vers
+   * le règlement, et rien d'autre — surtout pas une modale : demander de lire
+   * quoi que ce soit avant de jouer, c'est perdre celui qu'on voulait accueillir.
+   *
+   * Il disparaît **au premier lancement de partie**, et non à sa fermeture : il
+   * n'y a pas de bouton pour le fermer, parce qu'on ne demande à personne
+   * d'accuser réception. Voir `renderPlay`, qui marque le point.
+   */
+  private welcomeCard(): HTMLElement[] {
+    if (this.guide.seen('welcome')) return []
+
+    return [
+      h(
+        'div',
+        { class: 'welcome' },
+        h('p', { text: t('home.welcome') }),
+        h('button', {
+          class: 'link',
+          text: t('home.rules'),
+          on: { click: () => this.renderRules(() => this.renderHome()) },
+        }),
+      ),
+    ]
   }
 
   /**
@@ -1151,6 +1334,7 @@ export class App {
     const online = session.mode === 'online'
     const waiting = online && lobby.players.length === 0
     const variant = VARIANTS.find((v) => v.id === lobby.variantId) ?? VARIANTS[0]!
+    const teams = variant.teams === true
 
     // Sans siège, il n'y a pas de salon : la liste des joueurs, les réglages et
     // « en attente du lancement » décrivaient une table où l'on n'entrera
@@ -1205,7 +1389,14 @@ export class App {
 
         return h(
           'div',
-          { class: `seat${p.connected ? '' : ' offline'}` },
+          {
+            class: `seat${p.connected ? '' : ' offline'}${teams ? ` seat--team-${teamOf(p.seat)}` : ''}`,
+            attrs: teams ? { 'data-team': teamLetter(p.seat) } : {},
+          },
+          // En équipes, la place à table EST une information de règle : 0 et 2
+          // contre 1 et 3. Une rangée de quatre sièges ne le montre pas, et
+          // découvrir son camp au premier tour n'a jamais fait rire personne.
+          teams ? h('span', { class: 'seat__team', text: teamLabel(p.seat) }) : null,
           this.token(p.seat),
           // Le portrait EST le bouton qui le relance — sur les sièges qu'on a
           // le droit de toucher, les mêmes que pour le nom.
@@ -1261,6 +1452,9 @@ export class App {
     )
 
     const canAdd = session.isHost && lobby.players.length < 4
+    // Combien il en faut pour lancer. Deux partout, quatre en équipes — et
+    // « exactement » quatre : le moteur refuse une équipe de un contre deux.
+    const enough = teams ? lobby.players.length === 4 : lobby.players.length >= 2
 
     fill(
       this.root,
@@ -1287,6 +1481,7 @@ export class App {
               { class: 'stack' },
               h('span', { class: 'label', text: t('lobby.players', { n: lobby.players.length }) }),
               seats,
+              teams ? h('p', { class: 'hint', text: t('lobby.teams.hint') }) : null,
               canAdd
                 ? h(
                     'div',
@@ -1319,8 +1514,8 @@ export class App {
           session.isHost
             ? h('button', {
                 class: 'btn red',
-                text: lobby.players.length < 2 ? t('lobby.needTwo') : t('lobby.start'),
-                disabled: lobby.players.length < 2,
+                text: enough ? t('lobby.start') : teams ? t('lobby.needFour') : t('lobby.needTwo'),
+                disabled: !enough,
                 on: { click: () => session.start() },
               })
             : !waiting
@@ -1605,6 +1800,8 @@ export class App {
     const kind = BADGES[v.id] ?? 'die'
     if (kind === 'die') badge.append(this.face(5))
     else if (kind === 'pawn') badge.append(this.token(null))
+    else if (kind === 'pair')
+      badge.append(h('span', { class: 'badge__pair' }, this.token(0), this.token(1)))
     else badge.append(icon('bolt', small ? 24 : 30))
     return badge
   }
@@ -2065,6 +2262,14 @@ export class App {
     })
     turn.append(hand)
 
+    // Qui écoute l'écran ne voit pas les bulles : elles sont `aria-hidden`,
+    // parce qu'un emoji lu au milieu du plateau ne dit ni de qui il vient ni
+    // qu'il s'agit d'une réaction. La phrase, elle, le dit.
+    const reactLive = this.session!.mode === 'online'
+      ? h('span', { class: 'react-live', attrs: { role: 'status', 'aria-live': 'polite' } })
+      : null
+    if (reactLive) turn.append(reactLive)
+
     // La pause n'existe que sur un seul téléphone : voir `canPause` côté
     // session. En ligne, un bouton qui ne figerait que son propre écran
     // mentirait sur ce qu'il fait.
@@ -2095,6 +2300,9 @@ export class App {
           this.backButton(() => this.askQuit(), t('lobby.quit')),
           h('span', { style: { flex: '1' } }),
           this.session!.mode === 'online' ? this.codePill(this.session!.lobby.code) : null,
+          // Les réactions avant le chat : c'est le geste court, il vient en
+          // premier sous le pouce qui remonte depuis le dé.
+          this.session!.mode === 'online' ? this.reactButton() : null,
           this.session!.mode === 'online' ? this.chatButton() : null,
           pauseBtn,
           h(
@@ -2137,6 +2345,7 @@ export class App {
       hand,
       pauseBtn,
       linkBar,
+      reactLive,
     }
     this.armed = null
     this.shownDice = null
@@ -2146,7 +2355,18 @@ export class App {
     this.handPending = false
     // Une manche qui commence ne rejoue pas les annonces de la précédente.
     this.announced = this.session!.game!.log[this.session!.game!.log.length - 1]?.seq ?? -1
+    this.reactCued = this.announced
+    // Idem pour le relais : une manche qui commence ne réannonce pas les
+    // chevaux rentrés de la précédente, et un invité qui arrive en cours de
+    // partie ne se fait pas raconter ce qu'il a manqué.
+    this.relayed = [...(this.session!.game!.finishers ?? [])]
     this.paintDie(this.lastDie, false)
+
+    // Une partie a été lancée sur cet appareil : le mot d'accueil de l'écran
+    // d'ouverture n'a plus lieu d'être. Ici et pas au clic sur « Lancer » —
+    // c'est arriver sur le plateau qui prouve qu'on a compris par où passer, et
+    // ce chemin-là est le même pour l'hôte, l'invité et le téléphone unique.
+    this.guide.claim('welcome')
 
     // Les cases marquées apparaissent en même temps que le plateau : c'est le
     // seul moment où l'on peut les nommer avant qu'elles ne servent. Une fois
@@ -2396,6 +2616,9 @@ export class App {
     const notes: Note[] = []
     /** Les cartes tirées dans ce lot : ce qui vole à l'écran, avant les mots. */
     const draws: Draw[] = []
+    /** Les captures du lot : ce sont elles, et elles seules, qui peuvent valoir
+     *  une proposition de réaction (voir `react.ts`). */
+    const captures: LogEntry[] = []
     for (const entry of fresh) {
       const { event } = entry
       if (event.kind === 'power') {
@@ -2471,6 +2694,7 @@ export class App {
             : t('play.timeout.hint', { name: entry.actor }),
         })
       } else if (event.kind === 'capture') {
+        captures.push(entry)
         // Un cheval disparaît d'un bout du plateau et reparaît dans une écurie.
         // Sans un mot, c'est le coup qu'on ne comprend qu'en refaisant le
         // trajet des yeux — quand on l'a vu partir.
@@ -2489,6 +2713,28 @@ export class App {
         // toujours `state.turn` et que l'annonce ne sortait jamais.
         notes.push(card(event.power, entry.actor))
       }
+    }
+
+    // Le quatrième cheval rentré, en équipes : ce siège ne quitte pas la table,
+    // il passe de son côté à celui d'en face. Le moteur n'en dit rien — il
+    // allonge `finishers`, et c'est tout — mais c'est le moment de la partie
+    // qui a le plus besoin d'être expliqué : le dé va rester chez quelqu'un
+    // dont tous les chevaux sont rentrés, et ce sont ceux du partenaire qui
+    // vont bouger.
+    if (state.variant.teams === true) {
+      const done = state.finishers ?? []
+      for (const seat of done) {
+        if (this.relayed.includes(seat)) continue
+        const who = state.players.find((p) => p.seat === seat)?.name ?? ''
+        const partner = state.players.find((p) => p.seat === partnerOf(seat))?.name ?? '…'
+        notes.push({
+          kind: 'neutral',
+          who,
+          title: t('play.relay.title'),
+          desc: t('play.relay', { name: who, partner }),
+        })
+      }
+      this.relayed = [...done]
     }
 
     if (notes.length === 0 && draws.length === 0) return
@@ -2523,6 +2769,10 @@ export class App {
       // s'empileraient, et l'on refermerait la seconde sans l'avoir lue.
       const first = flights.find((f) => f.guide !== null)
       if (first?.guide) this.askGuide(first.guide, first.power)
+      // Et la proposition de réaction en dernier, après le plateau et après les
+      // mots : proposer de crier avant que le cheval ne soit rentré, c'est
+      // annoncer la capture par l'éventail.
+      for (const entry of captures) this.offerReaction(entry)
     })()
   }
 
@@ -2948,15 +3198,30 @@ export class App {
             )
           : null
 
+      // En équipes, la carte dit de quel camp est ce joueur — une pastille et un
+      // liseré, pas une refonte : la couleur du siège reste la sienne, c'est
+      // elle qu'on retrouve sur le plateau. Deux camps, deux lettres ; le
+      // partenaire est en face, et sa carte porte la même.
+      const teams = state.variant.teams === true
+
       return h(
         'div',
         {
-          class: `pcard${active ? ' active' : ''}${rank >= 0 ? ' out' : ''}`,
+          class: `pcard${active ? ' active' : ''}${rank >= 0 ? ' out' : ''}${teams ? ` pcard--team-${teamOf(seat)}` : ''}`,
           style: this.seatVars(seat),
           // Une carte tirée par un autre joueur vole jusqu'ici : il faut
           // pouvoir retrouver la carte d'un siège depuis le calque du vol.
-          attrs: { 'data-seat': String(seat) },
+          attrs: teams
+            ? { 'data-seat': String(seat), 'data-team': teamLetter(seat) }
+            : { 'data-seat': String(seat) },
         },
+        teams
+          ? h('span', {
+              class: 'pcard__team',
+              text: teamLetter(seat),
+              attrs: { title: teamLabel(seat), 'aria-label': teamLabel(seat) },
+            })
+          : null,
         this.token(seat),
         avatar(p.name, this.faceAt(seat), 28),
         h(
@@ -3366,6 +3631,22 @@ export class App {
       title = t('play.rolled', { name: current?.name ?? '…', dice: state.dice ?? '' })
     }
 
+    // Le relais des équipes : le siège courant a rentré ses quatre chevaux, et
+    // ce sont les chevaux d'en face qu'il déplace. Sans cette phrase, on voit
+    // des chevaux qui ne sont pas les siens se cercler de vert et l'on croit à
+    // une panne — c'est la seule chose que le plateau ne peut pas montrer.
+    //
+    // Elle écrase le titre et lui seul : le détail dit encore quoi faire
+    // (« touchez le dé », « choisissez un cheval cerclé »), et c'est toujours
+    // vrai.
+    const relay = !finished && !this.tumbling && activeSeatFor(state) !== state.turn
+    if (relay) {
+      const partner = state.players.find((p) => p.seat === partnerOf(state.turn))?.name ?? '…'
+      title = mine
+        ? t('play.playFor.you', { partner })
+        : t('play.playFor', { name: current?.name ?? '…', partner })
+    }
+
     // Une carte armée passe devant tout le reste. « Touchez le dé » au-dessus
     // d'une main qui réclame un cheval, ce sont deux consignes qui se
     // contredisent — et la rangée de cartes, à trois cartes sur un petit
@@ -3688,6 +3969,61 @@ export class App {
    * la colonne des pouvoirs sur une partie sans pouvoirs serait une colonne de
    * zéros, et une colonne de zéros se lit comme une panne.
    */
+  /**
+   * Le classement de la feuille de match.
+   *
+   * En solo, une colonne de quatre rangées : premier, deuxième, troisième,
+   * quatrième. En équipes, ce classement-là ne veut rien dire — on gagne à
+   * deux, et lire « 1ᵉʳ Alan, 2ᵉ Sami » quand Alan et Sami sont adversaires est
+   * exactement le contresens que la variante entière essaie d'éviter. Les
+   * rangées sont donc rangées sous leur camp, le camp gagnant devant. L'ordre
+   * est déjà celui de `ranking` : le moteur range l'équipe victorieuse en tête,
+   * chaque paire par ordre d'arrivée. Il n'y a rien à retrier ici, seulement à
+   * regrouper.
+   */
+  private podiumBoard(state: GameState, order: Seat[], done: (seat: Seat) => number): HTMLElement {
+    const row = (seat: Seat, i: number) =>
+      h(
+        'div',
+        {
+          class: `rank${i === 0 ? ' first' : ''}`,
+          style: this.seatVars(seat),
+        },
+        h('span', { class: 'n', text: String(i + 1) }),
+        this.token(seat),
+        avatar(state.players.find((p) => p.seat === seat)?.name ?? '', this.faceAt(seat), 34),
+        h('span', { class: 'who', text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
+        h('span', { class: 'score', text: `${done(seat)}/${state.variant.pawnsPerPlayer}` }),
+      )
+
+    if (state.variant.teams !== true || order.length === 0) {
+      return h('div', { class: 'podium' }, ...order.map(row))
+    }
+
+    // Le camp du premier du classement, puis l'autre. `ranking` range déjà
+    // l'équipe gagnante en tête : il n'y a pas de troisième cas.
+    const camps: Team[] = teamOf(order[0]!) === 0 ? [0, 1] : [1, 0]
+    return h(
+      'div',
+      { class: 'podium podium--teams' },
+      ...camps.map(
+        (team, place) =>
+          h(
+            'div',
+            {
+              class: `podium__team${place === 0 ? ' podium__team--won' : ''}`,
+              attrs: { 'data-team': TEAM_LETTER[team] },
+            },
+            h('span', {
+              class: 'podium__team-name',
+              text: t('lobby.team', { team: TEAM_LETTER[team] }),
+            }),
+            ...order.filter((seat) => teamOf(seat) === team).map((seat) => row(seat, order.indexOf(seat))),
+          ),
+      ),
+    )
+  }
+
   private statsCard(state: GameState, order: Seat[]): HTMLElement | null {
     if (!state.stats) return null
     const rows = order.map((seat) => ({ seat, stats: statsOf(state, seat) }))
@@ -3753,7 +4089,6 @@ export class App {
     // feuille de match d'apparaître, et plus rien ne la rappelait ensuite.
     if (document.querySelector('.overlay.podium')) return
     const session = this.session!
-    const winner = state.players.find((p) => p.seat === state.ranking[0])
     const lastStep = geometryFor(state.variant).lastStep
     const done = (seat: Seat) => pawnsOf(state, seat).filter((p) => p.steps === lastStep).length
 
@@ -3762,6 +4097,23 @@ export class App {
       .filter((p) => !state.ranking.includes(p.seat))
       .sort((a, b) => done(b.seat) - done(a.seat))
     const order: Seat[] = [...state.ranking, ...rest.map((p) => p.seat)]
+
+    /**
+     * Qui gagne — et en équipes, on ne gagne pas seul.
+     *
+     * Les deux prénoms, et non « L'équipe A » : le camp n'a de nom que le temps
+     * du salon, personne ne s'appelle « A » à voix haute, et la phrase qu'on
+     * dira en refermant le téléphone est « on a gagné avec Sami ». Le
+     * sous-titre, lui, ne bouge pas : c'est déjà le compte des chevaux du
+     * premier du classement, et il est vrai des deux.
+     */
+    const name = (seat: Seat | undefined) =>
+      state.players.find((p) => p.seat === seat)?.name ?? t('win.nobody')
+    const champions = order.filter((seat) => teamOf(seat) === teamOf(order[0]!))
+    const title =
+      state.variant.teams === true && champions.length === 2
+        ? t('win.title.team', { a: name(champions[0]), b: name(champions[1]) })
+        : t('win.title', { name: name(state.ranking[0]) })
 
     const overlay = h(
       'div',
@@ -3774,10 +4126,7 @@ export class App {
           'div',
           { class: 'card' },
           h('div', { class: 'trophy' }, h('span'), h('span'), h('span')),
-          h('h2', {
-            style: { textAlign: 'center' },
-            text: t('win.title', { name: winner?.name ?? t('win.nobody') }),
-          }),
+          h('h2', { style: { textAlign: 'center' }, text: title }),
           h('p', {
             class: 'hint center',
             // Le nom de la variante n'est plus dans l'état — il ne pouvait pas y
@@ -3789,24 +4138,7 @@ export class App {
             }),
           }),
         ),
-        h(
-          'div',
-          { class: 'podium' },
-          ...order.map((seat, i) =>
-            h(
-              'div',
-              {
-                class: `rank${i === 0 ? ' first' : ''}`,
-                style: this.seatVars(seat),
-              },
-              h('span', { class: 'n', text: String(i + 1) }),
-              this.token(seat),
-              avatar(state.players.find((p) => p.seat === seat)?.name ?? '', this.faceAt(seat), 34),
-              h('span', { class: 'who', text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
-              h('span', { class: 'score', text: `${done(seat)}/${state.variant.pawnsPerPlayer}` }),
-            ),
-          ),
-        ),
+        this.podiumBoard(state, order, done),
         this.statsCard(state, order),
         session.isHost
           ? h('button', {
@@ -3840,6 +4172,193 @@ export class App {
     document.body.append(overlay)
   }
 
+  // ─────────────────────────── réactions ───────────────────────────
+
+  /**
+   * Le bouton qui déploie l'éventail, à côté de celui du chat.
+   *
+   * Deux boutons voisins pour deux gestes qui n'ont rien à voir : le chat ouvre
+   * une feuille, quitte le plateau, demande de composer et de valider. Personne
+   * ne fait ça pendant son tour — c'est bien pour cela que le chat restait vide
+   * une partie entière. Réagir tient dans un aller-retour du pouce et ne cache
+   * jamais le dé.
+   *
+   * L'éventail se déploie vers le BAS, alors qu'un éventail se déploie
+   * naturellement au-dessus de son bouton : la barre touche le haut de l'écran,
+   * et « au-dessus » y est hors champ. Il descend donc le long du bord droit,
+   * là où il ne couvre que du décor.
+   */
+  private reactButton(): HTMLElement {
+    const btn = h(
+      'button',
+      {
+        class: 'icon-btn react-btn',
+        attrs: { 'aria-label': t('react.open'), 'aria-expanded': 'false', 'aria-haspopup': 'true' },
+        on: { click: () => (this.reactFan ? this.closeFan() : this.openFan(null, REACT_FAN_MS)) },
+      },
+      icon('smile'),
+    )
+    // Le créneau porte le repère de position : l'éventail se pose dessus, et
+    // c'est lui qui garde sa place dans la barre quand l'éventail apparaît.
+    return h('span', { class: 'react-slot' }, btn)
+  }
+
+  /**
+   * Déploie les six.
+   *
+   * `featured` met un emoji en avant sans réordonner quoi que ce soit : la
+   * position d'un bouton ne doit pas dépendre du moment où l'on ouvre, sinon on
+   * ne peut plus viser de mémoire.
+   */
+  private openFan(featured: Reaction | null, ms: number, tone?: ReactionCue['tone']): void {
+    const slot = document.querySelector<HTMLElement>('.react-slot')
+    if (!slot || this.screen !== 'play') return
+    this.closeFan()
+
+    const fan = h(
+      'div',
+      {
+        class: `react-fan${tone ? ` react-fan--${tone}` : ''}`,
+        attrs: { role: 'group', 'aria-label': t('chat.reactions') },
+      },
+      ...REACTIONS.map((emoji, i) =>
+        h('button', {
+          class: `react-fan__btn${emoji === featured ? ' featured' : ''}`,
+          text: emoji,
+          // Le rang descend dans le CSS : c'est lui qui donne à chaque bouton
+          // son retard d'entrée, et l'éventail s'ouvre au lieu d'apparaître.
+          style: { '--i': String(i) } as Partial<CSSStyleDeclaration>,
+          attrs: { type: 'button', 'aria-label': t('react.do', { what: t(REACTION_KEYS[i]!) }) },
+          on: { click: () => this.react(emoji) },
+        }),
+      ),
+    )
+
+    slot.append(fan)
+    this.reactFan = fan
+    const btn = slot.querySelector<HTMLElement>('.react-btn')
+    btn?.setAttribute('aria-expanded', 'true')
+    btn?.setAttribute('aria-label', t('react.close'))
+    this.reactFanTimer = setTimeout(() => this.closeFan(), ms)
+  }
+
+  private closeFan(): void {
+    if (this.reactFanTimer) clearTimeout(this.reactFanTimer)
+    this.reactFanTimer = null
+    this.reactFan?.remove()
+    this.reactFan = null
+    const btn = document.querySelector<HTMLElement>('.react-btn')
+    btn?.setAttribute('aria-expanded', 'false')
+    btn?.setAttribute('aria-label', t('react.open'))
+  }
+
+  /**
+   * Un appui, et c'est parti — sauf si le frein anti-rafale l'a mangé.
+   *
+   * Dans ce cas l'éventail reste ouvert : c'est la seule réponse honnête. Le
+   * refermer ferait croire que l'envoi est parti, et un message d'erreur pour
+   * dire « vous avez tapé deux fois trop vite » serait plus bruyant que la
+   * rafale qu'on empêche.
+   */
+  private react(emoji: Reaction): void {
+    if (this.session?.sendReaction(emoji) === true) this.closeFan()
+  }
+
+  /**
+   * Une réaction reçue — la sienne comprise, la session sert tout le monde par
+   * le même guichet.
+   */
+  private onReaction(message: ChatMessage): void {
+    const seat = this.session?.lobby.players.find((p) => p.clientId === message.clientId)?.seat
+    if (seat === undefined) return
+    this.popReaction(seat, message.text)
+    this.sayReaction(message.name, message.text)
+  }
+
+  /**
+   * La bulle qui surgit sur la carte de son auteur.
+   *
+   * Sur la carte du joueur et pas au centre de l'écran : une réaction dit
+   * autant *qui* que *quoi*. Six emoji identiques venus de quatre personnes ne
+   * seraient qu'un brouhaha s'ils sortaient tous du même endroit — et le centre
+   * de l'écran, c'est le plateau, la seule chose qu'on ne peut pas couvrir.
+   *
+   * Elles s'empilent vers le plateau, chacune sur un cran libre : deux bulles
+   * au même endroit se lisent comme une seule.
+   */
+  private popReaction(seat: Seat, emoji: string): void {
+    const card = document.querySelector<HTMLElement>(`.pcard[data-seat="${seat}"]`)
+    if (!card) return
+
+    const used = this.reactStack.get(seat) ?? new Set<number>()
+    let depth = 0
+    while (used.has(depth)) depth++
+    used.add(depth)
+    this.reactStack.set(seat, used)
+
+    const rect = card.getBoundingClientRect()
+    // Vers le plateau : la rangée du haut laisse descendre, celle du bas laisse
+    // monter. C'est le seul côté où il y a de la place, et c'est aussi là que
+    // regarde celui qui joue.
+    const down = card.closest('.players--top') !== null
+    const el = h('div', { class: 'react-pop', text: emoji, attrs: { 'aria-hidden': 'true' } })
+    // La durée descend dans le CSS depuis le JS : elle n'est écrite qu'une fois,
+    // et c'est elle qui définit « en vol » pour le plafond côté session.
+    el.style.setProperty('--life', `${REACT_LIFE_MS}ms`)
+    el.style.setProperty('--drift', down ? '34px' : '-34px')
+    // Elle naît sur le bord intérieur de la carte, pas en son milieu : partie du
+    // centre, elle couvrait le nom et le portrait de son auteur — c'est-à-dire
+    // exactement ce qu'une réaction est censée désigner.
+    el.style.left = `${rect.left + rect.width / 2}px`
+    el.style.top = `${rect.top + rect.height * (down ? 0.74 : 0.26) + (down ? 1 : -1) * depth * REACT_STACK}px`
+    reactLayer().append(el)
+
+    setTimeout(() => {
+      el.remove()
+      used.delete(depth)
+      if (used.size === 0) this.reactStack.delete(seat)
+      sweepReactLayer()
+    }, REACT_LIFE_MS)
+  }
+
+  /** « Camille réagit 😂 », pour qui écoute l'écran. */
+  private sayReaction(name: string, emoji: string): void {
+    const live = this.mounts?.reactLive
+    if (!live) return
+    live.textContent = t('react.live', { name, emoji })
+    // Vidée ensuite : deux fois le même emoji du même joueur ne changeraient pas
+    // le texte, et une zone `aria-live` qui ne change pas n'annonce rien.
+    setTimeout(() => {
+      if (this.mounts?.reactLive === live) live.textContent = ''
+    }, REACT_LIFE_MS)
+  }
+
+  /**
+   * La table propose une réaction après une capture.
+   *
+   * C'est le seul endroit du jeu où l'on a quelque chose à dire *tout de
+   * suite*, et le seul où l'on n'a pas une seconde pour aller le chercher : se
+   * faire manger, c'est regarder son cheval repartir de zéro pendant que le
+   * tour continue sans nous. L'éventail s'ouvre donc de lui-même, l'emoji juste
+   * est déjà sous le pouce, et si l'on ne fait rien il se referme — une
+   * proposition, jamais une interruption.
+   *
+   * Une seule par capture, et jamais pendant son propre tour (voir `cueFor`).
+   */
+  private offerReaction(entry: LogEntry): void {
+    if (this.session?.mode !== 'online' || this.screen !== 'play') return
+    if (entry.seq <= this.reactCued) return
+    const seat = this.session.lobby.players.find((p) => p.clientId === this.session!.self)?.seat ?? null
+    const cue = cueFor(entry, {
+      seat,
+      name: seat === null ? '' : (this.session.game?.players.find((p) => p.seat === seat)?.name ?? ''),
+      myTurn: this.session.myTurn,
+    })
+    if (!cue) return
+    this.reactCued = entry.seq
+    this.openFan(cue.emoji, REACT_CUE_MS, cue.tone)
+  }
+
   // ─────────────────────────── chat ───────────────────────────
 
   /** Le bouton qui ouvre le chat, avec son point rouge de message non lu. */
@@ -3863,15 +4382,30 @@ export class App {
     this.chatDot?.classList.toggle('show', this.chatUnread > 0)
   }
 
-  /** Reçu par la session, que le panneau soit ouvert ou non. */
+  /**
+   * Reçu par la session, que le panneau soit ouvert ou non.
+   *
+   * Une réaction est un message de chat — même canal, même auteur, même
+   * historique — mais elle ne se montre pas comme lui : sa bulle vit sur la
+   * carte du joueur avec sa propre vie, et elle n'allume PAS la pastille du
+   * chat. Un point rouge veut dire « quelqu'un vous a écrit, allez lire » ; une
+   * réaction a déjà été vue quand elle a traversé l'écran, et un badge qui
+   * réclame d'ouvrir une feuille pour y retrouver un 😂 déjà lu ne fait que
+   * dresser à ignorer le badge.
+   */
   private onChat(message: ChatMessage): void {
+    const reaction = message.kind === 'reaction'
     if (this.chatOpen) {
       this.appendChatMessage(message)
-    } else if (message.clientId !== this.session?.self) {
+    } else if (!reaction && message.clientId !== this.session?.self) {
       this.chatUnread++
       this.updateChatBadge()
     }
 
+    if (reaction) {
+      this.onReaction(message)
+      return
+    }
     const seat = this.session?.lobby.players.find((p) => p.clientId === message.clientId)?.seat
     if (seat !== undefined) this.showChatBubble(seat, message.text)
   }
