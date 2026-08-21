@@ -60,6 +60,8 @@ export class BoardView {
   private pending: (() => void) | null = null
   /** Ce qui attend que le plateau ait fini de bouger. Voir `settled`. */
   private settlers: (() => void)[] = []
+  /** Ce qui doit se jouer pendant l'arrêt sur la case pouvoir. Voir `onPowerHold`. */
+  private holding: ((pawnId: string) => Promise<void>) | null = null
   private geometry: BoardGeometry
 
   private root: HTMLElement
@@ -395,6 +397,11 @@ export class BoardView {
     //    d'abord : on doit voir qu'on est arrivé là avant d'en être chassé.
     if (step.via !== undefined) {
       await new Promise((r) => setTimeout(r, POWER_HOLD_MS))
+      // Et le temps qu'il faut à la carte tirée pour venir se poser sur le
+      // cheval. Le moteur a déjà appliqué l'effet ; l'écran, lui, doit montrer
+      // la cause avant la conséquence — sinon le cheval recule d'abord et la
+      // carte arrive après coup, ce qui raconte l'histoire à l'envers.
+      await this.holding?.(step.id)
       if (step.to === STABLE) await this.sendHome([{ id: step.id, seat: step.seat }], offsets)
       else await this.march(el, step, step.via, step.to, offsets, true)
     }
@@ -460,6 +467,34 @@ export class BoardView {
   settled(): Promise<void> {
     if (!this.animating) return Promise.resolve()
     return new Promise((resolve) => this.settlers.push(resolve))
+  }
+
+  /**
+   * Ce qui doit se jouer pendant que le cheval marque son arrêt sur la case
+   * pouvoir — c'est-à-dire avant que la carte ne le pousse.
+   *
+   * C'est le seul endroit du déplacement où le cheval est encore **sur** la
+   * case marquée alors que l'état, lui, le donne déjà trois cases en arrière ou
+   * à l'écurie. Une carte qui vient s'y poser doit donc s'y glisser ; le rendu
+   * de la position finale attend qu'elle ait fini, comme il attend déjà le
+   * temps d'arrêt.
+   *
+   * Rendu court, ou rien du tout, sinon le plateau reste figé : ce qui passe
+   * ici est une animation, jamais une attente d'état.
+   */
+  onPowerHold(fn: ((pawnId: string) => Promise<void>) | null): void {
+    this.holding = fn
+  }
+
+  /**
+   * Où se trouve un cheval à l'écran, en coordonnées de fenêtre.
+   *
+   * Un pion occupe exactement une case : son rectangle **est** celui de la case
+   * où il est posé, et c'est ce qu'on veut ici — l'endroit d'où une carte se
+   * soulève est la case marquée, donc le cheval qui vient de s'y arrêter.
+   */
+  pawnRect(id: string): DOMRect | null {
+    return this.pawns.get(id)?.getBoundingClientRect() ?? null
   }
 
   private release(): void {

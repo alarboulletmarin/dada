@@ -274,6 +274,22 @@ lit comme un bug le tour suivant, quand son effet se manifeste. Un tour de bot
 qui joue une carte, lance, avance et mange produisait quatre annonces dont on ne
 lisait aucune.
 
+**Dix secondes, et on doit les voir passer.** Le temps de réflexion se lisait
+sur le contour de la carte du joueur actif : deux pixels et demi à 45 %
+d'opacité, en haut de l'écran, sur une carte qu'on ne regarde pas. Personne ne
+le voyait — on regarde le dé, c'est lui qu'on va toucher. Chacun a donc sa
+mesure : **un anneau autour du dé pour celui qui doit jouer**, encre puis jaune
+à mi-parcours puis rouge sur la fin, avec les secondes écrites à côté du tour
+sous les cinq dernières et une courte vibration sous les trois — une seule par
+tour, et rien quand l'écran est éteint. Et **le contour de carte pour les
+autres**, qui dit seulement de qui l'on attend quelque chose : leur temps n'est
+pas le nôtre, et un compte à rebours au-dessus du tour des voisins ferait de la
+partie une épreuve chronométrée pour tout le monde à la fois. L'anneau se peint
+à chaque image depuis la même variable que le contour, jamais par une animation
+déclarée — une animation repartirait de zéro à chaque bulle de chat. Qui a
+demandé moins de mouvement garde l'anneau et perd le battement : c'est de
+l'information, pas du décor.
+
 **Un bot prend son temps.** Il ne réfléchit pas, et le tour d'un bot ne compte
 pas dans le temps de réflexion : son délai n'existe que pour ceux qui regardent.
 À sept dixièmes de seconde, ses trois gestes se confondaient en un clignement et
@@ -286,6 +302,52 @@ plus : elle le supprimait, et il suffisait d'un bonus ramassé pour que chaque
 tour à coup unique redemande une confirmation jusqu'à la fin de la partie. Le
 cas qui fixe la durée est « rien à jouer, mais un rejeu en main » : il faut lire
 la ligne, comprendre qu'on peut relancer, et atteindre la carte.
+
+**On explique là où le concept apparaît, une fois par appareil.** Tout ce que le
+jeu savait dire des pouvoirs était de la référence : le catalogue au salon, le ⓘ
+des annonces, le règlement. On y va quand on a déjà une question ; personne n'y
+va pour apprendre qu'il y a quelque chose à savoir — et les cases marquées, la
+main-bouton, le geste carte-puis-dé ne s'expliquaient donc à personne. Un
+tutoriel réglerait le problème dans le mauvais sens : il se place avant la
+partie, quand rien n'a encore de nom, et il fait payer à tous les joueurs
+suivants le prix du premier. Il y a donc quatre feuilles courtes — les huit
+cases à l'ouverture du plateau, le premier bonus ramassé, le premier malus subi,
+la première carte perdue main pleine — chacune montrée au moment où la chose
+arrive, chacune une seule fois, retenues par une clé versionnée du stockage
+local comme le thème (`guide.ts`). La feuille du bonus allume le bouton de la
+main pendant qu'elle en parle : « en bas de l'écran » est une indication qu'on
+suit du doigt, pas une qu'on lit. Elles se ferment d'un appui, ne s'empilent jamais sur une autre
+feuille ni sur un détour par le règlement, et le catalogue des cartes porte un
+bouton pour les faire toutes revenir, le jour où l'on prête son téléphone. Et
+aucune ne coûte le tour qu'elle explique : sur un seul téléphone la partie se
+suspend le temps qu'on lise — sans le dire, ce n'est pas une pause —, tandis
+qu'en ligne, où la table n'attend personne, c'est la feuille qui attend que le
+tour ne soit plus le nôtre. Elle arrive à la seconde d'après : ramasser une case
+termine un coup. Le salon, lui,
+ajoute une ligne sous l'interrupteur : une première table gagne à faire une
+manche sans pouvoirs. C'est un conseil, pas un défaut — les pouvoirs restent où
+l'hôte les a mis.
+
+**Une carte tirée se voit, et chez tout le monde.** Un tirage est un événement
+de table, comme le dé qui roule : c'est le moment où le plateau donne quelque
+chose à quelqu'un, et il vaut d'être vu par ceux à qui il ne donne rien. Sans
+image il ne restait qu'une ligne de texte en haut de l'écran, et la case marchée
+n'avait l'air d'avoir rien fait. Une carte se soulève donc de la case, se
+retourne en trois dimensions — dos au losange d'encre, face au glyphe et au nom
+—, tient neuf dixièmes de seconde, puis file : vers le bouton de la main pour un
+bonus gardé, vers la carte du joueur si la main n'est pas la nôtre, sur le cheval
+pour un malus qui le pousse, et contre la main puis par terre pour une carte
+refusée faute de place. Deux règles la tiennent. La première : **une main reste
+secrète**, donc la carte gardée d'un autre voyage dos visible et ne se retourne
+jamais — on voit qu'une carte est partie chez lui, pas laquelle, exactement ce
+que l'annonce dit déjà. La seconde : **la cause avant la conséquence**. Le moteur
+a déjà reculé le cheval de trois cases quand l'écran commence à raconter ;
+l'animation se glisse donc dans le temps d'arrêt que le plateau marquait déjà sur
+la case pouvoir (`onPowerHold` dans `board-view.ts`), et le cheval n'est poussé
+qu'une fois la carte posée sur lui. Deux secondes au plus, en `transform` seul,
+sur un calque à part qui ne prend aucun appui ; les tirages qui s'enchaînent se
+suivent au lieu de se superposer ; et sous `prefers-reduced-motion` rien ne se
+crée du tout — il ne reste que l'annonce écrite.
 
 ### Une tête par joueur
 

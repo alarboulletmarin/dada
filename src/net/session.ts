@@ -216,6 +216,15 @@ export class Session {
   private attempts = 0
   /** Partie figée à la demande du joueur. Voir `setPaused`. */
   private frozen = false
+  /**
+   * Partie suspendue par l'écran, sans le dire. Voir `hold`.
+   *
+   * Distinct de `frozen` parce que ce n'est pas la même chose : `frozen` est un
+   * état du jeu, que la feuille de pause annonce et que le joueur lève ;
+   * celui-ci n'est qu'une parenthèse d'affichage, et rien à l'écran ne doit le
+   * nommer. `paused` ne le rapporte donc pas.
+   */
+  private held = false
   /** La session est close : plus rien ne doit se reconnecter derrière. */
   private closed = false
   /** Retenu pour pouvoir refaire une tentative sans repasser par l'accueil. */
@@ -1164,9 +1173,14 @@ export class Session {
     )
   }
 
-  /** La partie est-elle figée ? */
+  /** La partie est-elle figée ? C'est ce que la feuille de pause annonce. */
   get paused(): boolean {
     return this.frozen
+  }
+
+  /** Rien ne doit avancer : mis en pause par le joueur, ou suspendu par l'écran. */
+  private get stopped(): boolean {
+    return this.frozen || this.held
   }
 
   /**
@@ -1185,6 +1199,41 @@ export class Session {
     if (on && !this.canPause) return
     if (this.frozen === on) return
     this.frozen = on
+
+    if (on) {
+      if (this.botTimer) clearTimeout(this.botTimer)
+      this.botTimer = null
+      if (this.turnTimer) clearTimeout(this.turnTimer)
+      this.turnTimer = null
+      this.turnEndsAt = null
+      this.turnFor = null
+    } else {
+      this.onGameChanged()
+    }
+    this.listeners.onChange()
+  }
+
+  /**
+   * Suspendre la partie le temps d'une feuille d'explication, sans l'annoncer.
+   *
+   * **Sur un seul téléphone seulement**, et pour la même raison que la pause :
+   * figer les bots et la pendule chez soi ne figerait rien chez les autres, et
+   * le siège suspendu finirait sauté par l'hôte au bout de son temps de
+   * réflexion. En ligne, l'écran attend plutôt que le tour ne soit plus le
+   * nôtre pour ouvrir sa feuille (voir `flushGuide` côté `app.ts`).
+   *
+   * Ce n'est pas une pause : rien ne l'annonce, `paused` reste faux, la feuille
+   * de pause ne s'ouvre pas. C'est une parenthèse de quelques secondes pendant
+   * laquelle le jeu ne doit ni jouer à notre place ni nous compter le temps
+   * qu'on passe à lire ce qu'il vient de nous expliquer.
+   *
+   * À la reprise, le tour repart d'une pendule pleine — comme après une pause :
+   * rendre trois secondes au lieu de dix ferait payer l'explication.
+   */
+  hold(on: boolean): void {
+    if (on && !this.canPause) return
+    if (this.held === on) return
+    this.held = on
 
     if (on) {
       if (this.botTimer) clearTimeout(this.botTimer)
@@ -1296,6 +1345,7 @@ export class Session {
     if (!this.isHost || this.lobby.players.length < 2) return
 
     this.frozen = false
+    this.held = false
     this.missed.clear()
     this.skipped.clear()
     this.lobby.started = true
@@ -1323,7 +1373,7 @@ export class Session {
 
   /** Point d'entrée unique de l'UI pour jouer un coup. */
   dispatch(action: Action): void {
-    if (!this.game || this.frozen) return
+    if (!this.game || this.stopped) return
     const seat = this.game.turn
     if (!this.controls(seat)) {
       this.listeners.onError({ code: 'notYourTurn' })
@@ -1467,7 +1517,7 @@ export class Session {
   /** L'hôte joue pour les sièges tenus par un bot. */
   private scheduleBot(): void {
     if (this.botTimer) clearTimeout(this.botTimer)
-    if (this.frozen) return
+    if (this.stopped) return
     if (!this.isHost || !this.game || this.game.phase === 'finished') return
 
     const seat = this.game.turn
@@ -1527,7 +1577,7 @@ export class Session {
     const seat = game?.turn
     const player = this.lobby.players.find((p) => p.seat === seat)
     const running =
-      !this.frozen &&
+      !this.stopped &&
       game !== null &&
       this.lobby.started &&
       game.phase !== 'finished' &&
@@ -1677,6 +1727,7 @@ export class Session {
   restart(): void {
     if (!this.isHost) return
     this.frozen = false
+    this.held = false
     this.lobby.started = false
     // Le numéro de manche est ce qui dit aux invités que le prochain état, qui
     // repart de zéro, n'est pas un vieil état en retard.

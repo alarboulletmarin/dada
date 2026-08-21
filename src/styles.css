@@ -29,6 +29,11 @@
   --blue: #4c93d8;
   --yellow: #f4c43c;
   --purple: #b6a2e4;
+  /* Le jaune d'avertissement de la pendule. Mêlé d'encre parce que le jaune nu
+     se perd sur le papier crème — et sur le dé jaune du « prêt à lancer », qu'il
+     entoure. Le mélange se refait tout seul en thème sombre, où l'encre est
+     claire : le jaune s'y éclaircit au lieu de foncer. */
+  --warn-ink: color-mix(in srgb, var(--yellow) 78%, var(--ink));
 
   /* Sièges autour du plateau : 0 haut-gauche, puis sens horaire.
      `--on-N` est la couleur du texte lisible sur ce fond — le jaune est le
@@ -2053,6 +2058,16 @@ input:disabled {
   font-weight: 800;
   font-size: clamp(13px, 2svh, 15px);
   font-variant-numeric: tabular-nums;
+  /* Les secondes suivent l'anneau du dé, encre puis jaune puis rouge : deux
+     signaux qui disent la même chose doivent la dire de la même couleur. */
+  color: var(--ink);
+}
+
+.turnline__clock.warn {
+  color: var(--warn-ink);
+}
+
+.turnline__clock.urgent {
   color: var(--red);
 }
 
@@ -2067,6 +2082,127 @@ input:disabled {
   justify-content: center;
   gap: clamp(8px, 2.6vw, 16px);
   flex: none;
+  /* La place de l'anneau du temps de réflexion. Le dé porte déjà une ombre de
+     six pixels, et l'anneau se pose au-delà : sans ces quelques pixels, sa
+     moitié basse se fait couper net par le bas de l'écran sur un téléphone
+     court. Cinq pixels rendus à la ligne du dé, c'est un pour cent de plateau
+     — et une jauge à moitié coupée n'est pas une jauge. */
+  padding-bottom: 5px;
+}
+
+/* ── l'anneau du temps de réflexion ───────────────────────────────────────
+   Autour du dé, et seulement quand c'est à nous.
+
+   Le contour de la carte du joueur disait déjà le temps qui passe, mais
+   personne ne le voyait : deux virgule cinq pixels à 45 % d'opacité, en haut de
+   l'écran, sur une carte qu'on ne regarde pas — on regarde le dé, c'est lui
+   qu'on va toucher. L'information se pose donc là où est le regard, et à une
+   épaisseur qui se voit du coin de l'œil.
+
+   Le dé garde sa place et sa taille : le créneau ne mesure rien de plus que
+   lui, et l'anneau vit en dehors du flux. La ligne du bas ne bouge pas d'un
+   pixel, et le plateau ne perd rien. */
+.dieslot {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* `inset` négatif de neuf pixels : l'anneau se pose au-delà de l'ombre portée du
+   dé (six pixels), sinon sa moitié basse se lirait sur l'encre de l'ombre — et
+   pas plus loin, sinon il mordrait sur les deux boutons de bonus, dont l'écart
+   descend à neuf pixels et demi sur un écran étroit. Incliné comme le dé : un
+   anneau droit autour d'un dé penché ne serait l'anneau de rien. */
+.dieclock {
+  position: absolute;
+  inset: -9px;
+  z-index: 1;
+  border-radius: 31px;
+  padding: 5px;
+  opacity: 0;
+  pointer-events: none;
+  transform: rotate(-7deg);
+  transition: opacity 0.18s ease;
+}
+
+/* Pas notre tour : rien. Ce n'est pas notre temps qui s'écoule, et un anneau
+   qui tourne pour quelqu'un d'autre au-dessus de notre dé se lit comme une
+   pression qu'on ne nous doit pas. */
+.dieclock.on {
+  opacity: 1;
+}
+
+/* Trois couleurs : l'encre tant qu'il reste du temps, le jaune à mi-parcours,
+   le rouge à la fin. Le jaune est l'avertissement — sans lui, le contour ne
+   prévient de rien, il constate. */
+.dieclock.warn {
+  --tint: var(--warn-ink);
+}
+
+.dieclock.urgent {
+  --tint: var(--red);
+}
+
+/* Le repli, là où la composition de masques manque : une jauge sous le dé.
+   Moins belle, aussi lisible — et c'est le seul critère qui vaille pour une
+   information qui dit combien de temps il reste. */
+.dieclock::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: -1px;
+  left: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--tint, var(--ink)) 0 calc(var(--left, 1) * 100%),
+    rgba(var(--ink-rgb), 0.16) calc(var(--left, 1) * 100%) 100%
+  );
+}
+
+/* La piste : le liseré d'encre pâle sur lequel l'anneau se détache. Sans elle,
+   le jaune se perd sur le papier crème et le dé jaune du « prêt à lancer ». */
+@supports ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .dieclock {
+    /* Le dégradé conique est porté par l'élément lui-même, et non par un enfant :
+       un enfant en `inset: 0` se cale sur la boîte de padding, c'est-à-dire
+       exactement le trou que le masque découpe — il ne se serait jamais vu.
+       La couleur de fond, elle, transparaît là où le conique est transparent :
+       une seule boîte porte donc la piste ET l'anneau. */
+    background-color: rgba(var(--ink-rgb), 0.16);
+    /* Les deux bornes de chaque tranche sont écrites en toutes lettres. La
+       forme courte — « transparent jusqu'ici, la couleur ensuite » — repose sur
+       le rattrapage d'une borne inférieure à la précédente, et le dégradé sort
+       vide chez Chrome : l'anneau ne se peignait pas du tout. */
+    background-image: conic-gradient(
+      transparent 0deg calc((1 - var(--left, 1)) * 360deg),
+      var(--tint, var(--ink)) calc((1 - var(--left, 1)) * 360deg) 360deg
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+
+  .dieclock::after {
+    display: none;
+  }
+}
+
+/* Les dernières secondes battent — mais l'anneau, lui, reste : c'est de
+   l'information, pas du décor. Qui a demandé moins de mouvement garde le
+   décompte, il perd seulement le battement. */
+@media (prefers-reduced-motion: no-preference) {
+  .dieclock.urgent {
+    animation: dieclock-pulse 0.9s ease-in-out infinite;
+  }
+}
+
+@keyframes dieclock-pulse {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 /* Réserve épuisée : les bonus s'effacent sans rendre leur place. Le dé ne
@@ -2966,6 +3102,220 @@ input:disabled {
   }
 }
 
+/* ─────────────────────── le tirage d'une carte ───────────────────────
+
+   Une carte se soulève de la case marchée, se retourne, et file vers la main
+   qui la garde ou vers le cheval qu'elle frappe. C'est du papier et de l'encre
+   comme le reste : un dos au losange, une ombre portée franche, aucune image.
+
+   Tout est en `transform` et en `opacity`, sur un calque à part : rien de ce
+   qui bouge ici ne fait recalculer une seule ligne du plateau. Les durées
+   arrivent du JS en variables (voir `cardfly.ts`) — une seule source, sinon
+   les deux dérivent et l'animation saute. */
+.cardfly-layer {
+  position: fixed;
+  inset: 0;
+  /* Sous les nouvelles du haut d'écran (35) et sous les feuilles (36) : une
+     carte qui vole est un décor, pas une information à couvrir. */
+  z-index: 34;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cardfly {
+  position: fixed;
+  width: 92px;
+  height: 124px;
+  perspective: 760px;
+  opacity: 0;
+  /* Elle sort de la case, donc petite : c'est la case qui la donne. */
+  transform: translate3d(0, 0, 0) scale(0.34);
+  transition: transform var(--lift, 260ms) cubic-bezier(0.2, 0.9, 0.3, 1.24),
+    opacity 150ms linear;
+  will-change: transform, opacity;
+}
+
+.cardfly.is-up {
+  opacity: 1;
+  transform: translate3d(0, -16px, 0) scale(1);
+}
+
+.cardfly.is-away {
+  transform: translate3d(var(--dx, 0px), var(--dy, 0px), 0) scale(var(--k, 0.3));
+  transition: transform var(--travel, 480ms) cubic-bezier(0.5, 0.05, 0.75, 0.9);
+}
+
+.cardfly.is-landed {
+  opacity: 0;
+  transition: opacity var(--land, 200ms) linear;
+}
+
+/* La main était pleine : la carte bute, recule, et tombe en se fanant. */
+.cardfly.is-bounced {
+  transform: translate3d(calc(var(--dx, 0px) * 0.76), calc(var(--dy, 0px) * 0.76 - 20px), 0)
+    scale(calc(var(--k, 0.3) * 1.18)) rotate(-9deg);
+  transition: transform var(--reject, 260ms) cubic-bezier(0.3, -0.5, 0.4, 1.4);
+}
+
+.cardfly.is-fallen {
+  opacity: 0;
+  transform: translate3d(calc(var(--dx, 0px) * 0.8), calc(var(--dy, 0px) * 0.8 + 54px), 0)
+    scale(var(--k, 0.3)) rotate(-18deg);
+  transition: transform var(--fall, 320ms) cubic-bezier(0.4, 0, 0.9, 0.5),
+    opacity var(--fall, 320ms) linear;
+}
+
+.cardfly__flip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform var(--flip, 420ms) cubic-bezier(0.45, 0, 0.2, 1);
+}
+
+/* Une main est secrète : la carte gardée d'un autre joueur ne se retourne
+   jamais. `cardfly--facedown` est donc l'absence de cette règle, pas une règle
+   de plus — elle n'a rien à annuler. */
+.cardfly:not(.cardfly--facedown).is-up .cardfly__flip {
+  transform: rotateY(180deg);
+  transition-delay: var(--flip-delay, 180ms);
+}
+
+.cardfly__side {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  align-content: center;
+  padding: 8px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 16px;
+  box-shadow: 0 7px 0 var(--shade);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Le dos : le losange des cases pouvoir, en grand. On reconnaît d'où la carte
+   sort avant même de savoir ce qu'elle est. */
+.cardfly__back {
+  background: color-mix(in srgb, var(--ink) 12%, var(--card));
+}
+
+.cardfly__back i {
+  width: 44%;
+  aspect-ratio: 1;
+  background: var(--ink);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+.cardfly__face {
+  background: var(--card);
+  transform: rotateY(180deg);
+}
+
+.cardfly__glyph {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+  background: var(--green);
+  color: var(--cream);
+}
+
+.cardfly__face--malus .cardfly__glyph,
+.cardfly__face--full .cardfly__glyph {
+  background: var(--red);
+}
+
+.cardfly__name {
+  font-family: var(--title);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+}
+
+/* Moins de mouvement : la carte ne se crée même pas (voir `cardfly.ts`). Ceci
+   n'est qu'un filet, pour le cas où le réglage changerait en plein vol. */
+@media (prefers-reduced-motion: reduce) {
+  .cardfly-layer {
+    display: none;
+  }
+}
+
+/* ─────────────────────────── le guidage ───────────────────────────
+
+   La même feuille que la pause et le podium : on la reconnaît sans la lire.
+   Elle dit une chose, une fois par appareil, et s'en va au premier appui. */
+.overlay.guide {
+  background: rgba(var(--ink-rgb), 0.62);
+}
+
+.guide__sheet {
+  gap: 12px;
+}
+
+/* `balance` parce que le titre porte un nom de carte entre guillemets : sans
+   lui, le chevron fermant tombe seul sur une deuxième ligne. */
+.guide__sheet h2 {
+  font-size: 24px;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.guide__mark {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 62px;
+  height: 62px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 20px;
+  background: var(--green);
+  box-shadow: 0 5px 0 var(--shade);
+  color: var(--cream);
+}
+
+.guide__mark--malus {
+  background: var(--red);
+}
+
+/* La feuille des cases marquées ne parle d'aucune carte : elle montre la case,
+   losange d'encre sur fond neutre, exactement comme sur le plateau. */
+.guide__mark--neutral {
+  background: color-mix(in srgb, var(--ink) 12%, var(--card));
+}
+
+.guide__lozenge {
+  width: 40%;
+  aspect-ratio: 1;
+  background: var(--ink);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+/* La première phrase porte le fait ; les suivantes expliquent. */
+.guide__lead {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* « en bas de l'écran » est une indication qu'on suit du doigt, pas une qu'on
+   lit : la ligne de tour passe au-dessus du voile le temps de la feuille.
+   Ni `.play` ni `#app` ne créent de contexte d'empilement — elle n'a qu'à
+   porter son propre rang. */
+.turnline.spotlit {
+  position: relative;
+  z-index: 37;
+}
+
+/* Le bouton de la main pendant qu'on parle de lui : voir `.handbtn--spot`, avec
+   les autres états du bouton — un état déclaré ici perdrait contre eux. */
+
 /* ─────────────────────────── à propos ─────────────────────────── */
 
 /* Écran de lecture : les blocs se touchent presque, l'écart de 20 px des autres
@@ -3191,7 +3541,9 @@ input:disabled {
     justify-items: center;
   }
 
-  .dice-row .dice {
+  /* Le créneau du dé, et non le dé : c'est lui l'élément de la grille depuis
+     que l'anneau du temps de réflexion se pose autour (voir `.dieslot`). */
+  .dice-row .dieslot {
     grid-area: die;
   }
 
@@ -3734,8 +4086,59 @@ input:disabled {
   }
 }
 
+/* Une carte est en vol vers le bouton. Sa figure y est déjà — la main est
+   redessinée avant l'annonce — mais elle attend d'être arrivée pour s'allumer :
+   sans cela, on regarderait voyager une carte déjà rangée. */
+.handbtn--pending .handbtn__glyph:last-child {
+  opacity: 0;
+}
+
+/* Et à l'arrivée, le bouton accuse le coup. Un compte qui change tout seul ne
+   se remarque pas ; un bouton qui rebondit, si. */
+.handbtn--pop {
+  animation: handbtn-pop 0.42s cubic-bezier(0.3, -0.4, 0.4, 1.5);
+}
+
+@keyframes handbtn-pop {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(1.22);
+  }
+}
+
+/* Le guidage parle de ce bouton : « en bas de l'écran » est une indication
+   qu'on suit du doigt, pas une qu'on lit. Le temps de la feuille, il passe
+   au-dessus du voile (voir `.turnline.spotlit`) et bat plus franchement que
+   d'habitude. Déclaré ici, après `.handbtn.on`, sinon le clin d'œil habituel
+   l'emporterait à égalité de spécificité. */
+.handbtn.handbtn--spot {
+  border-color: var(--ink);
+  background: var(--yellow);
+  color: var(--ink);
+  animation: handbtn-spot 1.5s ease-in-out infinite;
+}
+
+.handbtn.handbtn--spot .handbtn__glyph {
+  background: rgba(42, 30, 22, 0.14);
+}
+
+@keyframes handbtn-spot {
+  0%,
+  100% {
+    box-shadow: 0 2px 0 var(--shade), 0 0 0 0 rgba(var(--ink-rgb), 0.35);
+  }
+  55% {
+    box-shadow: 0 2px 0 var(--shade), 0 0 0 9px rgba(var(--ink-rgb), 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .handbtn.on {
+  .handbtn.on,
+  .handbtn--pop,
+  .handbtn.handbtn--spot {
     animation: none;
   }
 }
