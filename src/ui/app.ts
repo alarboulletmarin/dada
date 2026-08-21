@@ -7,7 +7,7 @@
  */
 
 import { BOARD_SHAPES, geometryFor, isBoardShape, type BoardShape } from '../game/board.ts'
-import { mercyOf, pawnsOf, statsOf } from '../game/engine.ts'
+import { mercyOf, pawnId, pawnsOf, statsOf } from '../game/engine.ts'
 import {
   bonusCount,
   DECK_SIZE,
@@ -26,7 +26,9 @@ import { Session, type Notice, type NoticeCode } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
 import { armedReady, keepArmed, needsPawn, type Armed } from './aim.ts'
 import { BoardView, SEAT_MARKS } from './board-view.ts'
+import { clearFlights, flyCard, type Flight, type FlightKind } from './cardfly.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
+import { deviceStore, gestureOf, Guide, guideForDraw, type GuideId } from './guide.ts'
 import { icon, type IconName } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
 import { avatar } from './avatar.ts'
@@ -228,10 +230,34 @@ const CHAT_BUBBLE_MAX = 200
  *  un seul nom, des bulles serrées. Au-delà, la conversation a repris. */
 const CHAT_GROUP_MS = 60_000
 
-/** Sous ce reste de temps de réflexion, le contour vire au rouge et les
- *  secondes s'affichent : jusque-là, la minuterie reste une affaire de coin
- *  de l'œil. */
+/** Sous ce reste de temps de réflexion, la pendule vire au rouge. */
 const URGENT_LEFT = 0.3
+/**
+ * Et au jaune à mi-parcours : trois couleurs, pas deux.
+ *
+ * Un contour qui reste identique jusqu'à la sanction ne prévient de rien — il
+ * ne fait que constater. Le jaune est l'avertissement, et il arrive assez tôt
+ * pour qu'on puisse en tenir compte.
+ */
+const WARN_LEFT = 0.5
+/**
+ * Les secondes s'affichent sous ce reste, en secondes et non en fraction.
+ *
+ * Elles n'apparaissaient qu'avec le rouge, c'est-à-dire trois secondes avant la
+ * fin : de quoi constater qu'on a perdu, pas de quoi se dépêcher. Cinq
+ * secondes, c'est encore un tour qu'on peut jouer.
+ */
+const CLOCK_SHOW_S = 5
+/**
+ * Et sous ce reste, une vibration — une seule par tour.
+ *
+ * Le regard n'est pas toujours sur l'écran : on parle, on regarde la table, on
+ * tend le bras vers le téléphone de quelqu'un d'autre. Un tour qui saute sans
+ * qu'on ait rien senti passer est la seule sanction que ce jeu n'a pas le droit
+ * d'infliger en silence.
+ */
+const BUZZ_S = 3
+const BUZZ_MS = 40
 
 /**
  * Chaque motif rapporté par la session a sa phrase. Sans cette table, un refus
@@ -294,6 +320,37 @@ type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'rulebook'
  */
 const DETOURS = new Set<Screen | null>(['rules', 'rulebook', 'about'])
 
+/** Une carte qui vient d'être tirée, telle que le journal la raconte. */
+type Draw = {
+  seat: Seat
+  power: PowerId
+  /** Le cheval qui s'est arrêté sur la case marquée. */
+  pawn: string
+  /** La main était pleine : la carte n'arrivera jamais. */
+  lost: boolean
+}
+
+/**
+ * Un tirage prêt à être joué à l'écran : la carte qui vole, et ce qui vient
+ * après elle.
+ *
+ * `flown` est le garde-fou du doublon. Une carte peut partir par deux chemins —
+ * l'arrêt du plateau sur la case marquée, ou la file des annonces — et les deux
+ * regardent le même objet. C'est le seul état partagé entre eux.
+ */
+type Sortie = {
+  flight: Flight
+  pawn: string
+  power: PowerId
+  /** Elle part pendant l'arrêt du plateau, parce que la carte déplace le cheval. */
+  hold: boolean
+  /** Elle rejoint MA main : sa figure y attend l'arrivée pour s'allumer. */
+  pending: boolean
+  flown: boolean
+  /** La feuille à ouvrir derrière, s'il s'agit d'une première fois. */
+  guide: GuideId | null
+}
+
 export class App {
   private session: Session | null = null
   private board: BoardView | null = null
@@ -305,6 +362,8 @@ export class App {
     turnLine: HTMLElement
     dieBtn: HTMLButtonElement
     die: HTMLElement
+    /** L'anneau du temps de réflexion, autour du dé. Voir `tickClock`. */
+    dieClock: HTMLElement
     diceRow: HTMLElement
     boostLowBtn: HTMLButtonElement
     boostHighBtn: HTMLButtonElement
@@ -352,11 +411,31 @@ export class App {
   /** Les secondes qui restent, affichées à la toute fin du décompte. */
   private turnClock: HTMLElement | null = null
   private clockFrame: number | null = null
+  /** La vibration des trois dernières secondes a déjà eu lieu pour ce tour. */
+  private buzzed = false
   /** La feuille de pause, tant qu'elle est à l'écran. */
   private pauseSheet: HTMLElement | null = null
   /** Un bot tenait déjà notre siège à la passe précédente : sans ce souvenir,
    *  la nouvelle se redirait à chaque changement d'état. */
   private botHeldMySeat = false
+  /** Ce que cet appareil s'est déjà fait expliquer des cartes pouvoir. */
+  private guide = new Guide(deviceStore())
+  /**
+   * Le tirage qui attend l'arrêt du plateau sur la case pouvoir.
+   *
+   * Un malus qui déplace laisse l'état trois cases plus loin que ce qu'on
+   * regarde : la carte doit voler pendant l'arrêt, pas après. Le plateau vient
+   * la chercher ici (voir `onPowerHold`) ; si l'arrêt n'a pas lieu — un malus
+   * qui ne déplace personne, une carte gardée — elle part avec les autres, une
+   * fois le plateau immobile.
+   */
+  private heldDraw: { pawnId: string; flown: boolean; run: () => Promise<void> } | null = null
+  /** Une carte vole vers la main : sa figure y attend l'arrivée pour s'allumer. */
+  private handPending = false
+  /** De quoi refermer proprement la feuille de guidage — elle écoute le clavier. */
+  private guideClose: (() => void) | null = null
+  /** La feuille de guidage qui attend son moment. Voir `flushGuide`. */
+  private guidePending: { id: GuideId; power?: PowerId } | null = null
 
   constructor(private root: HTMLElement) {}
 
@@ -464,8 +543,17 @@ export class App {
     if (this.autoTimer) clearTimeout(this.autoTimer)
     this.autoTimer = null
     this.autoAt = -1
+    // La feuille de guidage d'abord : sa fermeture rappelle la feuille de match
+    // si la partie s'est terminée pendant qu'on la lisait, et on la balaie juste
+    // après. L'ordre inverse la reposerait sur un écran qu'on est en train de
+    // quitter.
+    this.guideClose?.()
+    this.guidePending = null
     document.querySelector('.cardnotes')?.remove()
     document.querySelector('.overlay.podium')?.remove()
+    clearFlights()
+    this.heldDraw = null
+    this.handPending = false
     this.closeHandTray()
     this.closePause()
     this.armed = null
@@ -1679,6 +1767,11 @@ export class App {
           toggle,
         ),
         h('p', { class: 'hint', text: t('table.powers.hint') }),
+        // Un conseil, pas un défaut : les pouvoirs restent où l'hôte les a mis.
+        // Une première table a déjà un plateau, un dé, une sortie d'écurie et
+        // un ordre de tour à comprendre ; sept cartes par-dessus, c'est la
+        // manche qu'on passe à demander « ça fait quoi, ça ? ».
+        powers ? h('p', { class: 'hint', text: t('table.powers.first') }) : null,
         h(
           'button',
           {
@@ -1779,6 +1872,24 @@ export class App {
       // les a laissés. Une croix qui flotte au-dessus du texte qui défile
       // sous elle se lit comme une carte de plus, mal placée.
       h('div', { class: 'powers__body' }, group('bonus'), group('malus')),
+      // Le guidage ne se montre qu'une fois par appareil : il faut donc un
+      // endroit pour le rappeler — quand on prête son téléphone, ou quand on
+      // a fermé la feuille avant de l'avoir lue. Ici, et pas dans un écran de
+      // réglages : c'est la page des cartes, c'est là qu'on se pose la question.
+      // Rien à revoir tant que rien n'a été vu : le bouton n'apparaît pas.
+      this.guide.untouched
+        ? null
+        : h('button', {
+            class: 'tray__all',
+            text: t('guide.again'),
+            on: {
+              click: () => {
+                this.guide.forget()
+                close()
+                this.notify('guide.again.done')
+              },
+            },
+          }),
     )
     const overlay = h(
       'div',
@@ -1934,7 +2045,14 @@ export class App {
     }
     const low = boost('low')
     const high = boost('high')
-    const diceRow = h('div', { class: 'dice-row' }, low.btn, dieBtn, high.btn)
+    // L'anneau du temps de réflexion, autour du dé et non à côté : le dé est le
+    // bouton « j'agis », c'est là qu'est le regard quand c'est à nous. Il tient
+    // dans un créneau à part pour se poser autour de lui sans peser sur la
+    // ligne — et il entoure le dé même quand un dé pipé est armé, car ce sont
+    // alors les deux boutons qui lancent, mais le centre reste le dé.
+    const dieClock = h('span', { class: 'dieclock', attrs: { 'aria-hidden': 'true' } })
+    const dieSlot = h('span', { class: 'dieslot' }, dieBtn, dieClock)
+    const diceRow = h('div', { class: 'dice-row' }, low.btn, dieSlot, high.btn)
     // Le bouton de la main, à droite de la ligne de tour : il porte les figures
     // des cartes gardées, et l'ouvre au doigt. Il est dans la ligne de tour et
     // non dans la rangée du dé parce qu'une carte se joue *avant* de lancer
@@ -2002,12 +2120,16 @@ export class App {
     )
 
     this.board = new BoardView(boardHost, this.session!.game!.variant)
+    // Le plateau vient chercher ici la carte qui doit se poser sur un cheval
+    // pendant son arrêt sur la case marquée — voir `heldDraw`.
+    this.board.onPowerHold((id) => this.playHeldDraw(id))
     this.mounts = {
       players: [top, bottom],
       turn: turnMain,
       turnLine: turn,
       dieBtn,
       die,
+      dieClock,
       diceRow,
       boostLowBtn: low.btn,
       boostHighBtn: high.btn,
@@ -2020,9 +2142,16 @@ export class App {
     this.shownDice = null
     this.tumbling = false
     this.autoAt = -1
+    this.heldDraw = null
+    this.handPending = false
     // Une manche qui commence ne rejoue pas les annonces de la précédente.
     this.announced = this.session!.game!.log[this.session!.game!.log.length - 1]?.seq ?? -1
     this.paintDie(this.lastDie, false)
+
+    // Les cases marquées apparaissent en même temps que le plateau : c'est le
+    // seul moment où l'on peut les nommer avant qu'elles ne servent. Une fois
+    // par appareil, et jamais pendant une partie sans pouvoirs.
+    if (this.session!.game!.variant.powers === true) this.askGuide('squares')
   }
 
   private refreshPlay(state: GameState): void {
@@ -2125,6 +2254,9 @@ export class App {
     this.announce(state)
     this.paintLinkBar()
     this.tellSeatToBot()
+    // Une feuille d'explication qui attendait son moment : le tour vient
+    // peut-être de passer, ou le tiroir de se refermer.
+    this.flushGuide()
 
     if (state.phase === 'finished') this.renderPodium(state)
   }
@@ -2262,10 +2394,20 @@ export class App {
     // Dans l'ordre où les choses sont arrivées, et non à l'envers : la pile se
     // lit de haut en bas, elle doit donc se remplir dans le sens du récit.
     const notes: Note[] = []
+    /** Les cartes tirées dans ce lot : ce qui vole à l'écran, avant les mots. */
+    const draws: Draw[] = []
     for (const entry of fresh) {
       const { event } = entry
       if (event.kind === 'power') {
         const spec = POWERS[event.power]
+        draws.push({
+          seat: entry.seat,
+          power: event.power,
+          // Le journal ne porte que le rang du cheval, à partir de 1 : c'est
+          // son propriétaire et ce rang qui refont son identifiant.
+          pawn: pawnId(entry.seat, event.pawn - 1),
+          lost: false,
+        })
         // Sa propre carte, ou un malus qui s'abat à la vue de tous : on la nomme.
         // Celle d'un autre : on dit qu'elle existe, pas ce qu'elle est.
         notes.push(
@@ -2274,6 +2416,10 @@ export class App {
             : { kind: 'neutral', who: entry.actor, title: t('toast.drew.title') },
         )
       } else if (event.kind === 'handFull') {
+        // Le moteur pose ce refus juste après le tirage qu'il refuse : c'est
+        // donc la dernière carte notée qui n'arrivera jamais en main.
+        const refused = draws[draws.length - 1]
+        if (refused?.power === event.power) refused.lost = true
         // La carte perdue est une mauvaise nouvelle personnelle : elle n'a pas
         // à s'afficher chez les autres, qui la lisaient comme la leur.
         if (mine(entry.seat)) {
@@ -2345,13 +2491,275 @@ export class App {
       }
     }
 
-    if (notes.length === 0) return
+    if (notes.length === 0 && draws.length === 0) return
     const show = (): void => {
       for (const n of notes.slice(-NOTE_STACK)) this.note(n.kind, n.who, n.title, n.desc, n.power)
     }
+
+    // Les cartes qui volent, puis les mots, puis — s'il y a une première fois
+    // là-dedans — la feuille qui l'explique. Jamais l'inverse : une explication
+    // posée sur une carte en vol cache exactement ce qu'elle commente.
+    // `hop` vient de l'état qu'on est en train de dessiner, et non du dernier
+    // état connu de la session : c'est celui-là que le plateau anime.
+    const flights = draws.map((draw) => this.flightFor(draw, state.hop?.pawnId === draw.pawn))
+    // Un malus qui déplace laisse l'état trois cases plus loin que ce qu'on
+    // regarde. Sa carte doit donc voler pendant l'arrêt du plateau sur la case
+    // marquée, et non après : le plateau la réclamera lui-même.
+    const held = flights.find((f) => f.hold)
+    if (held) this.heldDraw = { pawnId: held.pawn, flown: false, run: () => this.launch(held) }
+
     const board = this.board
-    if (board) void board.settled().then(show)
-    else show()
+    void (async () => {
+      // Le plateau d'abord : une carte qui se pose sur un cheval encore en
+      // marche se pose à côté de lui.
+      if (board) await board.settled()
+      for (const flight of flights) {
+        // Déjà partie pendant l'arrêt : on ne la rejoue pas.
+        if (flight.flown) continue
+        await this.launch(flight)
+      }
+      show()
+      // Une seule feuille par lot : deux « premières fois » dans le même tour
+      // s'empileraient, et l'on refermerait la seconde sans l'avoir lue.
+      const first = flights.find((f) => f.guide !== null)
+      if (first?.guide) this.askGuide(first.guide, first.power)
+    })()
+  }
+
+  /**
+   * La carte qui vole, pour un tirage.
+   *
+   * Trois décisions y tiennent, et elles sont toutes visuelles :
+   *
+   * - **Se montre-t-elle ?** Une main est secrète. La carte gardée d'un autre
+   *   joueur voyage dos visible : on voit qu'une carte est partie chez lui, pas
+   *   laquelle. Un malus, lui, s'abat à la vue de tous — il se nomme.
+   * - **Où va-t-elle ?** Dans la main de qui la garde (bouton, ou carte de
+   *   joueur), sur le cheval de qui la subit. Le tour sauté fait exception : il
+   *   frappe le siège et pas le cheval, il va donc là où le siège se lit.
+   * - **Arrive-t-elle ?** Une main pleine la refuse : elle rebondit et tombe.
+   */
+  private flightFor(draw: Draw, hold: boolean): Sortie {
+    const spec = POWERS[draw.power]
+    const mine = this.session?.controls(draw.seat) === true
+    const kind: FlightKind = draw.lost ? 'full' : spec.kind
+    // `saute` ne déplace personne : le cheval qui l'a ramassé n'est pas la
+    // victime, le siège l'est. Les deux autres malus, eux, poussent un cheval.
+    const onPawn = kind === 'malus' && draw.power !== 'saute'
+    const flight: Flight = {
+      kind,
+      face: !spec.held || mine ? { glyph: POWER_ICON[draw.power], name: t(`power.${draw.power}` as Key) } : null,
+      from: () => this.board?.pawnRect(draw.pawn) ?? null,
+      to: () => (onPawn ? (this.board?.pawnRect(draw.pawn) ?? null) : this.landing(draw.seat)),
+      onArrive: kind === 'bonus' && mine ? () => this.cardLanded() : undefined,
+    }
+    return {
+      flight,
+      pawn: draw.pawn,
+      power: draw.power,
+      // Le plateau ne marque son arrêt que si la carte a bougé le cheval :
+      // c'est exactement ce que dit `hop` (voir `types.ts`).
+      hold,
+      pending: kind === 'bonus' && mine,
+      flown: false,
+      guide: guideForDraw(draw.power, { mine, lost: draw.lost }),
+    }
+  }
+
+  /** Lance une carte, une seule fois, quel que soit celui des deux chemins qui l'appelle. */
+  private async launch(sortie: Sortie): Promise<void> {
+    if (sortie.flown) return
+    sortie.flown = true
+    // La figure de la carte est déjà dans le bouton — la main a été redessinée
+    // avant l'annonce. Elle s'y éteint le temps du vol : une carte qui apparaît
+    // en main avant d'y arriver rend le voyage inutile.
+    if (sortie.pending) {
+      this.handPending = true
+      this.mounts?.hand.classList.add('handbtn--pending')
+    }
+    await flyCard(sortie.flight)
+  }
+
+  /** Le plateau réclame la carte qui doit se poser pendant son arrêt. */
+  private async playHeldDraw(id: string): Promise<void> {
+    const held = this.heldDraw
+    if (!held || held.flown || held.pawnId !== id) return
+    held.flown = true
+    await held.run()
+  }
+
+  /** Où une carte gardée atterrit : le bouton de sa main, ou la carte de son siège. */
+  private landing(seat: Seat): DOMRect | null {
+    const hand = this.mounts?.hand
+    if (this.session?.controls(seat) === true && hand && !hand.hidden) {
+      return hand.getBoundingClientRect()
+    }
+    // La main des autres ne se lit que sur la pastille de leur carte de joueur.
+    const card = document.querySelector<HTMLElement>(`.pcard[data-seat="${seat}"]`)
+    return card?.getBoundingClientRect() ?? null
+  }
+
+  /** La carte est arrivée dans la main : sa figure s'allume, et le bouton accuse le coup. */
+  private cardLanded(): void {
+    this.handPending = false
+    const hand = this.mounts?.hand
+    if (!hand) return
+    hand.classList.remove('handbtn--pending', 'handbtn--pop')
+    // Deux cartes d'affilée ne feraient rebondir le bouton qu'une fois si
+    // l'animation n'était pas relancée de force.
+    void hand.offsetWidth
+    hand.classList.add('handbtn--pop')
+    setTimeout(() => hand.classList.remove('handbtn--pop'), 460)
+  }
+
+  // ─────────────────────────── le guidage ───────────────────────────
+
+  /**
+   * La feuille qui explique un concept au moment où il apparaît — une fois.
+   *
+   * Ce n'est pas un tutoriel : rien ne se lit avant la partie, rien ne se
+   * traverse en cinq écrans. C'est la même feuille que la pause ou le podium,
+   * elle dit une chose et elle s'en va au premier appui.
+   *
+   * **En ligne, elle n'arrête rien** : la table continue derrière, les pairs
+   * jouent, l'état arrive et se dessine sous elle. Elle n'est qu'un calque —
+   * c'est pour cela qu'elle attend son moment plutôt que de s'imposer (voir
+   * `flushGuide`). Sur un seul téléphone, au contraire, la partie s'arrête le
+   * temps qu'on lise.
+   *
+   * Demander n'est pas montrer : la feuille attend le bon moment, et n'est
+   * comptée comme vue qu'une fois réellement ouverte.
+   */
+  private askGuide(id: GuideId, power?: PowerId): void {
+    if (this.guide.seen(id)) return
+    // La dernière demande l'emporte : celle qu'on écrase n'a pas été comptée
+    // comme vue, elle repassera au prochain ramassage.
+    this.guidePending = { id, power }
+    this.flushGuide()
+  }
+
+  /**
+   * Ouvre la feuille en attente, quand l'écran s'y prête.
+   *
+   * Deux façons de ne pas voler le tour de qui lit :
+   *
+   * - **Sur un seul téléphone**, on suspend la partie le temps de la feuille
+   *   (`session.hold`). Il n'y a personne à faire attendre : la partie entière
+   *   tient sur cet appareil.
+   * - **En ligne**, la table n'attend pas — alors c'est la feuille qui attend.
+   *   Elle ne s'ouvre que lorsque le tour n'est plus le nôtre, ce qui arrive à
+   *   la seconde d'après : ramasser une case termine un coup. Dix secondes de
+   *   réflexion ne se passent pas à lire ; et une explication qui coûte le tour
+   *   qu'elle explique est pire que pas d'explication.
+   *
+   * Et jamais par-dessus autre chose : un détour par le règlement, un tiroir
+   * ouvert, la feuille de match. On repasse ici à chaque passe d'affichage.
+   */
+  private flushGuide(): void {
+    const want = this.guidePending
+    const session = this.session
+    if (!want || !session) return
+    if (this.screen !== 'play') return
+    if (document.querySelector('.overlay')) return
+    if (session.mode === 'online' && session.myTurn) return
+    this.guidePending = null
+    if (!this.guide.claim(want.id)) return
+    this.openGuide(want.id, want.power)
+  }
+
+  private openGuide(id: GuideId, power?: PowerId): void {
+    const name = power ? t(`power.${power}` as Key) : ''
+    // Une carte perdue est une mauvaise nouvelle, quelle qu'ait été la carte :
+    // la peindre en vert parce qu'elle était un bonus dirait le contraire.
+    const kind: PowerKind | 'neutral' =
+      id === 'full' ? 'malus' : power ? POWERS[power].kind : 'neutral'
+
+    let title: string
+    const lines: string[] = []
+    if (id === 'squares') {
+      title = t('guide.squares.title')
+      lines.push(t('guide.squares.body'))
+    } else if (id === 'bonus') {
+      title = t('guide.bonus.title', { power: name })
+      if (power) lines.push(t(`power.${power}.desc` as Key))
+      lines.push(t('guide.bonus.hand'))
+      lines.push(t(`guide.bonus.play.${gestureOf(power!)}` as Key))
+    } else if (id === 'malus') {
+      title = name
+      if (power) lines.push(t(`power.${power}.desc` as Key))
+      lines.push(t('guide.malus.body'))
+    } else {
+      title = t('guide.full.title')
+      lines.push(t('guide.full.body'))
+    }
+
+    // Le bouton de la main pendant qu'on parle de lui : « en bas de l'écran »
+    // est une indication qu'on suit du doigt, pas une qu'on lit. Il passe
+    // au-dessus du voile — la ligne de tour n'est dans aucun contexte
+    // d'empilement, elle n'a qu'à porter son propre `z-index`.
+    const spot = id === 'bonus' || id === 'full'
+    const line = this.mounts?.turnLine
+    const close = (): void => {
+      removeEventListener('keydown', onKey)
+      this.guideClose = null
+      if (spot) {
+        line?.classList.remove('spotlit')
+        this.mounts?.hand.classList.remove('handbtn--spot')
+      }
+      overlay.remove()
+      // La partie reprend là où elle s'était arrêtée, pendule pleine — et
+      // seulement une fois la feuille retirée : `hold` redessine l'écran.
+      this.session?.hold(false)
+      // La partie a pu se terminer pendant qu'on lisait : plus aucun état
+      // n'arrivera pour rappeler la feuille de match.
+      this.showPodiumIfOver()
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape' || ev.key === 'Enter' || ev.key === ' ') close()
+    }
+
+    const mark = h(
+      'span',
+      { class: `guide__mark guide__mark--${kind}`, attrs: { 'aria-hidden': 'true' } },
+      // La case marchée pour la feuille des cases, la figure de la carte pour
+      // les trois autres : on reconnaît de quoi on parle avant de lire.
+      power ? icon(POWER_ICON[power], 32) : h('i', { class: 'guide__lozenge' }),
+    )
+
+    const got = h('button', { class: 'btn red', text: t('guide.got'), on: { click: close } })
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay guide',
+        attrs: { role: 'dialog', 'aria-modal': 'false', 'aria-label': title },
+        // Un appui suffit, où qu'il tombe : on a lu, on repart. Une feuille
+        // d'explication n'a pas à se faire viser.
+        on: { click: () => close() },
+      },
+      h(
+        'div',
+        { class: 'sheet guide__sheet' },
+        mark,
+        h('h2', { text: title }),
+        ...lines.map((text, i) =>
+          h('p', { class: i === 0 ? 'guide__lead' : 'hint center', text }),
+        ),
+        got,
+      ),
+    )
+
+    if (spot) {
+      line?.classList.add('spotlit')
+      this.mounts?.hand.classList.add('handbtn--spot')
+    }
+    addEventListener('keydown', onKey)
+    this.guideClose = close
+    document.body.append(overlay)
+    // Après la pose, parce que `hold` redessine l'écran : la passe qui suit
+    // doit voir la feuille déjà là. Sans effet en ligne (voir `hold` côté
+    // session) — là-bas, c'est la feuille qui a attendu son moment.
+    this.session?.hold(true)
+    got.focus()
   }
 
   /** Le bandeau des nouvelles, créé au premier besoin. */
@@ -2545,6 +2953,9 @@ export class App {
         {
           class: `pcard${active ? ' active' : ''}${rank >= 0 ? ' out' : ''}`,
           style: this.seatVars(seat),
+          // Une carte tirée par un autre joueur vole jusqu'ici : il faut
+          // pouvoir retrouver la carte d'un siège depuis le calque du vol.
+          attrs: { 'data-seat': String(seat) },
         },
         this.token(seat),
         avatar(p.name, this.faceAt(seat), 28),
@@ -2714,6 +3125,10 @@ export class App {
     const armed = this.armed
     host.classList.toggle('on', playable.length > 0)
     host.classList.toggle('aimed', armed !== null)
+    // Une carte est en vol vers ce bouton : sa figure y est déjà — la main a
+    // été redessinée avant l'annonce — mais elle attend d'être arrivée pour
+    // s'allumer. Sans quoi le voyage montrerait une carte déjà rangée.
+    host.classList.toggle('handbtn--pending', this.handPending)
     host.setAttribute(
       'aria-label',
       armed
@@ -3104,26 +3519,77 @@ export class App {
     this.clockFrame = null
     this.turnRing = null
     this.turnClock = null
+    this.buzzed = false
+    // L'anneau survit à la boucle : il vit dans la ligne du dé, pas dans une
+    // carte redessinée. Il faut donc l'éteindre à la main.
+    this.mounts?.dieClock.classList.remove('on', 'warn', 'urgent')
   }
 
   private tickClock = (): void => {
     this.clockFrame = null
-    const left = this.session?.turnLeft() ?? null
+    const session = this.session
+    const left = session?.turnLeft() ?? null
+    // Tout ce qui suit ne s'adresse qu'à celui qui doit jouer. Les autres ont le
+    // contour de la carte du joueur actif, et c'est tout ce qu'ils ont à savoir :
+    // ce n'est pas leur temps qui s'écoule.
+    const mine = left !== null && session?.myTurn === true
+    const seconds = mine ? (session?.turnSeconds() ?? 0) : 0
+    const stage = !mine ? '' : left <= URGENT_LEFT ? 'urgent' : left <= WARN_LEFT ? 'warn' : ''
 
     if (this.turnRing) {
       this.turnRing.style.setProperty('--left', (left ?? 0).toFixed(3))
       this.turnRing.classList.toggle('urgent', left !== null && left <= URGENT_LEFT)
     }
-    if (this.turnClock) {
-      // Le chiffre n'apparaît qu'à la fin, et seulement pour qui doit jouer :
-      // un compte à rebours permanent au-dessus du dé ferait de chaque tour une
-      // épreuve chronométrée, ce que le contour dit déjà bien assez.
-      const urgent = left !== null && left <= URGENT_LEFT && this.session?.myTurn === true
-      this.turnClock.textContent = urgent ? t('play.seconds', { n: this.session!.turnSeconds() }) : ''
+
+    // L'anneau du dé : la même variable que le contour de carte, peinte à
+    // chaque image. Une animation CSS repartirait de zéro à chaque passe
+    // d'affichage — et il y en a une par bulle de chat, par carte ramassée,
+    // par coup joué à l'autre bout de la table.
+    const ring = this.mounts?.dieClock
+    if (ring) {
+      ring.classList.toggle('on', mine)
+      ring.classList.toggle('warn', stage === 'warn')
+      ring.classList.toggle('urgent', stage === 'urgent')
+      if (mine) ring.style.setProperty('--left', left.toFixed(3))
     }
+
+    if (this.turnClock) {
+      // Le chiffre arrive à cinq secondes, et non trois : à trois, il ne fait
+      // plus que constater la fin. Il ne s'adresse qu'à qui doit jouer — un
+      // compte à rebours au-dessus du tour des autres ferait de la partie une
+      // épreuve chronométrée pour tout le monde à la fois.
+      const show = mine && seconds <= CLOCK_SHOW_S
+      this.turnClock.textContent = show ? t('play.seconds', { n: seconds }) : ''
+      this.turnClock.classList.toggle('warn', show && stage === 'warn')
+      this.turnClock.classList.toggle('urgent', show && stage === 'urgent')
+    }
+
+    this.buzz(mine, seconds)
 
     if (left === null || this.screen !== 'play') return
     this.clockFrame = requestAnimationFrame(this.tickClock)
+  }
+
+  /**
+   * Une vibration, une seule, quand il reste trois secondes.
+   *
+   * Une seule **par tour** : le drapeau ne retombe qu'au-dessus du seuil, et le
+   * temps restant ne remonte qu'au tour suivant. Vibrer en boucle pendant trois
+   * secondes ne serait plus un rappel mais une alarme.
+   *
+   * Onglet caché : rien. Une vibration venue d'une page qu'on ne regarde pas ne
+   * s'explique pas, et le tour est de toute façon perdu d'avance. Sur un seul
+   * téléphone elle a le même sens qu'en ligne — c'est le téléphone qu'on tient
+   * qui prévient, quel que soit le siège qu'il porte.
+   */
+  private buzz(mine: boolean, seconds: number): void {
+    if (!mine || seconds > BUZZ_S) {
+      this.buzzed = false
+      return
+    }
+    if (this.buzzed || document.visibilityState !== 'visible') return
+    this.buzzed = true
+    navigator.vibrate?.(BUZZ_MS)
   }
 
   /**
@@ -3350,6 +3816,9 @@ export class App {
                 click: () => {
                   overlay.remove()
                   this.board?.reset()
+                  clearFlights()
+                  this.heldDraw = null
+                  this.handPending = false
                   this.lastDie = null
                   session.restart()
                 },

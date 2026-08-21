@@ -276,6 +276,8 @@ const fr = {
   'table.powers.off': 'Désactivées',
   'table.powers.hint':
     'Huit cases marquées sur le circuit — deux par camp, aux mêmes distances de chaque départ. S’arrêter dessus fait piocher.',
+  'table.powers.first':
+    'Première table ? Une manche sans pouvoirs, puis activez-les à la revanche.',
   'table.powers.see': 'Voir les {n} pouvoirs',
   'table.powers.fair':
     'Un paquet de {n} cartes, mélangé une fois et partagé par toute la table : {bonus} bonus pour {malus} malus. Au bout du paquet, chacun a vu la même chose.',
@@ -320,6 +322,25 @@ const fr = {
   'hand.info': 'Ce que fait « {power} »',
   'hand.validate': 'Lancer le dé et jouer « {power} »',
   'hand.full': 'Main pleine — la carte est perdue',
+
+  /* Le guidage : quatre feuilles, une fois par appareil. Voir `guide.ts`. */
+  'guide.got': 'Compris',
+  'guide.squares.title': 'Huit cases marquées',
+  'guide.squares.body':
+    'Elles sont posées sur le circuit, à égale distance de chaque écurie. S’y arrêter fait piocher une carte : bonus à garder, malus à subir.',
+  'guide.bonus.title': 'Vous avez ramassé « {power} »',
+  'guide.bonus.hand': 'Elle reste dans votre main, sur le bouton en bas de l’écran.',
+  'guide.bonus.play.pawn':
+    'Pour la jouer : touchez-la, désignez un cheval sur le plateau, puis lancez le dé.',
+  'guide.bonus.play.roll': 'Pour la jouer : touchez-la, puis lancez le dé.',
+  'guide.bonus.play.boost':
+    'Pour la jouer : touchez-la, puis demandez votre petit ou votre grand nombre — ce sont ces deux boutons-là qui lancent le dé.',
+  'guide.malus.body': 'Les malus s’appliquent tout de suite. On ne les garde pas.',
+  'guide.full.title': 'Main pleine',
+  'guide.full.body':
+    'Trois cartes au maximum : la quatrième est perdue. Jouez-en une avant de repasser sur une case marquée.',
+  'guide.again': 'Revoir les explications',
+  'guide.again.done': 'Les explications reviendront.',
   'log.played': 'joue « {power} ».',
   'log.handFull': 'a la main pleine : « {power} » est perdue.',
   'toast.played': '{name} joue {power}.',
@@ -622,6 +643,7 @@ const en: Partial<Record<Key, string>> = {
   'table.powers.off': 'Off',
   'table.powers.hint':
     'Eight marked squares on the track — two per colour, at the same distances from every start. Landing on one draws a card.',
+  'table.powers.first': 'First table? Play a round without powers, then switch them on for the rematch.',
   'table.powers.see': 'See the {n} powers',
   'table.powers.fair':
     'A {n}-card deck, shuffled once and shared by the whole table: {bonus} bonuses to {malus} penalties. By the end of the deck, everyone has seen the same thing.',
@@ -666,6 +688,23 @@ const en: Partial<Record<Key, string>> = {
   'hand.info': 'What “{power}” does',
   'hand.validate': 'Roll the die and play “{power}”',
   'hand.full': 'Hand full — the card is lost',
+
+  'guide.got': 'Got it',
+  'guide.squares.title': 'Eight marked squares',
+  'guide.squares.body':
+    'They sit on the track, the same distance from every stable. Landing on one draws a card: bonuses to keep, penalties to take.',
+  'guide.bonus.title': 'You picked up “{power}”',
+  'guide.bonus.hand': 'It stays in your hand, on the button at the bottom of the screen.',
+  'guide.bonus.play.pawn': 'To play it: tap it, pick a horse on the board, then roll the die.',
+  'guide.bonus.play.roll': 'To play it: tap it, then roll the die.',
+  'guide.bonus.play.boost':
+    'To play it: tap it, then ask for your low or your high number — those two buttons are the ones that roll the die.',
+  'guide.malus.body': 'Penalties apply straight away. You never get to keep them.',
+  'guide.full.title': 'Hand full',
+  'guide.full.body':
+    'Three cards at most: the fourth is lost. Play one before you land on another marked square.',
+  'guide.again': 'Show the tips again',
+  'guide.again.done': 'The tips will come back.',
   'log.played': 'plays “{power}”.',
   'log.handFull': 'has a full hand: “{power}” is lost.',
   'toast.played': '{name} plays {power}.',
