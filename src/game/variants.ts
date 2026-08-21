@@ -10,6 +10,9 @@
  *   angles ; le cheval y tourne en diagonale, et les cases étoile tombent huit
  *   crans après chaque départ, comme sur un plateau imprimé.
  * - **40 cases** — un plateau réduit, pour les parties courtes.
+ *
+ * `teams` n'est pas de la géométrie : c'est le seul réglage qui change à qui
+ * appartiennent les chevaux qu'on joue. Voir `equipes` plus bas.
  */
 
 import type { Variant } from './types.ts'
@@ -70,6 +73,27 @@ export const VARIANTS: Variant[] = [
     startSquaresAreSafe: true,
     onePerSquare: false,
     exactFinish: false,
+    numberedHome: false,
+  },
+  {
+    // Le Ludo, à ceci près qu'on n'y joue plus seul. Le plateau ne change pas
+    // d'un trait : c'est le seul qui place déjà les alliés face à face.
+    id: 'equipes',
+    trackLength: 52,
+    pawnsPerPlayer: 4,
+    teams: true,
+    exitRolls: [6],
+    mercyExit: 5,
+    extraTurnOnSix: true,
+    maxConsecutiveSixes: 3,
+    extraTurnOnCapture: true,
+    extraTurnOnFinish: true,
+    starSquaresAreSafe: true,
+    startSquaresAreSafe: true,
+    // Un coéquipier partage la case comme un cheval de sa propre couleur : la
+    // tolérance du Ludo est ce qui rend l'entraide praticable.
+    onePerSquare: false,
+    exactFinish: true,
     numberedHome: false,
   },
 ]

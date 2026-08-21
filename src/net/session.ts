@@ -102,6 +102,33 @@ const INTENT_GIVE_UP_MS = 5000
  */
 const ACK_MEMORY = 64
 
+/**
+ * Combien de temps une bulle de réaction reste en l'air.
+ *
+ * Écrit ici et pas seulement dans l'écran : c'est cette durée qui définit ce
+ * que « en vol » veut dire pour le plafond ci-dessous. Le CSS la reçoit depuis
+ * le JS (voir `--react-life`), les deux ne peuvent donc pas diverger.
+ */
+export const REACT_LIFE_MS = 1800
+/**
+ * Intervalle minimal entre deux réactions du même appareil.
+ *
+ * Une réaction part d'un seul appui, et un seul appui se répète très vite : sans
+ * ce garde-fou, un doigt qui tambourine noie la table sous ses propres bulles.
+ * Sept dixièmes de seconde laissent enchaîner deux expressions — on rit puis on
+ * applaudit — sans jamais permettre la mitraillette.
+ */
+export const REACT_MIN_MS = 700
+/**
+ * Bulles en l'air, au plus, pour un même siège.
+ *
+ * Le frein d'en face vit chez l'émetteur, et un émetteur peut mentir — ou
+ * simplement tourner une version d'avant. Le récepteur ne fait donc pas
+ * confiance : au-delà de trois bulles simultanées d'un même siège, la carte du
+ * joueur disparaît sous la pile et le reste ne dit plus rien de neuf.
+ */
+export const REACT_IN_FLIGHT_MAX = 3
+
 export type SessionMode = 'local' | 'online'
 
 /** Où en est la mise en relation, pour que l'écran d'attente puisse le dire. */
@@ -142,6 +169,7 @@ export type NoticeCode =
   | 'hostTaken'
   | 'seatToBot'
   | 'seatBack'
+  | 'teamsNeedFour'
 
 export type Notice = { code: NoticeCode; name?: string }
 
@@ -173,6 +201,16 @@ export class Session {
   /** En mémoire seulement : rien n'est stocké ni relayé par un hôte pour les
    *  pairs qui n'étaient pas encore là. */
   chatLog: ChatMessage[] = []
+  /** Quand ce téléphone a réagi pour la dernière fois. Voir `REACT_MIN_MS`. */
+  private lastReactAt = 0
+  /**
+   * Dates des réactions encore en l'air, par appareil.
+   *
+   * Par appareil et non par siège : c'est la même chose pour un joueur assis —
+   * un `clientId` tient un siège et un seul — mais ça reste défini pour qui
+   * n'en a pas, et ça survit à un siège qui change de main en cours de partie.
+   */
+  private reactsInFlight = new Map<string, number[]>()
 
   private room: Room | null = null
   private listeners: SessionListeners
@@ -546,7 +584,14 @@ export class Session {
 
     room.on('chat', (message, peer) => {
       if (!current()) return
+      // Un mot dans le chat prouve la présence, une réaction aussi : la
+      // vivacité se note avant tout filtrage, sinon un joueur qui n'a fait que
+      // réagir pendant une minute passerait pour parti.
       this.noteAlive(message.clientId, peer)
+      if (message.kind === 'reaction') {
+        this.deliverReaction(message)
+        return
+      }
       this.chatLog.push(message)
       this.listeners.onChat(message)
     })
@@ -1343,6 +1388,18 @@ export class Session {
 
   start(): void {
     if (!this.isHost || this.lobby.players.length < 2) return
+    // Une table en équipes se joue à quatre, ou ne se joue pas : `createGame`
+    // LÈVE sur une table incomplète, et une exception qui remonte jusqu'à
+    // l'écran, c'est une partie qui disparaît sans un mot. Le salon grise déjà
+    // le bouton — mais un bouton n'est qu'un bouton, et il y a plus de chemins
+    // vers `start()` que d'endroits où l'on peut en griser un.
+    if (tableVariant(this.lobby).teams === true && this.lobby.players.length !== 4) {
+      // Et on le dit : un bouton qui ne fait rien est un bouton cassé. Le salon
+      // grise déjà le sien, donc personne ne devrait passer ici — mais si un
+      // autre chemin y mène, le silence serait la pire des réponses.
+      this.listeners.onError({ code: 'teamsNeedFour' })
+      return
+    }
 
     this.frozen = false
     this.held = false
@@ -1488,6 +1545,58 @@ export class Session {
     this.chatLog.push(message)
     this.room.send('chat', message)
     this.listeners.onChat(message)
+  }
+
+  /**
+   * Réagir : un emoji, un appui, et rien à composer.
+   *
+   * Elle emprunte le canal du chat plutôt qu'un canal à elle. Ce n'est pas une
+   * économie de code : une réaction *est* un message d'un seul emoji, elle a le
+   * même auteur, la même horodate, le même relais — chacun diffuse à tous, sans
+   * passer par l'arbitre — et la même trace dans l'historique. Deux canaux
+   * auraient donné deux ordres d'arrivée possibles pour deux choses que l'écran
+   * range dans la même conversation.
+   *
+   * Rend `false` quand le frein a mangé l'appui : l'écran s'en sert pour ne pas
+   * refermer l'éventail sur un envoi qui n'a pas eu lieu.
+   */
+  sendReaction(emoji: string): boolean {
+    const trimmed = emoji.trim()
+    if (!trimmed || !this.room) return false
+
+    const now = Date.now()
+    if (now - this.lastReactAt < REACT_MIN_MS) return false
+    this.lastReactAt = now
+
+    const name = this.lobby.players.find((p) => p.clientId === this.self)?.name ?? this.myName
+    const message: ChatMessage = { clientId: this.self, name, text: trimmed, at: now, kind: 'reaction' }
+    // Trystero ne renvoie pas l'émetteur à lui-même : on se sert son propre
+    // message, et par le même guichet que celui des autres — le plafond doit
+    // valoir pour tout le monde, y compris pour soi.
+    this.room.send('chat', message)
+    this.deliverReaction(message)
+    return true
+  }
+
+  /**
+   * Le guichet unique des réactions : celles qui arrivent du réseau et la
+   * sienne passent par ici, et le plafond de bulles en vol s'applique aux deux.
+   *
+   * Une réaction refusée ne laisse aucune trace — ni bulle, ni ligne dans
+   * l'historique. C'est du bruit : l'archiver reviendrait à le déplacer.
+   */
+  private deliverReaction(message: ChatMessage): boolean {
+    const now = Date.now()
+    const seen = (this.reactsInFlight.get(message.clientId) ?? []).filter((at) => now - at < REACT_LIFE_MS)
+    if (seen.length >= REACT_IN_FLIGHT_MAX) {
+      this.reactsInFlight.set(message.clientId, seen)
+      return false
+    }
+    seen.push(now)
+    this.reactsInFlight.set(message.clientId, seen)
+    this.chatLog.push(message)
+    this.listeners.onChat(message)
+    return true
   }
 
   /**

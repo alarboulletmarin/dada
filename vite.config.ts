@@ -56,8 +56,24 @@ export default defineConfig({
     sourcemap: true,
   },
   test: {
+    /*
+     * `node` reste le défaut : le moteur, le réseau et la présence n'ont pas
+     * besoin d'un DOM, et leur en monter un à chaque fichier rallongerait la
+     * suite pour rien.
+     *
+     * Les tests d'écran, eux, portent `// @vitest-environment jsdom` en tête de
+     * fichier et le suffixe `.dom.test.ts`. La directive plutôt que
+     * `environmentMatchGlobs` : l'option est dépréciée dans Vitest 3 — elle
+     * réclame `test.projects` et prévient à chaque exécution — et un fichier qui
+     * déclare lui-même l'environnement dont il a besoin ne peut pas se
+     * retrouver dans le mauvais par un chemin mal recopié.
+     */
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Pose `localStorage` avant l'import du fichier de test : `i18n.ts` et
+    // `theme.ts` le lisent au chargement du module, bien avant tout `beforeEach`.
+    // Sans effet hors du DOM — voir le fichier.
+    setupFiles: ['src/ui/test-setup.ts'],
   },
   plugins: [
     noticeAGPL(),

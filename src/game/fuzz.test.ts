@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest'
 import { geometryFor, isOnTrack, trackIndexOf } from './board.ts'
 import { chooseMove, choosePower } from './bot.ts'
-import { apply, createGame, handOf } from './engine.ts'
+import { apply, createGame, handOf, sameTeam, teamOf } from './engine.ts'
 import { HAND_LIMIT } from './powers.ts'
 import { STABLE, type Action, type GameState, type Pawn, type Player, type Seat } from './types.ts'
 import { variantById } from './variants.ts'
@@ -25,7 +25,7 @@ import { variantById } from './variants.ts'
 const MAX_ACTIONS = 4000
 
 const SEEDS = 10
-const VARIANTS = ['petits-chevaux', 'ludo', 'rapide']
+const VARIANTS = ['petits-chevaux', 'ludo', 'rapide', 'equipes']
 
 const players = (seats: Seat[]): Player[] =>
   seats.map((seat) => ({ seat, name: `J${seat + 1}`, kind: 'bot' as const, peerId: null, connected: true }))
@@ -137,6 +137,26 @@ function invariants(state: GameState, shared: SharedSquares, ctx: string): strin
   return null
 }
 
+/**
+ * Un coéquipier n'a jamais mangé un coéquipier depuis l'entrée `seen`.
+ *
+ * C'est la seule règle de la variante équipes qui ne se lise pas dans l'état :
+ * une fois le cheval reparti de l'écurie, plus rien ne dit qui l'y a renvoyé.
+ * Le journal, lui, s'en souvient — le siège qui a frappé, le nom de la victime.
+ */
+function friendlyFire(state: GameState, seen: number, ctx: string): string | null {
+  if (state.variant.teams !== true) return null
+  for (const entry of state.log) {
+    if (entry.seq < seen || entry.event.kind !== 'capture') continue
+    const name = entry.event.victim
+    const victim = state.players.find((p) => p.name === name)?.seat
+    if (victim !== undefined && sameTeam(entry.seat, victim)) {
+      return `${ctx} · le siège ${entry.seat} a mangé le cheval de son coéquipier ${victim}`
+    }
+  }
+  return null
+}
+
 /** Ce que le bot ferait maintenant : une carte s'il en a une qui vaut le coup, sinon le tour. */
 function nextAction(state: GameState): Action {
   const power = choosePower(state)
@@ -152,9 +172,12 @@ const actingPawn = (action: Action): string | undefined =>
 
 /** Joue une partie entière de bots en vérifiant les invariants à chaque coup. */
 function playOut(variantId: string, powers: boolean, seed: number): GameState {
-  const seats: Seat[] = seed % 2 === 0 ? [0, 1, 2, 3] : [0, 1, 2]
+  const variant = variantFor(variantId, powers)
+  // La table à trois est le cas qui déborde (tours sautés, sièges absents) — la
+  // variante équipes, elle, n'existe qu'à quatre : elle est refusée autrement.
+  const seats: Seat[] = variant.teams || seed % 2 === 0 ? [0, 1, 2, 3] : [0, 1, 2]
   const label = `${variantId}${powers ? '+pouvoirs' : ''} · graine ${seed}`
-  let state = createGame({ players: players(seats), variant: variantFor(variantId, powers), seed })
+  let state = createGame({ players: players(seats), variant, seed })
   const shared: SharedSquares = new Map()
 
   let fault = invariants(state, shared, `${label} · départ`)
@@ -193,7 +216,8 @@ function playOut(variantId: string, powers: boolean, seed: number): GameState {
     }
 
     actions++
-    fault = invariants(state, shared, `${label} · action ${actions}`)
+    const ctx = `${label} · action ${actions}`
+    fault = invariants(state, shared, ctx) ?? friendlyFire(state, seen, ctx)
   }
 
   expect(fault).toBeNull()
@@ -201,6 +225,15 @@ function playOut(variantId: string, powers: boolean, seed: number): GameState {
   // règle des barrages produisait, et ce qu'on ne veut plus jamais voir.
   expect(state.phase, `${label} · ${actions} actions`).toBe('finished')
   expect(state.ranking.length, label).toBe(seats.length)
+
+  // En équipes, le classement se lit camp par camp : les deux vainqueurs
+  // devant, les deux battus derrière. Un classement panaché voudrait dire que la
+  // partie s'est arrêtée sur une victoire individuelle, ce qui n'existe pas ici.
+  if (state.variant.teams) {
+    expect(sameTeam(state.ranking[0]!, state.ranking[1]!), label).toBe(true)
+    expect(sameTeam(state.ranking[2]!, state.ranking[3]!), label).toBe(true)
+    expect(teamOf(state.ranking[0]!), label).not.toBe(teamOf(state.ranking[2]!))
+  }
   return state
 }
 

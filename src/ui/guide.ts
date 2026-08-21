@@ -34,9 +34,20 @@ import { POWERS, type PowerId } from '../game/powers.ts'
 export const GUIDE_KEY = 'dada.guide.v1'
 
 /** Les quatre moments qui s'expliquent. */
-export const GUIDE_IDS = ['squares', 'bonus', 'malus', 'full'] as const
+export const GUIDE_IDS = ['squares', 'bonus', 'malus', 'full', 'welcome'] as const
 
 export type GuideId = (typeof GUIDE_IDS)[number]
+
+/**
+ * Les feuilles de pouvoir — celles que « Revoir les explications » ramène.
+ *
+ * `welcome` n'en fait pas partie : ce n'est pas une explication qu'on redemande,
+ * c'est un mot d'accueil qui ne vaut que tant qu'on n'a jamais joué. Le compter
+ * parmi les feuilles ferait apparaître « Revoir les explications » chez qui n'a
+ * jamais vu la moindre carte, et le bouton ramènerait l'accueil des débutants
+ * sur le téléphone de quelqu'un qui vient de finir sa dixième partie.
+ */
+const SHEETS: readonly GuideId[] = ['squares', 'bonus', 'malus', 'full']
 
 /** Le petit bout de mémoire du guidage, séparé pour être remplaçable en test. */
 export type GuideStore = {
@@ -113,13 +124,17 @@ export class Guide {
 
   /** Rien n'a encore été expliqué : il n'y a donc rien à « revoir ». */
   get untouched(): boolean {
-    return this.shown.size === 0
+    return SHEETS.every((id) => !this.shown.has(id))
   }
 
   /** Tout oublier — le bouton « Revoir les explications » du catalogue. */
   forget(): void {
-    this.shown.clear()
-    this.store.clear()
+    // Sauf d'avoir déjà joué : les feuilles reviennent, l'accueil des tout
+    // premiers pas non.
+    const welcome = this.shown.has('welcome')
+    this.shown = new Set(welcome ? (['welcome'] as GuideId[]) : [])
+    if (welcome) this.store.write('welcome')
+    else this.store.clear()
   }
 }
 

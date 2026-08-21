@@ -21,6 +21,7 @@ import {
   type Player,
   type Seat,
   type SeatStats,
+  type Team,
   type Variant,
 } from './types.ts'
 
@@ -74,6 +75,15 @@ export function createGame(opts: {
   seed: number
 }): GameState {
   const players = [...opts.players].sort((a, b) => a.seat - b.seat)
+
+  // Une équipe de un contre une équipe de deux ne serait pas une variante mais
+  // un handicap. Le salon l'interdit déjà ; le moteur le redit, parce qu'un état
+  // peut aussi arriver par le réseau, et qu'une partie bancale vaut moins
+  // qu'une partie refusée.
+  if (opts.variant.teams && new Set(players.map((p) => p.seat)).size !== 4) {
+    throw new Error('La variante équipes demande exactement quatre joueurs.')
+  }
+
   const pawns: Pawn[] = players.flatMap((p) =>
     Array.from({ length: opts.variant.pawnsPerPlayer }, (_, i) => ({
       id: pawnId(p.seat, i),
@@ -97,6 +107,8 @@ export function createGame(opts: {
     voided: false,
     phase: 'rolling',
     ranking: [],
+    // Hors variante équipes, le champ n'existe pas : rien à faire voyager.
+    finishers: opts.variant.teams ? [] : undefined,
     rng,
     diceBoosts: DICE_BOOSTS_PER_GAME,
     stuck: [0, 0, 0, 0],
@@ -124,6 +136,76 @@ export const hasWon = (state: GameState, seat: Seat): boolean => {
   const geometry = geometryFor(state.variant)
   return pawnsOf(state, seat).every((p) => hasFinished(geometry, p.steps))
 }
+
+// ─────────────────────────────── équipes ───────────────────────────────
+
+/**
+ * Le camp d'un siège. Les sièges pairs ensemble, les impairs ensemble —
+ * c'est-à-dire les sièges opposés autour du plateau.
+ *
+ * La fonction répond pour n'importe quelle variante : c'est de l'arithmétique
+ * sur un numéro de siège, pas une règle. C'est `areAllies` qui décide si ce
+ * camp compte, et il ne compte qu'en variante équipes.
+ */
+export const teamOf = (seat: Seat): Team => (seat % 2) as Team
+
+export const otherTeam = (team: Team): Team => (team === 0 ? 1 : 0)
+
+/** Le siège d'en face. */
+export const partnerOf = (seat: Seat): Seat => ((seat + 2) % 4) as Seat
+
+export const sameTeam = (a: Seat, b: Seat): boolean => teamOf(a) === teamOf(b)
+
+/** Les sièges d'un camp, dans l'ordre du plateau. */
+export const seatsOfTeam = (state: GameState, team: Team): Seat[] =>
+  state.players.map((p) => p.seat).filter((seat) => teamOf(seat) === team)
+
+/**
+ * Ces deux sièges jouent-ils dans le même camp ?
+ *
+ * Un siège est toujours son propre allié : les deux seules questions que le
+ * moteur pose — « puis-je manger ce cheval ? », « me barre-t-il la route ? » —
+ * ont la même réponse pour un cheval à soi et pour un cheval du partenaire.
+ * Hors variante équipes, on n'est allié que de soi-même.
+ */
+export const areAllies = (state: GameState, a: Seat, b: Seat): boolean =>
+  a === b || (state.variant.teams === true && sameTeam(a, b))
+
+/** Les huit chevaux d'un camp sont-ils rentrés ? */
+export const teamHasWon = (state: GameState, team: Team): boolean => {
+  const seats = seatsOfTeam(state, team)
+  return seats.length > 0 && seats.every((seat) => hasWon(state, seat))
+}
+
+/**
+ * Le siège **dont on joue les chevaux** — qui n'est pas toujours celui dont
+ * c'est le tour.
+ *
+ * En équipes, un joueur qui a rentré ses quatre chevaux ne s'assied pas pour
+ * regarder : il continue de lancer le dé, et déplace les chevaux de son
+ * partenaire. Sa main de cartes, elle, reste la sienne (voir `applyHeldPower`).
+ *
+ * Toute la variante tient dans cette fonction et dans `areAllies` : partout où
+ * le moteur lisait `state.turn` pour désigner des chevaux, il lit ceci.
+ * L'écran s'en sert pour la même raison — savoir quels chevaux rendre saisissables.
+ */
+export function activeSeatFor(state: GameState): Seat {
+  // Partie finie : plus personne ne joue les chevaux de personne. Sans ce
+  // garde-fou, l'écran de fin désignerait le partenaire du dernier joueur.
+  if (state.phase === 'finished') return state.turn
+  if (state.variant.teams !== true || !hasWon(state, state.turn)) return state.turn
+  return partnerOf(state.turn)
+}
+
+/**
+ * Ce siège n'a-t-il plus rien à jouer ?
+ *
+ * En solo, rentrer ses quatre chevaux clôt la partie du joueur. En équipes, on
+ * ne s'arrête qu'avec son partenaire — d'où deux façons de répondre à la même
+ * question, et une seule fonction pour ne pas les mélanger.
+ */
+const isOut = (state: GameState, seat: Seat): boolean =>
+  state.variant.teams === true ? teamHasWon(state, teamOf(seat)) : hasWon(state, seat)
 
 /**
  * Ce joueur est-il bloqué à l'écurie — c'est-à-dire : seule une face de sortie
@@ -220,19 +302,35 @@ function landing(state: GameState, pawn: Pawn, to: number): Landing {
   const captures: string[] = []
   const shielded: string[] = []
 
-  if (isOnTrack(geometry, to) && !isSafeIndex(state.variant, trackIndexOf(geometry, pawn.owner, to)!)) {
-    for (const victim of occupants) {
-      if (victim.owner === pawn.owner) continue
-      ;(victim.shield ? shielded : captures).push(victim.id)
+  const huntable =
+    isOnTrack(geometry, to) && !isSafeIndex(state.variant, trackIndexOf(geometry, pawn.owner, to)!)
+
+  // Ce qui reste sur la case après le coup et qu'on ne peut pas déloger. Ni les
+  // mangés ni les protégés n'en sont : les premiers repartent, le second cède
+  // le passage en cassant son bouclier (voir plus haut).
+  let held = 0
+  for (const other of occupants) {
+    // Un coéquipier n'est ni une proie ni un mur. Sa case se partage, exactement
+    // comme celle d'un cheval de sa propre couleur au Ludo — c'est même toute la
+    // variante équipes : le camp d'en face est le seul adversaire.
+    if (other.owner !== pawn.owner && areAllies(state, other.owner, pawn.owner)) continue
+    if (huntable && other.owner !== pawn.owner) {
+      ;(other.shield ? shielded : captures).push(other.id)
+      continue
     }
+    held++
   }
 
-  const survivors = occupants.length - captures.length - shielded.length
-  const blocked = state.variant.onePerSquare && to !== geometry.lastStep && survivors > 0
+  const blocked = state.variant.onePerSquare && to !== geometry.lastStep && held > 0
   return { captures, shielded, blocked }
 }
 
-/** Tous les coups jouables avec le dé courant. Vide = le joueur doit passer. */
+/**
+ * Tous les coups jouables avec le dé courant. Vide = le joueur doit passer.
+ *
+ * Les chevaux proposés sont ceux d'`activeSeatFor` et non ceux de `state.turn` :
+ * en équipes, un joueur qui a fini joue ceux de son partenaire.
+ */
 export function legalMoves(state: GameState): Move[] {
   const { dice, variant } = state
   if (dice === null || state.phase !== 'moving' || state.voided) return []
@@ -240,7 +338,7 @@ export function legalMoves(state: GameState): Move[] {
   const geometry = geometryFor(variant)
   const moves: Move[] = []
 
-  for (const pawn of pawnsOf(state, state.turn)) {
+  for (const pawn of pawnsOf(state, activeSeatFor(state))) {
     if (hasFinished(geometry, pawn.steps)) continue
 
     let to: number
@@ -367,7 +465,9 @@ function applyRoll(
   const [rng, dice] = rollDie(base.rng, {
     bias: useBoost ? boost : undefined,
     exitFaces: base.variant.exitRolls,
-    exitChance: mercyOf(base, base.turn),
+    // La pitié suit les chevaux qu'on joue, pas le siège qui secoue le dé : en
+    // équipes, un joueur qui a fini lance pour une écurie qui n'est pas la sienne.
+    exitChance: mercyOf(base, activeSeatFor(base)),
   })
   const consecutiveSixes = dice === 6 ? base.consecutiveSixes + 1 : 0
   const max = base.variant.maxConsecutiveSixes
@@ -554,7 +654,7 @@ function applyHeldPower(state: GameState, power: PowerId, target?: string): Appl
   // Un galop peut rentrer le dernier cheval. Sans ce passage par `endTurn`, le
   // siège gagnait sans figurer au classement : la partie continuait autour d'un
   // joueur qui n'avait plus rien à jouer, et qui passait son tour jusqu'à la fin.
-  if (hasWon(played, played.turn)) return { state: endTurn(played, null) }
+  if (isOut(played, played.turn)) return { state: endTurn(played, null) }
   return { state: played }
 }
 
@@ -597,7 +697,10 @@ export function canPlayPower(state: GameState, power: PowerId, target?: string):
 
   if (spec.target === 'cheval') {
     const geometry = geometryFor(state.variant)
-    const pawn = state.pawns.find((p) => p.id === target && p.owner === state.turn)
+    // Le cheval visé est un cheval qu'on joue — le sien, ou celui du partenaire
+    // quand on a rentré les siens. Une carte reste une carte : elle ne désigne
+    // jamais un cheval qu'on ne pourrait pas déplacer soi-même.
+    const pawn = state.pawns.find((p) => p.id === target && p.owner === activeSeatFor(state))
     if (!pawn) return false
     if (hasFinished(geometry, pawn.steps)) return false
     // Un bouclier se pose sur un cheval que quelque chose peut atteindre —
@@ -609,19 +712,24 @@ export function canPlayPower(state: GameState, power: PowerId, target?: string):
   return true
 }
 
-/** Les cartes de la main jouables tout de suite, cheval visé compris. */
+/**
+ * Les cartes de la main jouables tout de suite, cheval visé compris.
+ *
+ * La main est celle du siège dont c'est le tour — on ne joue jamais les cartes
+ * de son partenaire ; les chevaux, eux, sont ceux qu'on déplace.
+ */
 export function playablePowers(state: GameState): PowerId[] {
   return [...new Set(handOf(state, state.turn))].filter((power) => {
     const spec = POWERS[power]
     if (spec.target === 'aucune') return canPlayPower(state, power)
-    return pawnsOf(state, state.turn).some((p) => canPlayPower(state, power, p.id))
+    return pawnsOf(state, activeSeatFor(state)).some((p) => canPlayPower(state, power, p.id))
   })
 }
 
 /** Les chevaux sur lesquels cette carte peut se poser. */
 export function powerTargets(state: GameState, power: PowerId): string[] {
   if (POWERS[power].target !== 'cheval') return []
-  return pawnsOf(state, state.turn)
+  return pawnsOf(state, activeSeatFor(state))
     .filter((p) => canPlayPower(state, power, p.id))
     .map((p) => p.id)
 }
@@ -635,7 +743,7 @@ export function powerTargets(state: GameState, power: PowerId): string[] {
 function rerollFor(state: GameState): GameState {
   const [rng, dice] = rollDie(state.rng, {
     exitFaces: state.variant.exitRolls,
-    exitChance: mercyOf(state, state.turn),
+    exitChance: mercyOf(state, activeSeatFor(state)),
   })
   const consecutiveSixes = dice === 6 ? state.consecutiveSixes + 1 : 0
   const max = state.variant.maxConsecutiveSixes
@@ -779,6 +887,10 @@ export function forceSkipTurn(state: GameState, seat: Seat): GameState {
  * Tours passés à l'écurie sans en sortir. C'est ici que le compteur se tient à
  * jour, à la fin de chaque tour : il monte tant que le joueur reste enfermé,
  * et retombe à zéro à la seconde où un cheval est dehors.
+ *
+ * Le siège passé est celui dont on jouait les chevaux, pas forcément celui qui
+ * tenait le dé : la pitié compte des essais, et en équipes une écurie reçoit
+ * les essais de ses deux joueurs.
  */
 function countPenned(state: GameState, seat: Seat): GameState {
   // `?? []` : un état reçu d'un pair resté sur une version d'avant le compteur
@@ -788,28 +900,83 @@ function countPenned(state: GameState, seat: Seat): GameState {
   return { ...state, stuck }
 }
 
+/**
+ * Le classement d'une partie en équipes.
+ *
+ * Quatre sièges, dans cet ordre : le camp vainqueur d'abord — ses deux sièges
+ * rangés par ordre d'arrivée, celui qui a rentré ses chevaux le premier devant —
+ * puis le camp battu, rangé de même. On a gagné ou perdu **à deux** ; l'ordre
+ * interne ne dit que qui a fini le travail en premier.
+ */
+function teamRanking(state: GameState, winner: Team): Seat[] {
+  const byFinish = (team: Team): Seat[] => {
+    const seats = seatsOfTeam(state, team)
+    const done = (state.finishers ?? []).filter((seat) => seats.includes(seat))
+    return [...done, ...seats.filter((seat) => !done.includes(seat))]
+  }
+  return [...byFinish(winner), ...byFinish(otherTeam(winner))]
+}
+
+/**
+ * Note les sièges qui viennent de rentrer leurs quatre chevaux.
+ *
+ * On regarde les quatre sièges et non le seul joueur courant : en équipes, un
+ * tour peut rentrer le dernier cheval du **partenaire**, et ce siège-là mérite
+ * sa place dans l'ordre d'arrivée autant que les autres.
+ */
+function noteFinishers(state: GameState): GameState {
+  const known = state.finishers ?? []
+  const finishers = [...known]
+  for (const player of state.players) {
+    if (!finishers.includes(player.seat) && hasWon(state, player.seat)) finishers.push(player.seat)
+  }
+  return finishers.length === known.length ? state : { ...state, finishers }
+}
+
 /** Décide qui joue ensuite, en tenant compte des primes de rejeu. */
 function endTurn(state: GameState, move: Move | null, powerReplay = false): GameState {
-  let next = countPenned(state, state.turn)
+  const teams = state.variant.teams === true
+  let next = countPenned(state, activeSeatFor(state))
 
-  // Un joueur qui vient de rentrer son dernier cheval prend place au classement.
-  //
-  // La condition ne regarde plus le coup joué : un cheval peut aussi rentrer par
-  // une carte, et le galop qui rentrait le dernier laissait alors son joueur
-  // hors du classement — vainqueur sans victoire, à passer son tour jusqu'à la
-  // fin de la partie. C'est l'état du plateau qui décide, pas le geste.
-  if (hasWon(next, next.turn) && !next.ranking.includes(next.turn)) {
-    next = { ...next, ranking: [...next.ranking, next.turn] }
-    // Le nom du joueur est déjà porté par `actor` : l'événement ne le répète pas.
-    const place = next.ranking.length
-    next = addLog(next, next.turn, place === 1 ? { kind: 'win' } : { kind: 'rank', place })
-  }
+  if (teams) {
+    // Rentrer ses quatre chevaux ne sort pas du jeu : le siège garde sa place à
+    // table et jouera pour son partenaire. Il n'entre donc pas au classement —
+    // on note seulement l'ordre, qui départagera les deux alliés à la fin.
+    next = noteFinishers(next)
 
-  const stillPlaying = next.players.filter((p) => !next.ranking.includes(p.seat))
-  if (stillPlaying.length <= 1) {
-    const last = stillPlaying[0]
-    const ranking = last ? [...next.ranking, last.seat] : next.ranking
-    return { ...next, ranking, phase: 'finished', dice: null, voided: false }
+    // Une équipe gagne quand ses huit chevaux sont rentrés, et la partie
+    // s'arrête là : il n'y a plus de deuxième place à disputer entre deux camps.
+    const team = teamOf(next.turn)
+    if (teamHasWon(next, team)) {
+      next = addLog(next, next.turn, { kind: 'win' })
+      return {
+        ...next,
+        ranking: teamRanking(next, team),
+        phase: 'finished',
+        dice: null,
+        voided: false,
+      }
+    }
+  } else {
+    // Un joueur qui vient de rentrer son dernier cheval prend place au classement.
+    //
+    // La condition ne regarde plus le coup joué : un cheval peut aussi rentrer par
+    // une carte, et le galop qui rentrait le dernier laissait alors son joueur
+    // hors du classement — vainqueur sans victoire, à passer son tour jusqu'à la
+    // fin de la partie. C'est l'état du plateau qui décide, pas le geste.
+    if (hasWon(next, next.turn) && !next.ranking.includes(next.turn)) {
+      next = { ...next, ranking: [...next.ranking, next.turn] }
+      // Le nom du joueur est déjà porté par `actor` : l'événement ne le répète pas.
+      const place = next.ranking.length
+      next = addLog(next, next.turn, place === 1 ? { kind: 'win' } : { kind: 'rank', place })
+    }
+
+    const stillPlaying = next.players.filter((p) => !next.ranking.includes(p.seat))
+    if (stillPlaying.length <= 1) {
+      const last = stillPlaying[0]
+      const ranking = last ? [...next.ranking, last.seat] : next.ranking
+      return { ...next, ranking, phase: 'finished', dice: null, voided: false }
+    }
   }
 
   const v = next.variant
@@ -823,7 +990,12 @@ function endTurn(state: GameState, move: Move | null, powerReplay = false): Game
   // Rejouer sur un 6 sans avoir bougé (aucun coup possible) reste un rejeu.
   const replaysOnBlockedSix = !next.voided && move === null && next.dice === 6 && v.extraTurnOnSix
 
-  if ((replays || replaysOnBlockedSix || powerReplay) && !hasWon(next, next.turn)) {
+  // En équipes, on est arrivé ici sans que le camp ait gagné : le joueur a donc
+  // encore des chevaux à pousser, fussent-ils ceux du partenaire, et sa prime de
+  // rejeu lui reste due.
+  const stillPlaying = teams || !hasWon(next, next.turn)
+
+  if ((replays || replaysOnBlockedSix || powerReplay) && stillPlaying) {
     return {
       ...next,
       phase: 'rolling',
@@ -862,7 +1034,8 @@ function passTurn(state: GameState): GameState {
     if (owed <= 0) return next
     const skips = [...(next.skips ?? [0, 0, 0, 0])]
     skips[seat] = owed - 1
-    next = countPenned(addLog({ ...next, skips }, seat, { kind: 'skipped' }), seat)
+    const skipped = addLog({ ...next, skips }, seat, { kind: 'skipped' })
+    next = countPenned(skipped, activeSeatFor(skipped))
   }
   return next
 }

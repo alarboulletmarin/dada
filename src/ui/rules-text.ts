@@ -28,8 +28,15 @@
 
 import type { Lang } from './i18n.ts'
 
-/** Les variantes auxquelles une règle s'applique. Vide = toutes. */
-export type RuleTag = 'fr' | 'int' | 'express'
+/**
+ * Les variantes auxquelles une règle s'applique. Vide = toutes.
+ *
+ * `teams` marque les règles qui n'existent que dans la variante deux contre
+ * deux : un partenaire qu'on ne mange pas, un tour qu'on prête, une victoire à
+ * deux. Sans étiquette, elles se liraient comme des règles générales — et l'on
+ * chercherait son coéquipier dans une partie qui n'en a pas.
+ */
+export type RuleTag = 'fr' | 'int' | 'express' | 'teams'
 
 export type Rule = {
   title: string
@@ -57,8 +64,8 @@ const fr: RulesText = {
   back: 'Retour',
   intro:
     "Ce qui est permis, ce qui ne l'est pas, et ce qui change d'un jeu à l'autre. Les règles marquées d'une étiquette ne valent que pour le jeu correspondant.",
-  legend: { fr: 'Petits chevaux', int: 'Ludo', express: 'Rapide' },
-  all: 'les trois jeux',
+  legend: { fr: 'Petits chevaux', int: 'Ludo', express: 'Rapide', teams: 'Équipes' },
+  all: 'les quatre jeux',
   chapters: [
     {
       heading: 'Le plateau',
@@ -239,6 +246,45 @@ const fr: RulesText = {
       ],
     },
     {
+      heading: 'Équipes — deux contre deux',
+      rules: [
+        {
+          title: 'Les sièges qui se font face jouent ensemble',
+          body: [
+            "Les sièges 0 et 2 contre les sièges 1 et 3 : les places qui se font face, comme à la belote. La table doit être complète — quatre joueurs, humains ou ordinateurs, ni plus ni moins.",
+            "Une équipe de un contre une équipe de deux ne serait pas une variante mais un handicap : le jeu refuse de commencer plutôt que de commencer bancal.",
+          ],
+          only: ['teams'],
+        },
+        {
+          title: "Le partenaire n'est pas un adversaire",
+          body: [
+            "On ne mange pas son coéquipier, ni au dé ni au galop, et l'on ne brise pas son bouclier. Tomber pile sur sa case n'y change rien : on la partage, exactement comme deux chevaux de sa propre couleur au Ludo.",
+            "Le camp d'en face est le seul contre lequel on joue, et c'est aussi le seul que les cartes peuvent viser. Les malus, eux, tombent de toute façon sur le cheval qui a ramassé la carte — jamais sur un cheval choisi.",
+          ],
+          only: ['teams'],
+        },
+        {
+          title: 'Qui a fini joue pour son partenaire',
+          body: [
+            "Un joueur qui a rentré ses quatre chevaux ne s'assied pas pour regarder. À son tour, il lance le dé et déplace les chevaux de son partenaire : les coups qu'on lui propose sont ceux d'en face, et ses cartes peuvent désigner un cheval qui n'est pas le sien.",
+            "Sa main, elle, reste la sienne : on prête ses tours, pas ses cartes. C'est ce qui empêche une partie en équipes de finir sur un joueur qui n'a plus rien à faire pendant que l'autre termine seul.",
+            "L'écran le dit sur la ligne de tour — « vous jouez pour Sami » — et les chevaux cerclés sont bien ceux du partenaire.",
+          ],
+          only: ['teams'],
+        },
+        {
+          title: 'On gagne à deux',
+          body: [
+            "L'équipe dont les huit chevaux sont rentrés l'emporte, et la partie s'arrête là : il n'y a pas de deuxième place à disputer entre deux camps.",
+            "La feuille de match porte les quatre joueurs, rangés par camp, l'équipe gagnante devant et chaque paire par ordre d'arrivée.",
+            "Le malus « tour sauté » reste personnel : il punit le joueur, pas son camp.",
+          ],
+          only: ['teams'],
+        },
+      ],
+    },
+    {
       heading: 'Les cases pouvoir',
       rules: [
         {
@@ -296,8 +342,8 @@ const en: RulesText = {
   back: 'Back',
   intro:
     'What is allowed, what is not, and what changes from one game to another. Rules carrying a tag apply only to that game.',
-  legend: { fr: 'Little horses', int: 'Ludo', express: 'Quick' },
-  all: 'all three games',
+  legend: { fr: 'Little horses', int: 'Ludo', express: 'Quick', teams: 'Teams' },
+  all: 'all four games',
   chapters: [
     {
       heading: 'The board',
@@ -474,6 +520,45 @@ const en: RulesText = {
             'Before rolling you may ask for a low number (1 to 3) or a high one (4 to 6). The die then leans clearly that way, without ever being forced.',
             'The reserve is shared by the whole table, not per player: three bonuses for the entire game. Whoever spends first, spends.',
           ],
+        },
+      ],
+    },
+    {
+      heading: 'Teams — two against two',
+      rules: [
+        {
+          title: 'Seats facing each other play together',
+          body: [
+            'Seats 0 and 2 against seats 1 and 3: the places that face each other, as in a game of belote. The table must be full — four players, human or computer, no more and no fewer.',
+            'A team of one against a team of two would not be a variant but a handicap: the game refuses to start rather than start lopsided.',
+          ],
+          only: ['teams'],
+        },
+        {
+          title: 'Your partner is not an opponent',
+          body: [
+            "You never eat your teammate, neither by the die nor by a gallop, and you never break their shield. Landing exactly on their square changes nothing: you share it, exactly like two pawns of your own colour in Ludo.",
+            'The other camp is the only one you play against, and the only one your cards can aim at. Penalties, in any case, land on the horse that picked up the card — never on a chosen one.',
+          ],
+          only: ['teams'],
+        },
+        {
+          title: 'Whoever is done plays for their partner',
+          body: [
+            "A player who has brought all four horses home does not sit back and watch. On their turn they roll the die and move their partner's horses: the moves offered are the ones across the table, and their cards may target a horse that is not theirs.",
+            'Their hand, though, stays their own: you lend your turns, not your cards. That is what stops a team game from ending on a player with nothing left to do while the other finishes alone.',
+            "The turn line says so — “you are playing for Sami” — and the circled horses really are the partner's.",
+          ],
+          only: ['teams'],
+        },
+        {
+          title: 'You win together',
+          body: [
+            'The team whose eight horses are all home wins, and the game stops there: there is no second place to fight over between two camps.',
+            'The score sheet lists all four players, grouped by camp, the winning team first and each pair in order of arrival.',
+            'The “skip a turn” penalty stays personal: it punishes the player, not the camp.',
+          ],
+          only: ['teams'],
         },
       ],
     },
