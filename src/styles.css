@@ -831,6 +831,42 @@ input:disabled {
   color: rgba(var(--ink-rgb), 0.28);
 }
 
+/* ── le QR de la partie ─────────────────────────────────────────────────────
+   Un carré posé sur une plaque blanche, code écrit dessous. La plaque tient
+   toute la largeur qu'on peut lui donner sans qu'elle déborde du bras tendu :
+   plus le module est gros, plus le lecteur va vite, et c'est tout ce qu'on
+   attend d'un QR affiché à trois personnes penchées sur un téléphone. */
+.qr__sheet {
+  position: relative; /* la croix de fermeture se pose dans son coin */
+  gap: 14px;
+}
+
+/* La croix de fermeture flotte dans le coin : le titre s'écarte pour ne pas
+   passer dessous, comme celui du catalogue des pouvoirs. */
+.qr__title {
+  margin: 0;
+  padding-inline: 44px;
+  text-align: center;
+}
+
+/* Blanche même la nuit, et c'est voulu : ce carré est une cible d'appareil
+   photo, pas un élément de décor. Voir `showQr` dans `app.ts`. */
+.qr__plaque {
+  align-self: center;
+  width: min(100%, 340px);
+  padding: 8px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 5px 0 var(--shade);
+}
+
+.qr__plaque svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 /* ─────────────────────────── salon ─────────────────────────── */
 
 .seats {
@@ -860,6 +896,41 @@ input:disabled {
 
 .seat.offline {
   opacity: 0.55;
+}
+
+/* Le portrait d'un siège, quand il se relance : c'est le portrait lui-même qui
+   prend le clic, et la pastille du coin dit qu'il le prend. Voir le salon dans
+   `app.ts` pour pourquoi ce n'est pas un bouton posé à côté. */
+
+.seat__face {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.seat__face:active {
+  transform: translateY(2px);
+}
+
+/* Elle mord sur le bord du portrait plutôt que de se ranger à côté : posée à
+   l'extérieur, elle poussait le champ du nom d'une pastille entière. */
+.seat__reface {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--ink);
 }
 
 .seat input {
@@ -915,6 +986,24 @@ input:disabled {
   font-size: 14px;
   font-weight: 800;
   line-height: 1;
+}
+
+/* ─────────────────────────── portraits ───────────────────────────
+   La petite tête qui accompagne un nom. Voir `avatar.ts` pour d'où elles
+   sortent et pourquoi elles se tirent du nom.
+
+   Le fond est neutre et non de la couleur du siège : le pion juste à côté porte
+   déjà cette couleur, et deux pastilles teintes côte à côte ne se lisaient plus
+   comme un pion ET un visage, mais comme un doublon. Le liseré d'encre, lui,
+   reste — sans lui le portrait flotte, seul objet de l'écran à ne pas être
+   cerné. */
+
+.avatar {
+  flex: none;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper-deep);
+  object-fit: cover;
 }
 
 .token.ghost {
@@ -1427,6 +1516,21 @@ input:disabled {
   height: clamp(24px, 3.4svh, 28px);
   border-width: 2.5px;
   font-size: 13px;
+}
+
+/* Le portrait se règle sur le jeton d'à côté : quatre cartes de front sur un
+   téléphone, et deux pastilles de hauteurs différentes se voient tout de
+   suite. Le liseré s'affine avec elles.
+
+   Il chevauche le jeton d'un cheveu. Deux pastilles rangées à la file, c'est
+   38 px pris au nom, et « Ordinateur 2 » finissait en « Ordinate… » sur une
+   carte de quart d'écran ; adossées, elles se lisent comme un seul objet — le
+   pion et sa tête — et le nom récupère sa place. */
+.pcard .avatar {
+  width: clamp(24px, 3.4svh, 28px);
+  height: clamp(24px, 3.4svh, 28px);
+  margin-left: -7px;
+  border-width: 1.5px;
 }
 
 .pcard .body {
@@ -2449,14 +2553,23 @@ input:disabled {
    coloré — le jaune du siège 1 écrit sur le papier crème du thème clair ne se
    lisait pas, alors qu'en aplat il porte son encre comme partout ailleurs. */
 .chat__author {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
   align-self: flex-start;
-  padding: 1px 10px;
+  padding: 1px 10px 1px 7px;
   border-radius: 999px;
   background: var(--seat, var(--paper-deep));
   color: var(--on, var(--muted-strong));
   font-family: var(--title);
   font-weight: 800;
   font-size: 11.5px;
+}
+
+/* Le portrait de l'auteur tient dans la pastille de son nom : à 16 px son
+   liseré doit s'affiner, sinon il ne reste qu'un rond d'encre. */
+.chat__author .avatar {
+  border-width: 1.5px;
 }
 
 .chat__bubble {

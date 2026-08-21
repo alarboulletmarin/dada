@@ -29,6 +29,8 @@ import { BoardView, SEAT_MARKS } from './board-view.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
 import { icon, type IconName } from './icons.ts'
 import { lang, LANG_LABEL, nextLang, setLang, since, t, type Key } from './i18n.ts'
+import { avatar } from './avatar.ts'
+import { qrCode, type Qr } from './qr.ts'
 import { renderRulebook } from './rulebook.ts'
 import { swipeAway } from './swipe.ts'
 import { applyTheme, nextTheme, readTheme, THEME_ICON } from './theme.ts'
@@ -106,6 +108,51 @@ const SHAPE_PATHS: Record<BoardShape, string> = {
   // porte huit. Une vignette n'a pas à être une maquette, elle a à être lisible.
   serpent:
     'M12 3.2c2 2 5.6.4 7 1.8s-.2 5 1.8 7c-2 2-.4 5.6-1.8 7s-5-.2-7 1.8c-2-2-5.6-.4-7-1.8s.2-5-1.8-7c2-2 .4-5.6 1.8-7s5 .2 7-1.8Z',
+}
+
+/**
+ * La marge blanche autour d'un QR, en modules.
+ *
+ * Quatre, comme le veut le standard : c'est elle qui dit au lecteur où le
+ * symbole s'arrête. Un carré collé au bord de sa boîte se lit mal, et parfois
+ * pas du tout — elle fait donc partie du dessin, et non du remplissage CSS
+ * qui l'entoure.
+ */
+const QR_QUIET = 4
+
+/**
+ * Le symbole, en un seul tracé.
+ *
+ * Un rectangle par module ferait deux mille nœuds et laisserait, au moindre
+ * arrondi de rendu, des coutures blanches entre les modules voisins — assez
+ * pour qu'un lecteur hésite. Un tracé unique dont les carrés se touchent n'a
+ * pas ces coutures, et `crispEdges` cale ce qui reste sur la grille de pixels.
+ */
+function qrSvg(qr: Qr): SVGSVGElement {
+  const span = qr.size + QR_QUIET * 2
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', `0 0 ${span} ${span}`)
+  svg.setAttribute('shape-rendering', 'crispEdges')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+
+  const paper = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+  paper.setAttribute('width', String(span))
+  paper.setAttribute('height', String(span))
+  paper.setAttribute('fill', '#fff')
+
+  let d = ''
+  for (let y = 0; y < qr.size; y++) {
+    for (let x = 0; x < qr.size; x++) {
+      if (qr.dark[y * qr.size + x]) d += `M${x + QR_QUIET} ${y + QR_QUIET}h1v1h-1z`
+    }
+  }
+  const modules = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  modules.setAttribute('d', d)
+  modules.setAttribute('fill', '#000')
+
+  svg.append(paper, modules)
+  return svg
 }
 
 /**
@@ -476,6 +523,19 @@ export class App {
   /** Fond et couleur de texte d'un siège, à poser sur n'importe quel bloc coloré. */
   private seatVars(seat: Seat): Partial<CSSStyleDeclaration> {
     return { '--seat': `var(--seat-${seat})`, '--on': `var(--on-${seat})` } as Partial<CSSStyleDeclaration>
+  }
+
+  /**
+   * Le tirage du portrait d'un siège, lu dans le SALON.
+   *
+   * Et non dans l'état de la partie, qui n'en porte pas : les noms y sont figés
+   * au lancement, alors que le salon continue de vivre derrière — c'est lui qui
+   * enregistre un renommage ou un appui sur « relancer », et il est le seul des
+   * deux à exister avant le premier lancer. 0 pour un siège inconnu, ce qui
+   * revient au portrait du nom seul.
+   */
+  private faceAt(seat: Seat): number {
+    return this.session?.lobby.players.find((p) => p.seat === seat)?.face ?? 0
   }
 
   private token(seat: Seat | null, extra = ''): HTMLElement {
@@ -1059,6 +1119,31 @@ export class App {
           'div',
           { class: `seat${p.connected ? '' : ' offline'}` },
           this.token(p.seat),
+          // Le portrait EST le bouton qui le relance — sur les sièges qu'on a
+          // le droit de toucher, les mêmes que pour le nom.
+          //
+          // Un bouton posé à côté aurait été un troisième objet dans une rangée
+          // qui en porte déjà quatre, et à la taille des autres il aurait pesé
+          // plus lourd que le portrait qu'il change. La tête qu'on n'aime pas
+          // et le geste qui la change sont donc au même endroit : on tape
+          // dessus jusqu'à en trouver une qui plaît. La pastille du coin est là
+          // pour dire que ça se tape — sans elle, rien ne distingue un portrait
+          // qu'on peut relancer d'un portrait qui se regarde.
+          editable
+            ? h(
+                'button',
+                {
+                  class: 'seat__face',
+                  attrs: {
+                    'aria-label': t('lobby.reface', { name: p.name }),
+                    title: t('lobby.reface.short'),
+                  },
+                  on: { click: () => session.reface(p.seat) },
+                },
+                avatar(p.name, p.face ?? 0, 34),
+                h('span', { class: 'seat__reface' }, icon('replay', 11)),
+              )
+            : avatar(p.name, p.face ?? 0, 34),
           nameField,
           h('span', {
             class: 'tag',
@@ -1191,7 +1276,10 @@ export class App {
           h(
             'div',
             { class: 'request__who' },
-            this.token(null, 'ghost'),
+            // Son portrait plutôt qu'un pion vide : il n'a pas encore de siège,
+            // donc pas de couleur, et « quelqu'un demande à entrer » se lit
+            // mieux avec une tête qu'avec un rond en pointillés.
+            avatar(request.name, 0, 34),
             h('strong', { text: request.name }),
           ),
           h(
@@ -1296,8 +1384,25 @@ export class App {
     )
   }
 
-  /** Le code, en grand, avec de quoi l'envoyer en un geste. */
+  /**
+   * Le code, en grand, avec les deux façons d'inviter.
+   *
+   * Elles ne s'adressent pas aux mêmes gens, et c'est pourquoi elles ne sont
+   * pas sur la même ligne. Le QR est pour la table : on tend le téléphone, on
+   * vise, on est dedans — aucun code à dicter, aucune faute de frappe
+   * possible. Partager et copier sont pour les absents, à qui il faut de
+   * toute façon envoyer quelque chose.
+   *
+   * Le carré ne s'affiche pas tout seul, pas plus que le code ne se copie
+   * tout seul : il prend un écran entier, et un salon qui l'ouvrirait de
+   * lui-même cacherait la table à celui qui la tient.
+   */
   private codeCard(code: string): HTMLElement {
+    // Un lien d'invitation ne dépasse jamais la version 9 du standard ; si
+    // l'adresse d'hébergement était démesurée, le bouton disparaît plutôt que
+    // de promettre un carré qu'on ne saurait pas dessiner.
+    const qr = qrCode(this.linkFor(code))
+
     return h(
       'div',
       { class: 'card' },
@@ -1307,11 +1412,21 @@ export class App {
         { class: 'code-boxes' },
         ...code.split('').map((c) => h('span', { text: c })),
       ),
+      qr &&
+        h(
+          'button',
+          {
+            class: 'btn small green',
+            on: { click: () => this.showQr(code, qr) },
+          },
+          icon('qr', 22),
+          t('lobby.qr'),
+        ),
       h(
         'div',
         { class: 'row' },
         h('button', {
-          class: 'btn small green',
+          class: 'btn small',
           text: t('lobby.share'),
           on: { click: () => void this.share(code) },
         }),
@@ -1323,6 +1438,77 @@ export class App {
       ),
       h('p', { class: 'hint', text: t('lobby.code.hint') }),
     )
+  }
+
+  /**
+   * Le QR de la partie, en grand.
+   *
+   * **Noir sur blanc, quel que soit le thème.** Ce carré n'est pas un dessin :
+   * c'est une cible pour un appareil photo. Un QR clair sur fond sombre est
+   * lu par certains lecteurs et par d'autres non, et l'on ne saurait pas
+   * lesquels — la plaque reste donc blanche même la nuit, et l'écran qui
+   * s'allume est ce qui se scanne le mieux.
+   *
+   * **L'écran reste allumé.** On tend le téléphone à trois personnes qui
+   * cherchent leur appareil photo : la veille arriverait exactement là.
+   */
+  private showQr(code: string, qr: Qr): void {
+    if (document.querySelector('.overlay.qr')) return
+
+    const close = (): void => {
+      removeEventListener('keydown', onKey)
+      setKeepAwake(this.screen === 'play')
+      overlay.remove()
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') close()
+    }
+
+    const grab = h(
+      'div',
+      { class: 'sheet__grab' },
+      h('span', { class: 'sheet__grip', attrs: { 'aria-hidden': 'true' } }),
+      h('h2', { class: 'qr__title', text: t('lobby.qr.title') }),
+    )
+    const sheet = h(
+      'div',
+      { class: 'sheet qr__sheet' },
+      this.sheetClose(close),
+      grab,
+      h(
+        'div',
+        {
+          class: 'qr__plaque',
+          attrs: { role: 'img', 'aria-label': t('lobby.qr.aria', { code: code.split('').join(' ') }) },
+        },
+        qrSvg(qr),
+      ),
+      h('p', { class: 'hint center', text: t('lobby.qr.hint') }),
+      // Le code sous le carré, et non à sa place : celui qui est assis en face
+      // scanne, celui qui est au bout de la table lit. Deux gestes, un écran.
+      h(
+        'div',
+        { class: 'code-boxes' },
+        ...code.split('').map((c) => h('span', { text: c })),
+      ),
+    )
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay qr',
+        attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('lobby.qr.title') },
+        on: {
+          click: (ev) => {
+            if (ev.target === overlay) close()
+          },
+        },
+      },
+      sheet,
+    )
+    swipeAway(grab, { moves: sheet, way: 'down', tapAway: false, onDismiss: close })
+    addEventListener('keydown', onKey)
+    setKeepAwake(true)
+    document.body.append(overlay)
   }
 
   /** La pastille d'une variante : le dé, le pion, l'éclair. */
@@ -2361,6 +2547,7 @@ export class App {
           style: this.seatVars(seat),
         },
         this.token(seat),
+        avatar(p.name, this.faceAt(seat), 28),
         h(
           'div',
           { class: 'body' },
@@ -3148,6 +3335,7 @@ export class App {
               },
               h('span', { class: 'n', text: String(i + 1) }),
               this.token(seat),
+              avatar(state.players.find((p) => p.seat === seat)?.name ?? '', this.faceAt(seat), 34),
               h('span', { class: 'who', text: state.players.find((p) => p.seat === seat)?.name ?? '' }),
               h('span', { class: 'score', text: `${done(seat)}/${state.variant.pawnsPerPlayer}` }),
             ),
@@ -3433,7 +3621,22 @@ export class App {
         class: `chat__msg${mine ? ' mine' : ''}${grouped ? ' grouped' : ''}${solo ? ' solo' : ''}`,
         style: seat === undefined ? {} : this.seatVars(seat),
       },
-      grouped || mine ? null : h('span', { class: 'chat__author', text: message.name }),
+      grouped || mine
+        ? null
+        : h(
+            'span',
+            { class: 'chat__author' },
+            // La bête de l'auteur, dans sa pastille : le nom seul obligeait à
+            // relire pour savoir qui parlait, alors que la table entière est
+            // déjà rangée par bêtes sur l'écran d'à côté.
+            // Le nom vient du MESSAGE et le tirage du SIÈGE, et les deux ont
+            // raison. Un renommage ne doit pas rhabiller ce qui a été dit avant
+            // — c'est déjà le principe de la ligne d'à côté — alors qu'un appui
+            // sur « relancer » change la tête de quelqu'un, y compris celle
+            // qu'il avait en parlant. 0 si son siège n'existe plus.
+            avatar(message.name, seat === undefined ? 0 : this.faceAt(seat), 16),
+            h('span', { text: message.name }),
+          ),
       h(
         'div',
         { class: 'chat__bubble' },

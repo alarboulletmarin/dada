@@ -8,15 +8,16 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 353 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause
+npm test         # 398 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR, portraits
 npm run build    # vérification de types puis build de production
 ```
 
 ## Comment jouer
 
 - **Sur cet appareil** — un seul téléphone qu'on se passe. Aucun réseau requis.
-- **En ligne** — l'un crée une partie, les autres saisissent le code à 8 caractères
-  (ou ouvrent le lien partagé) ; l'hôte les accepte à sa table. Jusqu'à 4 joueurs.
+- **En ligne** — l'un crée une partie, les autres saisissent le code à 8 caractères,
+  ouvrent le lien partagé, ou scannent le QR code que l'hôte affiche ; l'hôte les
+  accepte à sa table. Jusqu'à 4 joueurs.
 - **Ordinateurs** — l'hôte peut compléter la table quand on n'est que deux ou trois.
 
 Sur un seul téléphone, la partie se met **en pause** : le bot qui allait jouer, le
@@ -286,6 +287,44 @@ tour à coup unique redemande une confirmation jusqu'à la fin de la partie. Le
 cas qui fixe la durée est « rien à jouer, mais un rejeu en main » : il faut lire
 la ligne, comprendre qu'on peut relancer, et atteindre la carte.
 
+### Une tête par joueur
+
+Quatre lignes de texte, c'est un formulaire ; quatre visages, c'est une table.
+Chaque joueur — humain, bot, ami qui frappe à la porte — a donc un portrait à
+côté de son nom, dans le salon, sur sa carte pendant la partie, au tableau
+d'arrivée et devant ce qu'il dit dans le chat.
+
+Le pion garde sa couleur et sa forme : c'est lui qu'on retrouve sur le plateau,
+et une tête de trois millimètres au coin d'une case ne serait la tête de
+personne. Le portrait dit **qui**, le pion dit **lesquels sont à lui**.
+
+Le portrait est **tiré au sort** à la création du siège : une nouvelle partie
+donne une nouvelle table de têtes. Et il se **relance** — dans le salon, le
+portrait est lui-même le bouton qui le change, avec une pastille au coin pour le
+dire. On tape jusqu'à en trouver une qui plaît, la sienne ou n'importe laquelle
+si l'on est l'hôte.
+
+**Ce qui voyage n'est pas le dessin, c'est le numéro du tirage** — un entier de
+seize bits par siège, dans le salon, à côté du nom. Chaque téléphone recompose
+le portrait de son côté et retombe forcément sur le même. Un dessin transmis
+pèserait deux kilo-octets par joueur et par publication du salon, pour une image
+que tout le monde sait refaire.
+
+Le nom entre dans le calcul avec le tirage, et il y sert : à tirage égal, Léa a
+la même tête, et se renommer suffit à en changer. Sans lui, deux sièges créés
+dans la même milliseconde ne se distingueraient que par un nombre.
+
+Le tirage sort d'un `Math.random()`, seul endroit du jeu qui s'y autorise — la
+règle de la graine déterministe vaut pour l'état de la **partie**, qui doit se
+rejouer à l'identique ; un portrait n'entre dans aucune décision de règle et ne
+se rejoue jamais. Le champ est optionnel : un ami resté sur la version d'avant
+envoie un salon qui n'en porte pas, et les portraits retombent alors sur le nom
+seul plutôt que de disparaître.
+
+Les dessins viennent de **DiceBear** (jeu *Big Smile* d'Ashley Seo) et sont
+empaquetés avec le jeu : rien n'est appelé en ligne, les portraits marchent dans
+le métro comme le reste. Voir `src/ui/avatar.ts` et `THIRD-PARTY.md`.
+
 ## La feuille de match
 
 L'écran de fin ne dit pas seulement qui a gagné : il donne, par joueur, les
@@ -345,6 +384,8 @@ src/net/      transport pair-à-pair et orchestration de la partie
                 avant qu'un bot n'entre, et le battement qui dit qui est là
 src/ui/       écrans, plateau, animations
   rules-text.ts le règlement complet — un document, pas des libellés
+  qr.ts         le carré du salon : un encodeur QR entier, sans dépendance
+  avatar.ts     le portrait d'un joueur, tiré de son nom
 ```
 
 **Un seul arbitre.** L'appareil hôte détient l'état et applique les coups ; les
@@ -477,6 +518,42 @@ mobiles peuvent très bien ne jamais réussir à se joindre — l'app le dit alo
 franchement plutôt que de tourner dans le vide.
 
 En attendant, le mode « sur cet appareil » fonctionne toujours, hors ligne inclus.
+
+## Le code, le lien, le carré
+
+Trois portes vers le même salon, parce qu'inviter n'est pas toujours la même
+chose. Le **code** se dicte au téléphone à qui est loin. Le **lien** s'envoie
+dans la conversation où l'on se donne rendez-vous. Le **QR code**, lui, est pour
+ceux qui sont déjà là : on tend l'écran, ils visent, ils sont dedans. Rien à
+dicter, rien à retaper, aucune faute de frappe sur un code à huit caractères.
+
+**Il ne s'affiche pas tout seul.** Le carré prend un écran entier, et l'hôte qui
+tient la table a autre chose à y regarder — les demandes qui arrivent, les
+sièges qui se remplissent. C'est donc un bouton, comme le code est un bouton :
+on le montre pendant les dix secondes où les autres cherchent leur appareil
+photo, puis on le referme d'un geste vers le bas.
+
+**Encodé ici, pas importé.** `qr.ts` est un encodeur complet — mode octet,
+correction M, versions 1 à 9 — pour quatre cents lignes, commentaires compris. La
+moindre bibliothèque du genre en sert quarante versions et huit modes, pèse
+davantage, et coûterait une dépendance de plus dans un projet qui n'en a qu'une.
+Un témoin figé dans `qr.test.ts` fixe le symbole d'un lien d'invitation module
+par module : il a été vérifié contre un encodeur du commerce, qui rend
+exactement cette grille, et relu par un lecteur, qui y retrouve le lien.
+
+**Noir sur blanc, même la nuit.** Ce carré n'est pas un élément de décor, c'est
+une cible d'appareil photo : un QR clair sur fond sombre est lu par certains
+lecteurs et par d'autres non, et l'on ne saurait pas lesquels. La plaque reste
+donc blanche quel que soit le thème — et l'écran ne s'éteint pas tant qu'elle
+est ouverte, sinon la veille tomberait exactement au moment où trois personnes
+sont en train de viser.
+
+**Pas de lecteur dans le jeu.** Scanner un QR est un geste que l'appareil photo
+de tous les téléphones sait faire depuis l'écran d'accueil, sans rien ouvrir.
+Le faire nous-mêmes demanderait la permission caméra, ne marcherait que sur les
+navigateurs qui connaissent `BarcodeDetector` — Chrome, en somme — et
+remplacerait un geste que les gens ont déjà par un geste qu'il faudrait leur
+apprendre.
 
 ## Qui entre dans le salon
 

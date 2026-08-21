@@ -44,6 +44,20 @@ export type LobbyPlayer = {
    * pas, et son retour efface simplement ce drapeau.
    */
   botFill: boolean
+  /**
+   * Le tirage du portrait de ce siège (voir `ui/avatar.ts`).
+   *
+   * Un nombre, et pas le dessin : le portrait se recompose de zéro sur chaque
+   * appareil à partir du nom et de ce nombre. Il est tiré une fois, à la
+   * création du siège, puis il voyage avec le salon — c'est ce qui fait qu'une
+   * nouvelle partie donne de nouveaux visages, et que le bouton « relancer »
+   * les change chez tout le monde à la fois.
+   *
+   * Optionnel : un pair resté sur une version d'avant envoie un salon qui n'en
+   * porte pas, et les portraits doivent quand même s'afficher. Ils retombent
+   * alors sur le nom seul — ce qu'ils faisaient avant ce champ.
+   */
+  face?: number
 }
 
 export type Lobby = {

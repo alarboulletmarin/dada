@@ -68,6 +68,12 @@ const ICONS = {
   /** Retour à l'écurie : le toit et la porte. */
   stable: '<path d="M3.8 10.9 12 4.2l8.2 6.7v8.9H3.8Z"/><path d="M9.4 19.8v-4.7h5.2v4.7"/>',
 
+  /** Le QR code : ses trois repères d'angle, et quelques modules. C'est à ses
+   *  coins qu'on reconnaît un QR — un damier complet, à cette taille, ne
+   *  ferait qu'une tache grise. */
+  qr:
+    '<rect x="3.4" y="3.4" width="7.2" height="7.2" rx="1.8"/><rect x="13.4" y="3.4" width="7.2" height="7.2" rx="1.8"/><rect x="3.4" y="13.4" width="7.2" height="7.2" rx="1.8"/><path d="M13.4 13.4v.1M20.6 13.4v.1M17 17v.1M13.4 20.6v.1M20.6 20.6v.1"/>',
+
   /** Envoyer : l'avion de papier, plié en deux traits. */
   send: '<path d="M20.6 3.4 3.9 9.7a.6.6 0 0 0 0 1.1l6.7 2.6 2.6 6.7a.6.6 0 0 0 1.1 0Z"/><path d="M10.6 13.4 20.6 3.4"/>',
 } as const
