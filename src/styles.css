@@ -1169,6 +1169,64 @@ input:disabled {
   gap: 10px;
 }
 
+/* Ce que le réseau a à dire, entre la barre du haut et le plateau.
+
+   Repliée tant qu'il n'y a rien à dire : une ligne réservée « au cas où »
+   aurait rogné le plateau pendant toute la partie, alors qu'elle sert deux
+   minutes par soirée. Elle pousse le plateau quand elle s'ouvre — c'est
+   volontaire : on doit la voir, pas la deviner. */
+.linkbar {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--red);
+  color: var(--paper);
+  box-shadow: 0 3px 0 var(--ink);
+}
+
+.linkbar.show {
+  display: flex;
+}
+
+/* L'hôte est informé, pas alarmé : il n'a rien à faire, la partie continue
+   autour de lui. Le rouge est pour celui qui, lui, ne joue plus. */
+.linkbar.linkbar--quiet {
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+
+.linkbar__text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.linkbar__text strong {
+  font-family: var(--title);
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.linkbar__text span {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+/* `.btn` prend toute la largeur par défaut : ici il partage la ligne avec le
+   texte, et doit rester à sa taille. */
+.linkbar .btn {
+  flex: none;
+  width: auto;
+  min-height: 44px;
+  box-shadow: 0 3px 0 var(--shade);
+}
+
 /* `position` et `z-index` : les bulles de chat sortent des cartes et doivent
    passer AU-DESSUS du plateau. Sans calque posé ici, la carte du joueur actif —
    qui porte un `transform` — enferme sa bulle dans son propre contexte
@@ -4005,4 +4063,35 @@ input:disabled {
   font-size: 17px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Quarante-quatre pixels sous le doigt, sans quarante-quatre pixels à l'écran.
+
+   Ces quatre boutons sont volontairement petits : « oublier » ne doit pas peser
+   autant que « Reprendre la partie », le ⓘ d'une nouvelle ne doit pas voler le
+   premier coup d'œil à la nouvelle elle-même. Mais un pouce ne vise pas à douze
+   pixels près, et un « Reprendre » de vingt-deux pixels de haut se ratait une
+   fois sur trois — précisément au moment où l'on veut récupérer son siège.
+
+   La zone de toucher est donc étendue par un calque invisible centré sur le
+   bouton. Le dessin ne bouge pas, la mise en page non plus : seul le doigt y
+   gagne. */
+.link,
+.pcard__take,
+.cardnote__info,
+.tray-card__info {
+  position: relative;
+}
+
+.link::before,
+.pcard__take::before,
+.cardnote__info::before,
+.tray-card__info::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
 }

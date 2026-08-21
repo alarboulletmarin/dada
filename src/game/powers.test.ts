@@ -389,6 +389,304 @@ describe('les effets qui durent', () => {
 
 
 /**
+ * Le galop arrive quelque part, et cette case appartient peut-être à un autre.
+ *
+ * Il posait autrefois son cheval sur la case visée sans regarder qui s'y
+ * trouvait : deux chevaux sur une case en règle française, et un adversaire
+ * rattrapé qui survivait à la charge. Un galop se joue donc comme un coup de
+ * dé — il mange ce qu'il rattrape, il brise les boucliers, et il refuse la case
+ * qu'un coup ordinaire aurait refusée.
+ */
+describe('le galop arrive comme un coup ordinaire', () => {
+  /** Le siège 0 armé d'un galop, chevaux posés où on le demande. */
+  const armed = (at: Record<string, number>, id = 'petits-chevaux'): GameState => {
+    const base = createGame({ players: players([0, 1]), variant: withPowers(id), seed: 7 })
+    return {
+      ...base,
+      hands: [['galop'], [], [], []],
+      pawns: base.pawns.map((p) => ({ ...p, steps: at[p.id] ?? p.steps })),
+      turn: 0,
+      phase: 'rolling',
+      dice: null,
+    }
+  }
+
+  const gallop = (state: GameState, pawn = pawnId(0, 0)) =>
+    apply(state, { type: 'power', power: 'galop', pawnId: pawn }, 0)
+
+  it('mange le cheval adverse qu’il rattrape', () => {
+    const victim = pawnId(1, 0)
+    const state = armed({ [pawnId(0, 0)]: 10, [victim]: stepsToReach(1, (GEO.startIndex[0] + 13) % GEO.trackLength) })
+
+    const after = gallop(state).state
+    expect(pawnOf(after).steps).toBe(13)
+    expect(pawnOf(after, victim).steps).toBe(STABLE)
+    expect(statsOf(after, 0).captures).toBe(1)
+    expect(statsOf(after, 1).losses).toBe(1)
+    expect(after.log.some((e) => e.event.kind === 'capture')).toBe(true)
+  })
+
+  it('brise le bouclier au lieu de manger, et partage la case', () => {
+    const victim = pawnId(1, 0)
+    const base = armed({ [pawnId(0, 0)]: 10, [victim]: stepsToReach(1, (GEO.startIndex[0] + 13) % GEO.trackLength) })
+    const state: GameState = {
+      ...base,
+      pawns: base.pawns.map((p) => (p.id === victim ? { ...p, shield: true } : p)),
+    }
+
+    const after = gallop(state).state
+    expect(pawnOf(after).steps).toBe(13)
+    expect(pawnOf(after, victim).shield).toBe(false)
+    expect(pawnOf(after, victim).steps).not.toBe(STABLE)
+    expect(statsOf(after, 0).captures).toBe(0)
+    expect(after.log.some((e) => e.event.kind === 'shielded')).toBe(true)
+  })
+
+  // Une carte refusée doit être refusée AVANT de quitter la main : `canPlayPower`
+  // et l'effet lisent la même fonction (`galopFor`), et ne peuvent donc pas
+  // diverger. Le pire pour un bonus gardé serait d'être dépensé pour rien.
+  it('refuse la case tenue par un cheval qu’il ne peut pas manger, sans rien dépenser', () => {
+    // Son propre cheval, en règle française : le coup n'existe pas.
+    const mine = armed({ [pawnId(0, 0)]: 10, [pawnId(0, 1)]: 13 })
+    const refused = gallop(mine)
+    expect(refused.error).toBe('powerNotNow')
+    expect(handOf(refused.state, 0)).toEqual(['galop'])
+    expect(pawnOf(refused.state).steps).toBe(10)
+    // L'état d'origine, tel quel : ni carte retirée, ni carte annoncée.
+    expect(refused.state).toBe(mine)
+    expect(refused.state.log.some((e) => e.event.kind === 'played')).toBe(false)
+
+    // Un adversaire abrité sur sa case de départ : pas davantage.
+    const guard = pawnId(1, 0)
+    const safe = armed({
+      [pawnId(0, 0)]: stepsToReach(0, GEO.startIndex[1]) - POWERS.galop.steps,
+      [guard]: 0,
+    })
+    const spared = gallop(safe)
+    expect(spared.error).toBe('powerNotNow')
+    expect(spared.state).toBe(safe)
+  })
+
+  /**
+   * Un galop qui mange ne fait pas rejouer, même au Ludo où la capture vaut un
+   * tour de plus.
+   *
+   * Une carte n'ouvre pas un tour, elle se joue dans celui qu'on tient déjà :
+   * elle ne passe donc pas par `endTurn`, et la prime de capture appartient au
+   * coup de dé. C'est aussi ce qui empêche un galop de se payer lui-même — deux
+   * cartes gardées suffiraient sinon à ne plus rendre la main.
+   */
+  it('ne fait pas rejouer au Ludo, même en mangeant', () => {
+    const ludo = geometryFor(withPowers('ludo'))
+    const victim = pawnId(1, 0)
+    const base = createGame({ players: players([0, 1]), variant: withPowers('ludo'), seed: 7 })
+    const prey = (ludo.startIndex[0] + 10) % ludo.trackLength
+    expect(ludo.startIndexSet.has(prey) || ludo.starIndexSet.has(prey)).toBe(false)
+
+    const state: GameState = {
+      ...base,
+      hands: [['galop'], [], [], []],
+      pawns: base.pawns.map((p) =>
+        p.id === pawnId(0, 0)
+          ? { ...p, steps: 7 }
+          : p.id === victim
+            ? { ...p, steps: (prey - ludo.startIndex[1] + ludo.trackLength) % ludo.trackLength }
+            : p,
+      ),
+      turn: 0,
+      // Un dé de 2 est déjà sur la table : le tour est en cours, et c'est lui
+      // qui décidera de la main, pas la carte.
+      dice: 2,
+      phase: 'moving',
+    }
+
+    const eaten = apply(state, { type: 'power', power: 'galop', pawnId: pawnId(0, 0) }, 0).state
+    expect(pawnOf(eaten, victim).steps).toBe(STABLE)
+    // La carte n'a ni rendu ni repris la main : le tour est là où il était.
+    expect(eaten.turn).toBe(0)
+    expect(eaten.phase).toBe('moving')
+    expect(eaten.dice).toBe(2)
+
+    // Et le coup de dé qui suit, qui ne mange personne, rend la main normalement.
+    const moved = play(eaten)
+    expect(moved.turn).toBe(1)
+  })
+
+  it('partage la case au Ludo, qui ne connaît pas la règle française', () => {
+    const state = armed({ [pawnId(0, 0)]: 10, [pawnId(0, 1)]: 13 }, 'ludo')
+    const after = gallop(state).state
+    expect(pawnOf(after).steps).toBe(13)
+    expect(pawnOf(after, pawnId(0, 1)).steps).toBe(13)
+  })
+
+  // Un pouvoir qui déplace ne redéclenche pas la case où il pose le cheval :
+  // deux cases voisines pourraient sinon se renvoyer la balle sans fin.
+  it('ne ramasse pas la case pouvoir sur laquelle il s’arrête', () => {
+    const state = armed({ [pawnId(0, 0)]: firstPowerStep - POWERS.galop.steps })
+    const after = gallop(state).state
+    expect(pawnOf(after).steps).toBe(firstPowerStep)
+    expect(after.log.some((e) => e.event.kind === 'power')).toBe(false)
+    expect(handOf(after, 0)).toEqual([])
+  })
+})
+
+/**
+ * Le faux pas recule, et un recul ne se change pas en aubaine.
+ *
+ * Deux règles, et elles tiennent ensemble : **on ne mange jamais en reculant**
+ * — un malus qui offrirait une capture serait un bonus — et la case d'arrivée
+ * obéit à « une case, un cheval » comme n'importe quelle autre. Une case prise
+ * arrête donc le cheval à la première case libre en deçà, et s'il n'y en a
+ * aucune il reste où il est. Jamais de retour à l'écurie : c'est le rôle du
+ * malus qui porte ce nom.
+ */
+describe('le faux pas recule sans rien renverser', () => {
+  const landing = { [pawnId(0, 0)]: firstPowerStep - 1 }
+  const back = firstPowerStep - POWERS.fauxpas.steps
+
+  it('s’arrête sur la première case libre quand la case visée est prise', () => {
+    const state = about('fauxpas', { at: { ...landing, [pawnId(0, 1)]: back } })
+    const next = play(state)
+    expect(pawnOf(next).steps).toBe(back + 1)
+    expect(pawnOf(next, pawnId(0, 1)).steps).toBe(back)
+  })
+
+  it('reste sur place si tout le chemin du retour est occupé', () => {
+    const state = about('fauxpas', {
+      at: { ...landing, [pawnId(0, 1)]: back, [pawnId(0, 2)]: back + 1, [pawnId(0, 3)]: back + 2 },
+    })
+    const next = play(state)
+    expect(pawnOf(next).steps).toBe(firstPowerStep)
+    // Rien ne s'est passé après le coup de dé : il n'y a pas deux temps à raconter.
+    expect(next.hop).toBeUndefined()
+  })
+
+  it('ne mange jamais l’adversaire sur lequel il recule', () => {
+    const victim = pawnId(1, 0)
+    const state = about('fauxpas', {
+      at: { ...landing, [victim]: stepsToReach(1, (GEO.startIndex[0] + back) % GEO.trackLength) },
+    })
+    const next = play(state)
+    expect(pawnOf(next, victim).steps).not.toBe(STABLE)
+    expect(pawnOf(next).steps).toBe(back + 1)
+    expect(statsOf(next, 0).captures).toBe(0)
+  })
+
+  it('recule sans se gêner au Ludo, où deux pions partagent une case', () => {
+    const ludo = geometryFor(withPowers('ludo'))
+    const step = [...ludo.powerIndexSet]
+      .map((i) => (i - ludo.startIndex[0] + ludo.trackLength) % ludo.trackLength)
+      .sort((a, b) => a - b)[0]!
+    const target = Math.max(0, step - POWERS.fauxpas.steps)
+
+    const base = createGame({ players: players([0, 1]), variant: withPowers('ludo'), seed: 7 })
+    const state: GameState = {
+      ...base,
+      deck: ['fauxpas', ...freshDeck()],
+      pawns: base.pawns.map((p) =>
+        p.id === pawnId(0, 0)
+          ? { ...p, steps: step - 1 }
+          : p.id === pawnId(0, 1)
+            ? { ...p, steps: target }
+            : p,
+      ),
+      dice: 1,
+      phase: 'moving',
+    }
+    const next = play(state)
+    expect(pawnOf(next).steps).toBe(target)
+    expect(pawnOf(next, pawnId(0, 1)).steps).toBe(target)
+  })
+})
+
+/**
+ * Le bouclier se pose là où une capture peut arriver.
+ *
+ * À l'écurie et dans l'escalier, rien ne peut manger le cheval : le bouclier y
+ * serait une carte dépensée pour rien, et une carte dépensée pour rien est un
+ * piège tendu au joueur, pas une décision. Il ne protège pas non plus du
+ * « Retour à l'écurie » — ce malus n'est pas une capture, et personne ne le
+ * lance sur qui que ce soit.
+ */
+describe('où le bouclier se pose', () => {
+  const armed = (at: number): GameState => {
+    const base = createGame({ players: players([0, 1]), variant: withPowers(), seed: 7 })
+    return {
+      ...base,
+      hands: [['bouclier'], [], [], []],
+      pawns: base.pawns.map((p) => (p.id === pawnId(0, 0) ? { ...p, steps: at } : p)),
+      turn: 0,
+      phase: 'rolling',
+      dice: null,
+    }
+  }
+  const shield = (state: GameState) =>
+    apply(state, { type: 'power', power: 'bouclier', pawnId: pawnId(0, 0) }, 0)
+
+  it('accepte un cheval en piste', () => {
+    expect(shield(armed(4)).error).toBeUndefined()
+  })
+
+  it('refuse un cheval resté à l’écurie', () => {
+    const refused = shield(armed(STABLE))
+    expect(refused.error).toBe('powerNotNow')
+    expect(handOf(refused.state, 0)).toEqual(['bouclier'])
+  })
+
+  it('refuse un cheval déjà dans l’escalier, où plus rien ne l’atteint', () => {
+    const refused = shield(armed(GEO.trackLength))
+    expect(refused.error).toBe('powerNotNow')
+    expect(playablePowers(armed(GEO.trackLength))).toEqual([])
+  })
+
+  it('ne protège pas du retour à l’écurie', () => {
+    const state = about('ecurie', { at: { [pawnId(0, 0)]: firstPowerStep - 1 } })
+    const shielded: GameState = {
+      ...state,
+      pawns: state.pawns.map((p) => (p.id === pawnId(0, 0) ? { ...p, shield: true } : p)),
+    }
+    expect(pawnOf(play(shielded)).steps).toBe(STABLE)
+  })
+})
+
+/**
+ * Un bouclier brisé n'est pas une capture.
+ *
+ * Le cheval reste sur sa case, son propriétaire ne perd rien — et l'attaquant
+ * ne gagne donc pas le tour de rejeu que le Ludo accorde à qui mange.
+ */
+describe('briser un bouclier ne fait pas rejouer', () => {
+  it('rend la main au Ludo, où la capture fait rejouer', () => {
+    const ludo = geometryFor(withPowers('ludo'))
+    const base = createGame({ players: players([0, 1]), variant: withPowers('ludo'), seed: 7 })
+    expect(base.variant.extraTurnOnCapture).toBe(true)
+
+    // Le siège 1 charge un cheval protégé posé trois cases devant lui, sur une
+    // case ordinaire du circuit — ni départ, ni étoile.
+    const victimIndex = (ludo.startIndex[1] + 3) % ludo.trackLength
+    expect(ludo.startIndexSet.has(victimIndex) || ludo.starIndexSet.has(victimIndex)).toBe(false)
+    const state: GameState = {
+      ...base,
+      turn: 1,
+      dice: 3,
+      phase: 'moving',
+      pawns: base.pawns.map((p) =>
+        p.id === pawnId(1, 0)
+          ? { ...p, steps: 0 }
+          : p.id === pawnId(0, 0)
+            ? { ...p, steps: (victimIndex - ludo.startIndex[0] + ludo.trackLength) % ludo.trackLength, shield: true }
+            : p,
+      ),
+    }
+
+    const after = play(state, pawnId(1, 0))
+    expect(after.log.some((e) => e.event.kind === 'shielded')).toBe(true)
+    expect(after.log.some((e) => e.event.kind === 'capture')).toBe(false)
+    expect(after.turn).toBe(0)
+  })
+})
+
+/**
  * Les compteurs de fin de partie.
  *
  * Ils n'entrent dans aucune décision de règle — mais ils circulent sur le

@@ -44,7 +44,7 @@ function fakeRoom() {
     on: (kind, cb) => handlers.set(kind, cb as (data: never, peer: string) => void),
     onPeerJoin: () => {},
     onPeerLeave: () => {},
-    leave: () => {},
+    leave: async () => {},
   }
   return {
     factory: (() => room) as RoomFactory,

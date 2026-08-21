@@ -266,6 +266,16 @@ export type GameState = {
    */
   hop?: Hop
   log: LogEntry[]
+  /**
+   * Numéro de la prochaine entrée du journal.
+   *
+   * Le journal ne garde que ses soixante dernières entrées : sa longueur ne peut
+   * donc pas servir à les numéroter — passé la soixantième, elles porteraient
+   * toutes le même numéro, et l'écran n'annoncerait plus rien (il ne montre que
+   * ce qui dépasse le dernier numéro vu). Facultatif : un état venu d'une
+   * version d'avant le compteur reprend au dernier numéro posé.
+   */
+  logSeq?: number
   /** Compteur monotone : sert à départager deux états lors d'un changement d'hôte. */
   seq: number
 }

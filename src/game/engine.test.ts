@@ -347,6 +347,51 @@ describe('enchaînement des tours', () => {
   })
 })
 
+/**
+ * `apply` est totale : elle rend un état pour n'importe quelle entrée.
+ *
+ * L'action vient du réseau. Un pair d'une version plus récente, un message
+ * abîmé, un `null` : rien de tout cela ne doit faire tomber l'hôte, qui tient la
+ * partie de toute la table. Ce qu'on ne comprend pas est refusé, pas subi.
+ */
+describe('une action incomprise est refusée, jamais subie', () => {
+  it('refuse une action qui n’en est pas une', () => {
+    const state = setup({ dice: 3 })
+    for (const junk of [null, undefined, 'roll', 42, {}, { type: 7 }]) {
+      const result = apply(state, junk as never, 0)
+      expect(result.error).toBe('illegal')
+      expect(result.state).toBe(state)
+    }
+  })
+
+  it('refuse un type d’action inconnu', () => {
+    const state = setup({ dice: 3 })
+    const result = apply(state, { type: 'télépathie' } as never, 0)
+    expect(result.error).toBe('illegal')
+    expect(result.state).toBe(state)
+  })
+
+  it('lance un dé franc quand le bonus demandé n’existe pas', () => {
+    const state = setup({})
+    const rolled = apply(state, { type: 'roll', boost: 'moyen' as never }, 0)
+    expect(rolled.error).toBeUndefined()
+    expect(rolled.state.dice).not.toBeNull()
+    // Un bonus qu'on ne sait pas lire ne se dépense pas.
+    expect(rolled.state.diceBoosts).toBe(DICE_BOOSTS_PER_GAME)
+  })
+
+  // Le refus rendait l'état débarrassé de l'étape intermédiaire du coup
+  // précédent : l'écran, qui s'en sert pour raconter un détour en deux temps,
+  // la perdait à cause d'un coup qui n'a jamais eu lieu.
+  it('rend l’état d’origine, intact', () => {
+    const state: GameState = { ...setup({ dice: 3 }), hop: { pawnId: pawnId(0, 0), at: 4 } }
+    const refused = apply(state, { type: 'move', pawnId: pawnId(0, 0) }, 0)
+    expect(refused.error).toBe('illegal')
+    expect(refused.state).toBe(state)
+    expect(refused.state.hop).toEqual({ pawnId: pawnId(0, 0), at: 4 })
+  })
+})
+
 describe('fin de partie', () => {
   it('classe le joueur qui rentre son dernier cheval', () => {
     const at = Object.fromEntries([0, 1, 2, 3].map((i) => [pawnId(0, i), STANDARD.lastStep]))
@@ -395,6 +440,35 @@ describe('journal', () => {
       const payload = JSON.stringify(entry.event)
       expect(payload.includes(entry.actor), `« ${entry.actor} | ${payload} »`).toBe(false)
     }
+  })
+
+  /**
+   * Le numéro d'une entrée ne revient jamais en arrière.
+   *
+   * Le journal est tronqué à ses soixante dernières entrées, et le numéro se
+   * lisait dans sa longueur : passé la soixantième, toutes les entrées portaient
+   * le même. L'écran n'annonce que ce qui dépasse le dernier numéro vu — il ne
+   * voyait donc plus rien passer, exactement au moment où la partie devient
+   * intéressante.
+   */
+  it('numérote les entrées sans jamais se répéter, même une fois tronqué', () => {
+    let state = createGame({ players: players([0, 1]), variant: variantById('ludo'), seed: 12 })
+    for (let i = 0; i < 400 && state.phase !== 'finished'; i++) {
+      if (state.phase === 'rolling') state = apply(state, { type: 'roll' }, state.turn).state
+      else {
+        const moves = legalMoves(state)
+        state = moves[0]
+          ? apply(state, { type: 'move', pawnId: moves[0].pawnId }, state.turn).state
+          : apply(state, { type: 'pass' }, state.turn).state
+      }
+    }
+
+    // Le journal a bien débordé : c'est là que le bug commençait.
+    expect(state.log).toHaveLength(60)
+    const seqs = state.log.map((e) => e.seq)
+    expect(new Set(seqs).size).toBe(seqs.length)
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b))
+    expect(seqs[0]!).toBeGreaterThan(0)
   })
 
   it('laisse les messages système sans acteur', () => {

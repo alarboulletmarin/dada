@@ -107,6 +107,7 @@ export function createGame(opts: {
     log: [
       { seq: 0, seat: players[0]!.seat, actor: '', event: { kind: 'start', variant: opts.variant.id } },
     ],
+    logSeq: 1,
     seq: 0,
   }
 }
@@ -180,6 +181,57 @@ function occupantsAt(state: GameState, pawn: Pawn, to: number): Pawn[] {
   return state.pawns.filter((p) => p.id !== pawn.id && p.owner === pawn.owner && p.steps === to)
 }
 
+/** Ce qu'un cheval trouve sur la case où on veut le poser. */
+type Landing = {
+  /** Chevaux adverses renvoyés à l'écurie par cette arrivée. */
+  captures: string[]
+  /** Chevaux adverses qui encaissent au bouclier : ils restent, il se brise. */
+  shielded: string[]
+  /** La case reste tenue par un cheval qu'on ne peut pas déloger : arrivée interdite. */
+  blocked: boolean
+}
+
+/**
+ * L'arrivée sur une case, avant qu'elle n'ait lieu.
+ *
+ * Une seule fonction pour le coup de dé et pour le galop : ce sont deux façons
+ * d'amener un cheval quelque part, et une case ne peut pas dire oui à l'un et
+ * non à l'autre. Le galop s'en est passé un temps — il posait son cheval sans
+ * regarder, ce qui donnait deux chevaux sur une case en règle française et un
+ * adversaire rattrapé qui survivait à la charge.
+ *
+ * Capture : uniquement sur le circuit, et jamais sur une case protégée. Un
+ * cheval au bouclier reste sur la case : l'arrivée est permise, il n'est
+ * simplement pas mangé, et son bouclier se brise à l'impact.
+ *
+ * Une case, un cheval (règle française) : si quelque chose reste sur la case
+ * d'arrivée après le coup, le coup n'existe pas.
+ *
+ * Deux exceptions. L'arrivée, évidemment : c'est là que les quatre chevaux se
+ * rejoignent. Et le bouclier — un pouvoir, pas un cheval : s'il rendait sa case
+ * interdite, il cesserait d'être « une capture encaissée » pour devenir un mur,
+ * et un mur que rien ne pourrait plus briser, puisque la charge qui le brise
+ * n'aurait jamais lieu. Le cheval protégé encaisse donc le choc et partage sa
+ * case le temps d'un tour.
+ */
+function landing(state: GameState, pawn: Pawn, to: number): Landing {
+  const geometry = geometryFor(state.variant)
+  const occupants = occupantsAt(state, pawn, to)
+  const captures: string[] = []
+  const shielded: string[] = []
+
+  if (isOnTrack(geometry, to) && !isSafeIndex(state.variant, trackIndexOf(geometry, pawn.owner, to)!)) {
+    for (const victim of occupants) {
+      if (victim.owner === pawn.owner) continue
+      ;(victim.shield ? shielded : captures).push(victim.id)
+    }
+  }
+
+  const survivors = occupants.length - captures.length - shielded.length
+  const blocked = state.variant.onePerSquare && to !== geometry.lastStep && survivors > 0
+  return { captures, shielded, blocked }
+}
+
 /** Tous les coups jouables avec le dé courant. Vide = le joueur doit passer. */
 export function legalMoves(state: GameState): Move[] {
   const { dice, variant } = state
@@ -207,30 +259,8 @@ export function legalMoves(state: GameState): Move[] {
 
     const from = exits ? STABLE : pawn.steps
 
-    // Capture : uniquement sur le circuit, et jamais sur une case protégée.
-    // Un cheval au bouclier reste sur la case : le coup est légal, il n'est
-    // simplement pas mangé, et son bouclier se brise à l'impact.
-    const occupants = occupantsAt(state, pawn, to)
-    const captures: string[] = []
-    const shielded: string[] = []
-    if (isOnTrack(geometry, to) && !isSafeIndex(variant, trackIndexOf(geometry, pawn.owner, to)!)) {
-      for (const victim of occupants) {
-        if (victim.owner === pawn.owner) continue
-        ;(victim.shield ? shielded : captures).push(victim.id)
-      }
-    }
-
-    // Une case, un cheval (règle française) : si quelque chose reste sur la
-    // case d'arrivée après le coup, le coup n'existe pas.
-    //
-    // Deux exceptions. L'arrivée, évidemment : c'est là que les quatre chevaux
-    // se rejoignent. Et le bouclier — un pouvoir, pas un cheval : s'il rendait
-    // sa case interdite, il cesserait d'être « une capture encaissée » pour
-    // devenir un mur, et un mur que rien ne pourrait plus briser, puisque la
-    // charge qui le brise n'aurait jamais lieu. Le cheval protégé encaisse
-    // donc le choc et partage sa case le temps d'un tour.
-    const survivors = occupants.length - captures.length - shielded.length
-    if (variant.onePerSquare && to !== geometry.lastStep && survivors > 0) continue
+    const { captures, shielded, blocked } = landing(state, pawn, to)
+    if (blocked) continue
 
     moves.push({
       pawnId: pawn.id,
@@ -253,8 +283,16 @@ export type ApplyResult = { state: GameState; error?: GameError }
 /**
  * Applique une action au nom de `actor`. Le siège est vérifié ici : c'est le
  * seul rempart contre un pair qui jouerait à la place d'un autre.
+ *
+ * La fonction est **totale** : elle rend un état pour n'importe quelle entrée.
+ * L'action vient du réseau, où le typage ne vaut plus rien — un pair d'une autre
+ * version, un message abîmé, un `null`. Ce qu'on ne comprend pas est refusé, et
+ * l'hôte, qui tient la partie de toute la table, continue de tourner.
  */
 export function apply(state: GameState, action: Action, actor: Seat): ApplyResult {
+  if (!action || typeof action !== 'object' || typeof action.type !== 'string') {
+    return { state, error: 'illegal' }
+  }
   if (state.phase === 'finished') return { state, error: 'finished' }
   if (actor !== state.turn) return { state, error: 'notYourTurn' }
 
@@ -263,16 +301,26 @@ export function apply(state: GameState, action: Action, actor: Seat): ApplyResul
   // d'il y a trois tours.
   const fresh = state.hop === undefined ? state : { ...state, hop: undefined }
 
-  switch (action.type) {
-    case 'roll':
-      return applyRoll(fresh, action)
-    case 'move':
-      return applyMove(fresh, action.pawnId)
-    case 'pass':
-      return applyPass(fresh)
-    case 'power':
-      return applyHeldPower(fresh, action.power, action.pawnId)
-  }
+  const played = ((): ApplyResult => {
+    switch (action.type) {
+      case 'roll':
+        return applyRoll(fresh, action)
+      case 'move':
+        return applyMove(fresh, action.pawnId)
+      case 'pass':
+        return applyPass(fresh)
+      case 'power':
+        return applyHeldPower(fresh, action.power, action.pawnId)
+      // Une action d'une version qu'on ne connaît pas : refusée comme un coup
+      // illégal, plutôt que de rendre `undefined` et de faire tomber l'hôte.
+      default:
+        return { state, error: 'illegal' }
+    }
+  })()
+
+  // Un refus ne change rien — pas même l'étape intermédiaire du coup précédent,
+  // que l'écran est peut-être en train de dessiner.
+  return played.error ? { state, error: played.error } : played
 }
 
 /**
@@ -312,8 +360,10 @@ function applyRoll(
   }
 
   // Un boost sans bonus restant (UI périmée par la latence réseau) n'est pas
-  // une faute du joueur : le lancer se fait simplement sans biais.
-  const useBoost = boost !== undefined && base.diceBoosts > 0
+  // une faute du joueur : le lancer se fait simplement sans biais. Un boost
+  // qu'on ne sait pas lire — il arrive par le réseau — est ignoré de même,
+  // plutôt que d'aller chercher une table de poids qui n'existe pas.
+  const useBoost = (boost === 'low' || boost === 'high') && base.diceBoosts > 0
   const [rng, dice] = rollDie(base.rng, {
     bias: useBoost ? boost : undefined,
     exitFaces: base.variant.exitRolls,
@@ -340,21 +390,66 @@ function applyRoll(
   return { state: next }
 }
 
+/**
+ * Ce que l'arrivée d'un cheval fait aux chevaux qui étaient là : ceux qui sont
+ * mangés repartent de l'écurie, ceux qui portaient un bouclier le perdent, et
+ * le journal comme les compteurs en gardent trace.
+ *
+ * Écrit une fois pour le coup de dé et pour le galop : une capture doit se
+ * raconter et se compter de la même façon, quel que soit ce qui a poussé le
+ * cheval.
+ */
+function takeLanding(
+  state: GameState,
+  by: Seat,
+  captures: string[],
+  shielded: string[],
+): GameState {
+  if (captures.length === 0 && shielded.length === 0) return state
+
+  // Un cheval renvoyé à l'écurie y laisse son bouclier : il ne le rapporte pas
+  // au tour suivant comme s'il ne s'était rien passé.
+  let next: GameState = {
+    ...state,
+    pawns: state.pawns.map((p) => {
+      if (captures.includes(p.id)) return { ...p, steps: STABLE, shield: false }
+      if (shielded.includes(p.id)) return { ...p, shield: false }
+      return p
+    }),
+  }
+
+  for (const captured of captures) {
+    const owner = state.pawns.find((p) => p.id === captured)!.owner
+    next = addLog(next, by, {
+      kind: 'capture',
+      pawn: pawnSlot(captured) + 1,
+      victim: playerAt(state, owner)?.name ?? '',
+    })
+  }
+
+  for (const saved of shielded) {
+    const owner = state.pawns.find((p) => p.id === saved)!.owner
+    next = addLog(next, by, {
+      kind: 'shielded',
+      pawn: pawnSlot(saved) + 1,
+      owner: playerAt(state, owner)?.name ?? '',
+    })
+  }
+
+  next = countUp(next, by, { captures: captures.length })
+  for (const captured of captures) {
+    next = countUp(next, state.pawns.find((p) => p.id === captured)!.owner, { losses: 1 })
+  }
+  return next
+}
+
 function applyMove(state: GameState, id: string): ApplyResult {
   if (state.phase !== 'moving') return { state, error: 'rollFirst' }
 
   const move = legalMoves(state).find((m) => m.pawnId === id)
   if (!move) return { state, error: 'illegal' }
 
-  const pawns = state.pawns.map((p) => {
-    if (p.id === move.pawnId) return { ...p, steps: move.to }
-    // Un cheval renvoyé à l'écurie y laisse son bouclier : il ne le rapporte
-    // pas au tour suivant comme s'il ne s'était rien passé.
-    if (move.captures.includes(p.id)) return { ...p, steps: STABLE, shield: false }
-    if (move.shielded.includes(p.id)) return { ...p, shield: false }
-    return p
-  })
-
+  const pawns = state.pawns.map((p) => (p.id === move.pawnId ? { ...p, steps: move.to } : p))
   let next: GameState = { ...state, pawns, seq: state.seq + 1 }
 
   const pawn = pawnSlot(move.pawnId) + 1
@@ -362,33 +457,13 @@ function applyMove(state: GameState, id: string): ApplyResult {
   else if (move.finishes) next = addLog(next, state.turn, { kind: 'finish', pawn })
   else next = addLog(next, state.turn, { kind: 'advance', pawn, dice: state.dice ?? 0 })
 
-  for (const captured of move.captures) {
-    const owner = state.pawns.find((p) => p.id === captured)!.owner
-    next = addLog(next, state.turn, {
-      kind: 'capture',
-      pawn: pawnSlot(captured) + 1,
-      victim: playerAt(state, owner)?.name ?? '',
-    })
-  }
-
-  for (const saved of move.shielded) {
-    const owner = state.pawns.find((p) => p.id === saved)!.owner
-    next = addLog(next, state.turn, {
-      kind: 'shielded',
-      pawn: pawnSlot(saved) + 1,
-      owner: playerAt(state, owner)?.name ?? '',
-    })
-  }
+  next = takeLanding(next, state.turn, move.captures, move.shielded)
 
   // Le déplacement compte pour la distance parcourue ; la sortie d'écurie ne
   // vaut aucune case (on passe de « nulle part » à la case de départ).
   next = countUp(next, state.turn, {
     distance: move.exits ? 0 : Math.max(0, move.to - move.from),
-    captures: move.captures.length,
   })
-  for (const captured of move.captures) {
-    next = countUp(next, state.pawns.find((p) => p.id === captured)!.owner, { losses: 1 })
-  }
 
   const power = resolvePower(next, move.pawnId)
   next = settleShields(power.state)
@@ -484,6 +559,29 @@ function applyHeldPower(state: GameState, power: PowerId, target?: string): Appl
 }
 
 /**
+ * Ce qu'un galop ferait à ce cheval, ou `null` s'il ne peut rien lui faire.
+ *
+ * Une seule fonction pour la question et pour la réponse : `canPlayPower` la lit
+ * pour refuser la carte, `applyPower` la relit pour la jouer. Deux tests
+ * séparés pourraient diverger, et la carte quitterait alors la main pour ne rien
+ * produire — le pire qui puisse arriver à un bonus qu'on avait gardé.
+ *
+ * Le galop pousse un cheval déjà sorti, jamais au-delà de l'arrivée — gagner par
+ * accident serait plus frustrant qu'un pouvoir perdu — et jamais sur une case
+ * qu'un coup de dé lui aurait refusée.
+ */
+function galopFor(
+  state: GameState,
+  pawn: Pawn,
+): { to: number; captures: string[]; shielded: string[] } | null {
+  const geometry = geometryFor(state.variant)
+  const to = pawn.steps + POWERS.galop.steps
+  if (pawn.steps < 0 || to > geometry.lastStep) return null
+  const { captures, shielded, blocked } = landing(state, pawn, to)
+  return blocked ? null : { to, captures, shielded }
+}
+
+/**
  * La carte peut-elle être jouée dans l'état où l'on est ?
  *
  * Exportée : l'écran des cartes en main s'en sert pour griser celles qui ne
@@ -502,11 +600,11 @@ export function canPlayPower(state: GameState, power: PowerId, target?: string):
     const pawn = state.pawns.find((p) => p.id === target && p.owner === state.turn)
     if (!pawn) return false
     if (hasFinished(geometry, pawn.steps)) return false
-    // Un bouclier se pose sur un cheval en piste, pas sur un cheval à l'écurie :
-    // à l'écurie, rien ne peut le manger.
-    if (power === 'bouclier') return pawn.steps >= 0 && !pawn.shield
-    // Un galop pousse un cheval déjà sorti, et jamais au-delà de l'arrivée.
-    if (power === 'galop') return pawn.steps >= 0 && pawn.steps + spec.steps <= geometry.lastStep
+    // Un bouclier se pose sur un cheval que quelque chose peut atteindre —
+    // c'est-à-dire sur le circuit. À l'écurie comme dans l'escalier, il serait
+    // une carte dépensée pour rien.
+    if (power === 'bouclier') return isOnTrack(geometry, pawn.steps) && !pawn.shield
+    if (power === 'galop') return galopFor(state, pawn) !== null
   }
   return true
 }
@@ -571,7 +669,6 @@ function draw(state: GameState): { state: GameState; power: PowerId } {
  * `canPlayPower`, qui refuse un cheval introuvable.
  */
 function applyPower(state: GameState, pawnId: string | undefined, power: PowerId): GameState {
-  const geometry = geometryFor(state.variant)
   const pawn = state.pawns.find((p) => p.id === pawnId)
   const setPawn = (patch: Partial<Pawn>): GameState => ({
     ...state,
@@ -599,21 +696,33 @@ function applyPower(state: GameState, pawnId: string | undefined, power: PowerId
       return setPawn({ steps: STABLE, shield: false })
 
     case 'galop': {
-      // Le galop ne force jamais l'arrivée : sur une variante au compte exact,
-      // un cheval qui dépasserait reste où il est. Gagner par accident serait
-      // plus frustrant qu'un pouvoir perdu.
+      // Il arrive comme un coup de dé : il mange ce qu'il rattrape et brise les
+      // boucliers. La carte n'a pas pu quitter la main sans que `galopFor` ait
+      // dit oui — `canPlayPower` lit la même fonction, et refuse avant que la
+      // main ne soit entamée. Le repli reste, pour un état venu du réseau.
       if (!pawn) return state
-      const target = pawn.steps + POWERS.galop.steps
-      if (target > geometry.lastStep) return state
-      return setPawn({ steps: target })
+      const run = galopFor(state, pawn)
+      if (!run) return state
+      return takeLanding(setPawn({ steps: run.to }), state.turn, run.captures, run.shielded)
     }
 
     case 'fauxpas': {
+      // Un malus ne doit pas se changer en aubaine : **on ne capture jamais en
+      // reculant**. La case visée peut donc être tenue par n'importe qui, et
+      // c'est alors la première case libre en deçà qui accueille le cheval — à
+      // défaut, il reste où il est.
+      //
       // Le recul s'arrête à la case de départ : un cheval ne retourne pas à
       // l'écurie par un faux pas, c'est le rôle du malus qui porte ce nom.
       if (!pawn) return state
-      const target = Math.max(0, pawn.steps - POWERS.fauxpas.steps)
-      return setPawn({ steps: target })
+      const floor = Math.max(0, pawn.steps - POWERS.fauxpas.steps)
+      for (let target = floor; target < pawn.steps; target++) {
+        // Hors règle française, aucune case n'est jamais tenue : la boucle
+        // s'arrête au premier essai, et le cheval recule des trois cases.
+        const taken = state.variant.onePerSquare && occupantsAt(state, pawn, target).length > 0
+        if (!taken) return setPawn({ steps: target })
+      }
+      return state
     }
   }
 }
@@ -768,10 +877,24 @@ function nextActiveSeat(state: GameState, from: Seat): Seat {
   return from
 }
 
+/**
+ * Ajoute une entrée au journal, numérotée une fois pour toutes.
+ *
+ * Le numéro se lisait dans la longueur du journal — qui est tronqué à ses
+ * soixante dernières entrées. Passé la soixantième, toutes portaient donc le
+ * même numéro, et l'écran, qui n'annonce que ce qui dépasse le dernier numéro
+ * vu (voir `announce` dans `app.ts`), ne voyait plus rien passer. Le compteur
+ * est donc dans l'état, et il ne redescend jamais.
+ *
+ * Le `??` couvre un état venu d'une version d'avant le compteur : on repart
+ * alors du dernier numéro posé, et non de zéro, pour rester croissant.
+ */
 function addLog(state: GameState, seat: Seat, event: LogEvent): GameState {
   const actor = playerAt(state, seat)?.name ?? ''
-  const entry = { seq: state.log.length, seat, actor, event }
-  return { ...state, log: [...state.log, entry].slice(-LOG_LIMIT) }
+  const last = state.log[state.log.length - 1]
+  const seq = state.logSeq ?? (last ? last.seq + 1 : 0)
+  const entry = { seq, seat, actor, event }
+  return { ...state, logSeq: seq + 1, log: [...state.log, entry].slice(-LOG_LIMIT) }
 }
 
 // ─────────────────────────────── divers ───────────────────────────────

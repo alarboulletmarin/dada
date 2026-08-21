@@ -116,9 +116,14 @@ function reinstall(text: (typeof ABOUT_TEXT)['fr']): HTMLElement[] {
   button.addEventListener('click', () => {
     button.disabled = true
     button.textContent = text.reinstalling
-    void clearAppCaches().then(() => {
-      window.location.reload()
-    })
+    // Le rechargement doit avoir lieu même si le vidage échoue : un bouton de
+    // secours qui reste bloqué sur « réinstallation… » est pire que pas de
+    // bouton du tout.
+    void clearAppCaches()
+      .catch(() => {})
+      .then(() => {
+        window.location.reload()
+      })
   })
 
   return [
