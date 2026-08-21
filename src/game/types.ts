@@ -21,6 +21,18 @@ export const DICE_BOOSTS_PER_GAME = 3
 /** Siège autour du plateau. 0 = haut-gauche, puis sens horaire. */
 export type Seat = 0 | 1 | 2 | 3
 
+/**
+ * Un des deux camps de la variante « équipes ».
+ *
+ * 0 = les sièges 0 et 2, 1 = les sièges 1 et 3. Ce sont les sièges **opposés**
+ * autour du plateau, comme à la belote : on ne joue jamais deux fois de suite
+ * pour le même camp, et chacun a ses adversaires de part et d'autre.
+ *
+ * Le camp se lit dans le numéro du siège (`seat % 2`) et n'est donc jamais
+ * stocké : rien à faire circuler sur le réseau, rien à garder cohérent.
+ */
+export type Team = 0 | 1
+
 export type Pawn = {
   id: string
   owner: Seat
@@ -58,6 +70,19 @@ export type Variant = {
   trackLength: number
   /** Nombre de pions par joueur. */
   pawnsPerPlayer: number
+  /**
+   * Deux contre deux : les sièges 0 et 2 contre les sièges 1 et 3.
+   *
+   * Un drapeau plutôt qu'une composition d'équipes libre : les camps sont les
+   * sièges opposés, et rien d'autre. Laisser choisir qui joue avec qui
+   * demanderait de faire voyager la composition sur le réseau, de la garder
+   * cohérente quand un pair reprend un siège, et de dessiner un plateau où les
+   * deux alliés peuvent être côte à côte — beaucoup de machinerie pour une
+   * variante qui, sur un plateau carré, n'a qu'une seule forme intéressante.
+   *
+   * Exige exactement quatre joueurs : voir `createGame`.
+   */
+  teams?: boolean
   /**
    * Le décor du plateau. Réglé dans le salon, jamais dans les règles : les
    * quatre formes partagent le même circuit et les mêmes distances, seul le
@@ -233,6 +258,18 @@ export type GameState = {
   phase: Phase
   /** Ordre d'arrivée des joueurs (le premier a gagné). */
   ranking: Seat[]
+  /**
+   * En variante équipes : les sièges qui ont rentré leurs quatre chevaux, dans
+   * l'ordre où ils l'ont fait.
+   *
+   * Ce n'est **pas** le classement, et c'est bien pour cela qu'il faut un autre
+   * champ : un siège qui a fini continue de jouer — pour son partenaire — et
+   * n'est donc pas sorti de la partie. `ranking` reste vide jusqu'à la victoire
+   * d'une équipe, où il se remplit d'un coup avec les quatre sièges ; cette
+   * liste-ci ne sert qu'à départager les deux sièges d'un même camp à ce
+   * moment-là. Absent hors variante équipes.
+   */
+  finishers?: Seat[]
   /** État du générateur pseudo-aléatoire — rend chaque partie rejouable et vérifiable. */
   rng: number
   /** Bonus de dé restants pour la partie entière — budget partagé, pas par joueur. */

@@ -6,7 +6,7 @@
  */
 
 import { geometryFor, hasFinished, isOnTrack, trackIndexOf } from './board.ts'
-import { canPlayPower, legalMoves, pawnsOf, playablePowers } from './engine.ts'
+import { activeSeatFor, areAllies, canPlayPower, legalMoves, pawnsOf, playablePowers } from './engine.ts'
 import { HAND_LIMIT, POWERS, type PowerId } from './powers.ts'
 import type { Action, GameState, Move } from './types.ts'
 
@@ -22,7 +22,8 @@ function score(move: Move, state: GameState): number {
 
   // Sortir de l'écurie met un cheval en jeu ; d'autant plus utile qu'on en a peu dehors.
   if (move.exits) {
-    const outside = state.pawns.filter((p) => p.owner === state.turn && p.steps >= 0).length
+    const seat = activeSeatFor(state)
+    const outside = state.pawns.filter((p) => p.owner === seat && p.steps >= 0).length
     s += 400 - outside * 80
   }
 
@@ -43,16 +44,21 @@ function score(move: Move, state: GameState): number {
  *
  * Le calcul se fait en cases absolues du circuit : chaque joueur compte ses pas
  * depuis son propre départ, comparer des `steps` bruts n'aurait aucun sens.
+ *
+ * `steps` se compte depuis le départ du siège dont on joue les chevaux — le
+ * partenaire, le cas échéant — et un coéquipier n'est jamais une menace : il ne
+ * peut pas manger, donc il ne fait pas fuir.
  */
 function threatOn(state: GameState, steps: number): number {
   const geometry = geometryFor(state.variant)
   if (!isOnTrack(geometry, steps)) return 0
-  const target = trackIndexOf(geometry, state.turn, steps)
+  const seat = activeSeatFor(state)
+  const target = trackIndexOf(geometry, seat, steps)
   if (target === null) return 0
 
   let threats = 0
   for (const p of state.pawns) {
-    if (p.owner === state.turn || !isOnTrack(geometry, p.steps)) continue
+    if (areAllies(state, p.owner, seat) || !isOnTrack(geometry, p.steps)) continue
     const from = trackIndexOf(geometry, p.owner, p.steps)!
     const gap = (target - from + geometry.trackLength) % geometry.trackLength
     if (gap >= 1 && gap <= 6) threats++
@@ -81,7 +87,9 @@ export function choosePower(state: GameState): Action | null {
   if (hand.length === 0) return null
 
   const geometry = geometryFor(state.variant)
-  const mine = pawnsOf(state, state.turn).filter((p) => !hasFinished(geometry, p.steps))
+  // Les chevaux qu'on joue, qui ne sont pas toujours les siens : en équipes, un
+  // joueur qui a fini pose ses cartes sur les chevaux de son partenaire.
+  const mine = pawnsOf(state, activeSeatFor(state)).filter((p) => !hasFinished(geometry, p.steps))
   const best = (power: PowerId): string | undefined =>
     mine
       .filter((p) => canPlayPower(state, power, p.id))
