@@ -63,6 +63,14 @@ const ICONS = {
   gallop: '<path d="M5.4 6.8 10.6 12l-5.2 5.2"/><path d="M13 6.8 18.2 12 13 17.2"/>',
   /** Rejeu : la flèche qui fait le tour et revient. */
   replay: '<path d="M20 12a8 8 0 1 1-2.7-6"/><path d="M20.4 3.6v4.6h-4.6"/>',
+  /**
+   * Deux flèches qui se croisent : échanger deux places.
+   *
+   * Verticales, et non horizontales : dans le salon, les sièges sont une
+   * colonne. Une paire de flèches gauche-droite aurait dit « suivant » à côté
+   * d'une liste qui descend.
+   */
+  swap: '<path d="M8 4.5v15"/><path d="M4.4 8.1 8 4.5l3.6 3.6"/><path d="M16 19.5v-15"/><path d="M19.6 15.9 16 19.5l-3.6-3.6"/>',
   /** Dé pipé : le dé et ses trois points en diagonale. */
   loaded:
     '<rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8.6 8.6v.1"/><path d="M12 12v.1"/><path d="M15.4 15.4v.1"/>',
