@@ -515,6 +515,9 @@ export class App {
   private reactStack = new Map<Seat, Set<number>>()
   /** Dernière capture qui a valu une proposition : une seule par capture. */
   private reactCued = -1
+  /** Le siège pris en main dans le salon, en attente de celui avec qui il
+   *  échangera sa place. Null tant que personne n'est soulevé. */
+  private swapping: Seat | null = null
   /** Le contour qui se vide sur la carte du joueur dont c'est le tour. */
   private turnRing: HTMLElement | null = null
   /** Les secondes qui restent, affichées à la toute fin du décompte. */
@@ -694,6 +697,8 @@ export class App {
     this.closeFan()
     this.reactStack.clear()
     this.reactCued = -1
+    // Le siège qu'on avait pris en main : il n'y a plus de table où le reposer.
+    this.swapping = null
     // Les bulles en vol visent des cartes qui n'existent plus.
     document.querySelector(`.${REACT_LAYER}`)?.remove()
     this.stopClock()
@@ -766,6 +771,36 @@ export class App {
     })
   }
 
+  /**
+   * Le pion d'un siège du salon, quand il peut changer de place.
+   *
+   * Prendre un joueur, puis en toucher un autre : les deux échangent leur pion,
+   * donc leur couleur, leur coin, et en équipes leur camp. Deux touches et non
+   * un glisser — le glisser demande de viser une cible pendant qu'un doigt
+   * cache la liste, et il n'existe pas au clavier.
+   *
+   * Le pion pris garde son bouton : c'est lui qui le repose, et son étiquette
+   * le dit. Un « annuler » posé ailleurs aurait été à trouver alors qu'on a
+   * déjà la main sur celui-ci.
+   */
+  private swapToken(seat: Seat, name: string): HTMLElement {
+    const held = this.swapping === seat
+    return h(
+      'button',
+      {
+        class: `seat__swap${held ? ' held' : ''}`,
+        attrs: {
+          'aria-label': held ? t('lobby.swap.cancel', { name }) : t('lobby.swap', { name }),
+          'aria-pressed': held ? 'true' : 'false',
+          title: t('lobby.swap.short'),
+        },
+        on: { click: () => this.takeSeat(seat) },
+      },
+      this.token(seat),
+      h('span', { class: 'seat__swapmark' }, icon('swap', 11)),
+    )
+  }
+
   /** Une face de dé : les points d'un vrai dé, disposés sur une grille 3×3. */
   private face(value: number | null, className = 'face'): HTMLElement {
     const el = h('div', { class: className })
@@ -775,6 +810,28 @@ export class App {
       )
     }
     return el
+  }
+
+  /**
+   * Une touche sur le bouton d'échange d'un siège.
+   *
+   * Premier appui : on prend le joueur. Deuxième sur un autre : les deux
+   * échangent leur place — donc leur couleur, leur coin du plateau, et en
+   * équipes leur camp. Deuxième sur le même : on le repose.
+   *
+   * L'état tient dans un seul champ parce qu'un seul joueur peut être en main
+   * à la fois. Il se vide à chaque échange, et le salon se redessine derrière :
+   * ce n'est pas une opération à confirmer, c'est un geste qu'on refait autant
+   * de fois qu'il faut jusqu'à ce que la table soit bonne.
+   */
+  private takeSeat(seat: Seat): void {
+    const held = this.swapping
+    this.swapping = held === seat ? null : held === null ? seat : null
+    if (held !== null && held !== seat) this.session?.swapSeats(held, seat)
+    // `swapSeats` redessine déjà par `onChange` — mais seulement quand il a
+    // vraiment bougé quelqu'un. Prendre et reposer ne bougent personne, et
+    // l'écran doit quand même s'en apercevoir.
+    else this.renderLobby()
   }
 
   /**
@@ -1365,10 +1422,28 @@ export class App {
       ? { seat: focused.dataset.seat ?? '', value: focused.value, at: focused.selectionStart }
       : null
 
+    // Dans l'ordre des sièges, et non dans celui d'arrivée : c'est l'ordre des
+    // sièges qui dit les camps (0 et 2 contre 1 et 3) et les couleurs du
+    // plateau. Depuis qu'on peut échanger deux places, les deux ordres ne
+    // coïncident plus, et la liste d'arrivée aurait montré « Équipe A » deux
+    // fois de suite pour une table parfaitement régulière.
+    const seated = [...lobby.players].sort((a, b) => a.seat - b.seat)
+
+    // Le joueur qu'on tenait a pu quitter la table entre les deux touches —
+    // retiré par l'hôte, ou parti de lui-même. On le repose, sinon le salon
+    // attendrait une seconde touche pour quelqu'un qui n'est plus là.
+    if (this.swapping !== null && !seated.some((p) => p.seat === this.swapping)) {
+      this.swapping = null
+    }
+
+    // Échanger deux places demande deux places : à un seul joueur, le geste
+    // n'existe pas. Et une partie lancée ne se rassoit plus.
+    const canSwap = session.isHost && !lobby.started && seated.length > 1
+
     const seats = h(
       'div',
       { class: 'seats' },
-      ...lobby.players.map((p) => {
+      ...seated.map((p) => {
         const editable = session.isHost || p.clientId === session.self
         const nameField = h('input', {
           value: p.name,
@@ -1397,7 +1472,18 @@ export class App {
           // contre 1 et 3. Une rangée de quatre sièges ne le montre pas, et
           // découvrir son camp au premier tour n'a jamais fait rire personne.
           teams ? h('span', { class: 'seat__team', text: teamLabel(p.seat) }) : null,
-          this.token(p.seat),
+          // C'est le PION qui prend le geste, comme le portrait prend celui qui
+          // le relance — et pour la même raison. Un bouton posé à côté aurait
+          // été un sixième objet dans une rangée qui en porte déjà cinq : sur
+          // un téléphone de 360 points, il ramenait le champ du nom de 72 à
+          // 33 px, et un salon où l'on ne peut plus lire les noms n'est pas un
+          // salon où l'on compose les équipes.
+          //
+          // Et ce n'est pas un pis-aller de place : le pion EST ce que l'échange
+          // échange. Sa couleur, sa forme, son coin du plateau, et en équipes
+          // son camp — tout ce qui change de mains tient dans ce galet. La
+          // pastille du coin dit qu'il se tape, comme celle du portrait.
+          canSwap ? this.swapToken(p.seat, p.name) : this.token(p.seat),
           // Le portrait EST le bouton qui le relance — sur les sièges qu'on a
           // le droit de toucher, les mêmes que pour le nom.
           //
@@ -1481,7 +1567,14 @@ export class App {
               { class: 'stack' },
               h('span', { class: 'label', text: t('lobby.players', { n: lobby.players.length }) }),
               seats,
-              teams ? h('p', { class: 'hint', text: t('lobby.teams.hint') }) : null,
+              // La phrase d'attente prend la place de celle des équipes, elle
+              // ne s'ajoute pas : entre les deux touches, ce qu'il faut lire
+              // n'est plus la règle mais le geste à finir.
+              this.swapping !== null
+                ? h('p', { class: 'hint', text: t('lobby.swap.hint') })
+                : teams
+                  ? h('p', { class: 'hint', text: t('lobby.teams.hint') })
+                  : null,
               canAdd
                 ? h(
                     'div',

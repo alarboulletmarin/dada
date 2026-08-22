@@ -1027,6 +1027,63 @@ input:disabled {
   color: var(--ink);
 }
 
+/* Le pion qui change de place : c'est le pion lui-même qui prend le clic, comme
+   le portrait prend celui qui le relance. Voir le salon dans `app.ts` pour
+   pourquoi ce n'est pas un bouton posé à côté. */
+.seat__swap {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.seat__swap:active {
+  transform: translateY(2px);
+}
+
+/* Comme la pastille du portrait : elle mord sur le bord du pion plutôt que de
+   se ranger à côté, pour ne pas pousser le champ du nom d'une pastille entière.
+
+   À GAUCHE du pion, là où celle du portrait est à droite : le pion et le
+   portrait se touchent presque dans la rangée, et deux pastilles rondes de
+   17 px collées l'une à l'autre se seraient lues comme une seule paire de
+   boutons, sans qu'on sache laquelle change quoi. Écartées, chacune reste du
+   côté de ce qu'elle change. */
+.seat__swapmark {
+  position: absolute;
+  left: -5px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--ink);
+}
+
+/* Pris en main : le pion se soulève et sa pastille passe au jaune. Entre les
+   deux touches, il faut retrouver d'un coup d'œil qui l'on tient dans une liste
+   de quatre lignes qui se ressemblent. Le soulèvement n'est pas une décoration :
+   c'est le seul repère qui reste quand on regarde la ligne d'à côté. */
+.seat__swap.held {
+  transform: translateY(-3px);
+}
+
+.seat__swap.held .token {
+  box-shadow: inset -4px -5px 0 var(--emboss), 0 4px 0 var(--ink);
+}
+
+.seat__swap.held .seat__swapmark {
+  background: var(--yellow);
+  color: var(--on-1);
+}
+
 .seat input {
   flex: 1;
   min-width: 0;
@@ -1295,6 +1352,33 @@ input:disabled {
 
 .play .topbar {
   gap: 10px;
+}
+
+/* La pastille du code, en partie, cède le passage.
+
+   La barre du haut d'une partie en ligne porte cinq objets : le retour, le
+   code, la réaction, le chat, les règles. Sur un téléphone de 360 points, ça
+   fait 340 px de contenu pour 328 disponibles — et comme `.play` est en
+   `overflow: hidden`, ce n'est pas une barre qui défile mais le dernier bouton,
+   celui des règles, qui sort de l'écran par la droite.
+
+   C'est la pastille qui rend la place, parce que c'est elle qui en prend le
+   plus (152 px à elle seule) et qu'elle est la seule à pouvoir en rendre : les
+   quatre autres sont des cibles tactiles, et une cible qui rétrécit est une
+   cible qu'on rate. Son petit mot « CODE » disparaît — le salon a déjà appris
+   ce qu'est ce jaune, et l'icône dit encore qu'on peut le toucher. Et si
+   l'écran est plus étroit encore, elle rogne le code plutôt que de pousser un
+   bouton dehors : un code à moitié lu se relit dans le salon, un bouton
+   invisible ne se retrouve pas. */
+.play .topbar .pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-inline: 12px;
+  overflow: hidden;
+}
+
+.play .topbar .pill small {
+  display: none;
 }
 
 /* Ce que le réseau a à dire, entre la barre du haut et le plateau.

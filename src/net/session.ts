@@ -1386,6 +1386,37 @@ export class Session {
     this.listeners.onChange()
   }
 
+  /**
+   * Deux joueurs échangent leur place à table.
+   *
+   * C'est le seul geste qui compose les équipes, et ce n'est pas un détour :
+   * l'équipe EST la parité du siège (`teamOf`), parce que les coéquipiers sont
+   * les deux coins opposés du plateau. Un champ « équipe » posé à côté du
+   * siège aurait laissé deux camps assis côte à côte, et le plateau n'aurait
+   * plus rien dit de qui joue avec qui.
+   *
+   * Ce qui bouge, c'est la place — le nom, le portrait et l'appareil qui tient
+   * le siège suivent la personne. `hostSeat` se déduit du `clientId` : l'hôte
+   * peut donc se déplacer comme les autres, sans qu'on ait à le recoller.
+   *
+   * Réservé à l'hôte, comme la variante et les sièges : à quatre doigts sur
+   * quatre téléphones, deux échanges simultanés se seraient écrasés l'un
+   * l'autre, et personne n'aurait su quelle table était la vraie.
+   */
+  swapSeats(a: Seat, b: Seat): void {
+    if (!this.isHost || this.lobby.started || a === b) return
+    const one = this.lobby.players.find((p) => p.seat === a)
+    const two = this.lobby.players.find((p) => p.seat === b)
+    // Une place vide n'est pas un siège : l'échanger déplacerait un joueur sans
+    // que rien ne le remplace, ce qui n'est plus un échange mais un
+    // déménagement — un geste que le salon ne propose pas.
+    if (!one || !two) return
+    one.seat = b
+    two.seat = a
+    this.publishLobby()
+    this.listeners.onChange()
+  }
+
   start(): void {
     if (!this.isHost || this.lobby.players.length < 2) return
     // Une table en équipes se joue à quatre, ou ne se joue pas : `createGame`
