@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { geometryFor } from './board.ts'
-import { apply, createGame, forceSkipTurn, hasWon, legalMoves, mercyOf, pawnId } from './engine.ts'
+import {
+  apply,
+  boostsOf,
+  createGame,
+  forceSkipTurn,
+  hasWon,
+  legalMoves,
+  mercyOf,
+  pawnId,
+} from './engine.ts'
 import { rollDie } from './rng.ts'
 import { variantById } from './variants.ts'
-import { DICE_BOOSTS_PER_GAME, STABLE, type GameState, type Player, type Seat } from './types.ts'
+import {
+  DICE_BOOSTS_PER_PLAYER,
+  STABLE,
+  type GameState,
+  type Player,
+  type Seat,
+} from './types.ts'
 
 const players = (seats: Seat[]): Player[] =>
   seats.map((seat) => ({ seat, name: `J${seat + 1}`, kind: 'local' as const, peerId: null, connected: true }))
@@ -377,7 +392,7 @@ describe('une action incomprise est refusée, jamais subie', () => {
     expect(rolled.error).toBeUndefined()
     expect(rolled.state.dice).not.toBeNull()
     // Un bonus qu'on ne sait pas lire ne se dépense pas.
-    expect(rolled.state.diceBoosts).toBe(DICE_BOOSTS_PER_GAME)
+    expect(boostsOf(rolled.state, 0)).toBe(DICE_BOOSTS_PER_PLAYER)
   })
 
   // Le refus rendait l'état débarrassé de l'étape intermédiaire du coup
@@ -498,22 +513,50 @@ describe('déterminisme', () => {
 describe('bonus de dé', () => {
   it('consomme un bonus quand le lancer est boosté', () => {
     const state = setup({})
-    expect(state.diceBoosts).toBe(DICE_BOOSTS_PER_GAME)
+    expect(boostsOf(state, 0)).toBe(DICE_BOOSTS_PER_PLAYER)
 
     const rolled = apply(state, { type: 'roll', boost: 'low' }, 0).state
-    expect(rolled.diceBoosts).toBe(DICE_BOOSTS_PER_GAME - 1)
+    expect(boostsOf(rolled, 0)).toBe(DICE_BOOSTS_PER_PLAYER - 1)
   })
 
   it('laisse les bonus intacts sans boost', () => {
     const rolled = apply(setup({}), { type: 'roll' }, 0).state
-    expect(rolled.diceBoosts).toBe(DICE_BOOSTS_PER_GAME)
+    expect(boostsOf(rolled, 0)).toBe(DICE_BOOSTS_PER_PLAYER)
   })
 
   it('ignore un boost demandé sans bonus restant, sans planter', () => {
-    const state: GameState = { ...setup({}), diceBoosts: 0 }
+    const state: GameState = { ...setup({}), diceBoosts: [0, 0, 0, 0] }
     const rolled = apply(state, { type: 'roll', boost: 'high' }, 0).state
-    expect(rolled.diceBoosts).toBe(0)
+    expect(boostsOf(rolled, 0)).toBe(0)
     expect(rolled.dice).not.toBeNull()
+  })
+
+  // Le bug qui a fait changer la règle : la réserve était un seul nombre pour
+  // toute la table. Le premier à jouer la vidait en trois lancers, et les
+  // trois autres trouvaient les boutons éteints sans avoir rien demandé.
+  it('donne à chacun sa réserve : dépenser la sienne ne touche pas celle des autres', () => {
+    let state = setup({ seats: [0, 1, 2, 3] })
+    for (let i = 0; i < DICE_BOOSTS_PER_PLAYER; i++) {
+      state = apply(state, { type: 'roll', boost: 'low' }, 0).state
+      state = { ...state, dice: null, phase: 'rolling' }
+    }
+    expect(boostsOf(state, 0)).toBe(0)
+    expect(boostsOf(state, 1)).toBe(DICE_BOOSTS_PER_PLAYER)
+    expect(boostsOf(state, 2)).toBe(DICE_BOOSTS_PER_PLAYER)
+    expect(boostsOf(state, 3)).toBe(DICE_BOOSTS_PER_PLAYER)
+
+    // Et le siège 1 penche bien son dé, quoi qu'ait dépensé le siège 0.
+    const next = apply({ ...state, turn: 1 }, { type: 'roll', boost: 'high' }, 1).state
+    expect(boostsOf(next, 1)).toBe(DICE_BOOSTS_PER_PLAYER - 1)
+    expect(boostsOf(next, 0)).toBe(0)
+  })
+
+  // Un hôte resté sur la version d'avant envoie encore un seul nombre : on lit
+  // sa réserve commune plutôt que d'éteindre les boutons de tout le monde.
+  it('lit une réserve commune venue d’une version d’avant', () => {
+    const legacy = { ...setup({}), diceBoosts: 2 as unknown as number[] }
+    expect(boostsOf(legacy, 0)).toBe(2)
+    expect(boostsOf(legacy, 3)).toBe(2)
   })
 })
 

@@ -199,7 +199,7 @@ bonus ne part tout seul : les quatre se gardent, le dé pipé compris.
 | Bouclier | ×3 | main | Le cheval désigné encaisse la prochaine capture sans bouger. Le bouclier se brise à l'impact. Il se pose sur un cheval **en piste** : à l'écurie comme dans l'escalier, rien ne peut l'atteindre, et la carte serait dépensée pour rien. Il ne protège pas du « Retour à l'écurie », qui n'est pas une capture. |
 | Galop | ×3 | main | Le cheval désigné avance de 3 cases, et il **arrive comme un coup de dé** : il mange ce qu'il rattrape, brise les boucliers, et renonce à la case que la règle lui refuse. Jamais au-delà de l'arrivée : gagner par accident serait pire que rien. Manger au galop ne fait pas rejouer, même au Ludo : une carte se joue dans le tour qu'on tient, elle n'en ouvre pas un second. |
 | Rejeu | ×2 | main | On relance le dé et on rejoue. La chaîne de 6 continue de compter. |
-| Dé pipé | ×2 | main | Un bonus de dé de plus dans la réserve de la table. Armé, il s'encaisse dans le geste suivant : petit nombre ou grand nombre. |
+| Dé pipé | ×2 | main | Un bonus de dé de plus dans sa propre réserve. Armé, il s'encaisse dans le geste suivant : petit nombre ou grand nombre. |
 | Faux pas | ×3 | — | Le cheval recule de 3 cases, sans jamais repasser par l'écurie. **On ne mange jamais en reculant** — un malus qui offrirait une capture serait un bonus. En règle française, si la case visée est tenue, le cheval s'arrête à la première case libre en deçà ; s'il n'y en a aucune, il reste où il est. |
 | Tour sauté | ×2 | — | Le prochain tour saute. Un seul. |
 | Retour à l'écurie | ×1 | — | Le cheval rentre. La carte la plus dure, et la seule de son espèce. |

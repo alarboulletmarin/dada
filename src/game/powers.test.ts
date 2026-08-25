@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { geometryFor } from './board.ts'
-import { apply, createGame, handOf, legalMoves, pawnId, playablePowers, statsOf } from './engine.ts'
+import {
+  apply,
+  boostsOf,
+  createGame,
+  handOf,
+  legalMoves,
+  pawnId,
+  playablePowers,
+  statsOf,
+} from './engine.ts'
 import { bonusCount, DECK_SIZE, freshDeck, HAND_LIMIT, POWERS, POWER_IDS, type PowerId } from './powers.ts'
 import { shuffle } from './rng.ts'
 import { STABLE, type GameState, type Player, type Seat, type Variant } from './types.ts'
@@ -185,10 +194,12 @@ describe('ramasser une case pouvoir', () => {
   it('dés — se garde en main, et ne garnit la réserve qu’une fois joué', () => {
     const drawn = play(about('des', { at: landing }))
     expect(handOf(drawn, 0)).toEqual(['des'])
-    expect(drawn.diceBoosts).toBe(about('des').diceBoosts)
+    expect(boostsOf(drawn, 0)).toBe(boostsOf(about('des'), 0))
 
     const spent = apply(myTurn(drawn), { type: 'power', power: 'des' }, 0).state
-    expect(spent.diceBoosts).toBe(drawn.diceBoosts + 1)
+    // Le bonus va à qui joue la carte, et à personne d'autre.
+    expect(boostsOf(spent, 0)).toBe(boostsOf(drawn, 0) + 1)
+    expect(boostsOf(spent, 1)).toBe(boostsOf(drawn, 1))
     expect(handOf(spent, 0)).toEqual([])
   })
 

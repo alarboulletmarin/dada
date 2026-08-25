@@ -7,7 +7,16 @@
  */
 
 import { BOARD_SHAPES, geometryFor, isBoardShape, type BoardShape } from '../game/board.ts'
-import { activeSeatFor, mercyOf, partnerOf, pawnId, pawnsOf, statsOf, teamOf } from '../game/engine.ts'
+import {
+  activeSeatFor,
+  boostsOf,
+  mercyOf,
+  partnerOf,
+  pawnId,
+  pawnsOf,
+  statsOf,
+  teamOf,
+} from '../game/engine.ts'
 import {
   bonusCount,
   DECK_SIZE,
@@ -2317,9 +2326,9 @@ export class App {
 
     // Chaque bouton lance le dé ET applique le bonus en un seul geste, comme
     // le bouton du dé lui-même. Ils encadrent le dé au lieu de s'empiler
-    // dessous : la réserve de bonus est commune, elle se lit sur la pastille
-    // que chaque bouton porte, et la ligne entière ne coûte que la hauteur du
-    // dé — celle qu'elle occupait déjà. Ce qui est gagné là revient au plateau.
+    // dessous : la réserve de bonus se lit sur la pastille que chaque bouton
+    // porte, et la ligne entière ne coûte que la hauteur du dé — celle qu'elle
+    // occupait déjà. Ce qui est gagné là revient au plateau.
     const boost = (side: 'low' | 'high') => {
       const count = h('span', { class: 'boost__n' })
       const btn = h(
@@ -2493,7 +2502,15 @@ export class App {
     // Un dé pipé armé compte déjà : il garnit la réserve au moment où le lancer
     // le valide, si bien qu'un même geste peut ranger la carte et pencher le dé.
     // Sans ce +1, les boutons restaient éteints devant la carte qui les allume.
-    const boosts = state.diceBoosts + (this.armed?.power === 'des' ? 1 : 0)
+    //
+    // La réserve montrée est celle du siège dont on tient la main — le siège
+    // courant sur un téléphone qu'on se passe, le sien en ligne. Chacun a ses
+    // trois bonus : afficher un total de table ferait éteindre les boutons de
+    // tout le monde au troisième lancer penché du premier joueur.
+    const boostSeat = session.handSeat
+    const boosts =
+      (boostSeat === null ? 0 : boostsOf(state, boostSeat)) +
+      (this.armed?.power === 'des' ? 1 : 0)
     const canBoost = session.myTurn && state.phase === 'rolling' && boosts > 0
     mounts.boostLowBtn.disabled = !canBoost
     mounts.boostHighBtn.disabled = !canBoost
@@ -3374,8 +3391,8 @@ export class App {
       // Le dé pipé se dépense en demandant son nombre. Le lancer nu le
       // gaspillerait — la carte partirait, et le dé ne pencherait vers rien.
       // Le dé déjà sur la table, en revanche, n'a plus rien à pencher : la
-      // carte s'y joue pour ce qu'il lui reste, un jeton de plus dans la
-      // réserve de la table.
+      // carte s'y joue pour ce qu'il lui reste, un jeton de plus dans sa
+      // propre réserve.
       if (armed.power === 'des' && boost === undefined && game.phase === 'rolling') {
         return this.notify('hand.boost.needed')
       }

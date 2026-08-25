@@ -16,7 +16,7 @@ import type { BoardShape } from './board.ts'
 import type { PowerId } from './powers.ts'
 
 export const STABLE = -1
-export const DICE_BOOSTS_PER_GAME = 3
+export const DICE_BOOSTS_PER_PLAYER = 3
 
 /** Siège autour du plateau. 0 = haut-gauche, puis sens horaire. */
 export type Seat = 0 | 1 | 2 | 3
@@ -272,8 +272,17 @@ export type GameState = {
   finishers?: Seat[]
   /** État du générateur pseudo-aléatoire — rend chaque partie rejouable et vérifiable. */
   rng: number
-  /** Bonus de dé restants pour la partie entière — budget partagé, pas par joueur. */
-  diceBoosts: number
+  /**
+   * Bonus de dé restants, par siège (l'indice est le siège).
+   *
+   * Un budget **par joueur**, et non une réserve commune : partagée, elle se
+   * ramassait par le premier à jouer — trois lancers penchés et la table était
+   * sèche pour les trois autres, qui n'avaient rien fait de mal. Un budget
+   * commun ne tient que s'il y a une raison de se retenir, et il n'y en avait
+   * aucune. Chacun dépense donc les siens, et le dé pipé crédite celui qui
+   * joue la carte.
+   */
+  diceBoosts: number[]
   /**
    * Tours consécutifs terminés à l'écurie sans en sortir, par siège (l'indice
    * est le siège). C'est ce compteur qui fait pencher le dé vers la sortie ;

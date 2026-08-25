@@ -237,10 +237,10 @@ const fr: RulesText = {
       heading: 'Le bonus de dé',
       rules: [
         {
-          title: 'Trois fois par partie, pour toute la table',
+          title: 'Trois fois par partie, chacun les siens',
           body: [
             "Avant de lancer, on peut demander un petit nombre (1 à 3) ou un grand nombre (4 à 6). Le dé penche alors nettement du côté choisi, sans jamais y être forcé.",
-            "La réserve est commune à toute la table, pas par joueur : trois bonus pour la partie entière. Celui qui s'en sert le premier s'en sert.",
+            "Chacun a ses trois bonus pour la partie, et ne dépense que les siens. La réserve fut un temps commune à la table : le premier à jouer la vidait, et les trois autres n'avaient plus rien à demander.",
           ],
         },
       ],
@@ -326,7 +326,7 @@ const fr: RulesText = {
             "Bouclier — le cheval désigné encaisse la prochaine capture sans bouger, et le bouclier se brise. Il se pose sur un cheval en piste : à l'écurie, rien ne peut le manger.",
             "Galop — le cheval désigné avance de trois cases de plus. Il ne dépasse jamais l'arrivée : gagner par accident serait pire que rien.",
             "Rejeu — on relance le dé et on rejoue. Une chaîne de 6 continue de compter : relancer n'efface pas les 6 déjà posés.",
-            "Dé pipé — un bonus de dé de plus dans la réserve de la table. Il se garde en main comme les autres bonus : armez-le, puis demandez votre petit ou votre grand nombre — le même geste range la carte et penche le dé.",
+            "Dé pipé — un bonus de dé de plus dans sa propre réserve. Il se garde en main comme les autres bonus : armez-le, puis demandez votre petit ou votre grand nombre — le même geste range la carte et penche le dé.",
             "Faux pas — votre cheval recule de trois cases. Il ne repasse jamais par l'écurie, et reculer ne mange personne.",
             "Tour sauté — votre prochain tour saute. Un seul.",
             "Retour à l'écurie — votre cheval rentre, bouclier compris. La carte la plus dure, et la seule de son espèce dans le paquet.",
@@ -515,10 +515,10 @@ const en: RulesText = {
       heading: 'The die bonus',
       rules: [
         {
-          title: 'Three times a game, for the whole table',
+          title: 'Three times a game, each their own',
           body: [
             'Before rolling you may ask for a low number (1 to 3) or a high one (4 to 6). The die then leans clearly that way, without ever being forced.',
-            'The reserve is shared by the whole table, not per player: three bonuses for the entire game. Whoever spends first, spends.',
+            'Everyone gets three bonuses for the game, and spends only their own. The reserve was once shared by the table: the first to play emptied it, and the other three had nothing left to ask for.',
           ],
         },
       ],
@@ -604,7 +604,7 @@ const en: RulesText = {
             'Shield — the chosen horse takes the next capture without moving, and the shield breaks. It goes on a horse out on the track: in the stable, nothing can eat it.',
             'Gallop — the chosen horse moves three more squares. It never overshoots the finish: winning by accident would be worse than nothing.',
             'Replay — you roll again and play on. A streak of 6s keeps counting: rerolling does not erase the 6s already rolled.',
-            'Loaded die — one more die bonus in the table’s reserve. It is kept in hand like the other bonuses: arm it, then ask for your low or high number — the same gesture puts the card away and tilts the die.',
+            'Loaded die — one more die bonus in your own reserve. It is kept in hand like the other bonuses: arm it, then ask for your low or high number — the same gesture puts the card away and tilts the die.',
             'Stumble — your horse goes back three squares. It never falls back into the stable, and moving back eats nobody.',
             'Lost turn — your next turn is skipped. Just one.',
             'Back to the stable — your horse goes home, shield included. The harshest card, and the only one of its kind in the deck.',
