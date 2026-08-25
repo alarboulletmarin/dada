@@ -15,7 +15,7 @@
 
 /** Date de dernière révision des textes. Écrite ici, et nulle part ailleurs :
  *  une page datée du jour de la visite ne dirait rien de ce qu'on lit. */
-export const UPDATED = '2026-08-18'
+export const UPDATED = '2026-08-25'
 
 export interface Section {
   title: string
@@ -129,7 +129,7 @@ const fr: AboutText = {
     },
     {
       title: 'Hébergeur',
-      body: ['Vercel Inc., 340 S Lemon Ave #4133, Walnut, CA 91789, États-Unis — vercel.com.'],
+      body: ['Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, États-Unis — vercel.com.'],
     },
     {
       title: 'Propriété intellectuelle',
@@ -233,7 +233,7 @@ const en: AboutText = {
     },
     {
       title: 'Host',
-      body: ['Vercel Inc., 340 S Lemon Ave #4133, Walnut, CA 91789, United States — vercel.com.'],
+      body: ['Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, United States — vercel.com.'],
     },
     {
       title: 'Intellectual property',
