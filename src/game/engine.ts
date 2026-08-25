@@ -10,7 +10,7 @@ import { geometryFor, hasFinished, isOnTrack, trackIndexOf } from './board.ts'
 import { freshDeck, HAND_LIMIT, POWERS, type PowerId } from './powers.ts'
 import { rollDie, shuffle } from './rng.ts'
 import {
-  DICE_BOOSTS_PER_GAME,
+  DICE_BOOSTS_PER_PLAYER,
   STABLE,
   type Action,
   type GameError,
@@ -110,7 +110,12 @@ export function createGame(opts: {
     // Hors variante équipes, le champ n'existe pas : rien à faire voyager.
     finishers: opts.variant.teams ? [] : undefined,
     rng,
-    diceBoosts: DICE_BOOSTS_PER_GAME,
+    diceBoosts: [
+      DICE_BOOSTS_PER_PLAYER,
+      DICE_BOOSTS_PER_PLAYER,
+      DICE_BOOSTS_PER_PLAYER,
+      DICE_BOOSTS_PER_PLAYER,
+    ],
     stuck: [0, 0, 0, 0],
     deck,
     skips: [0, 0, 0, 0],
@@ -229,6 +234,35 @@ export function mercyOf(state: GameState, seat: Seat): number {
   const { mercyExit } = state.variant
   if (mercyExit <= 0 || !isPenned(state, seat)) return 0
   return Math.min(1, (state.stuck?.[seat] ?? 0) / mercyExit)
+}
+
+/**
+ * Bonus de dé restants à ce siège.
+ *
+ * Défensif sur deux fronts. Le champ peut manquer — un état d'une version
+ * d'avant le compteur. Et il peut arriver du réseau sous sa forme d'avant, un
+ * seul nombre pour la table : c'est un hôte resté sur l'ancienne version qui
+ * l'envoie, et c'est lui qui arbitrera les lancers, alors on lit sa réserve
+ * commune telle qu'elle est plutôt que d'afficher zéro à tout le monde.
+ */
+export function boostsOf(state: GameState, seat: Seat): number {
+  const boosts = state.diceBoosts as number[] | number | undefined
+  if (typeof boosts === 'number') return boosts
+  return boosts?.[seat] ?? 0
+}
+
+/** La réserve après un bonus dépensé par ce siège. */
+function spendBoost(state: GameState, seat: Seat): number[] {
+  const boosts = [...(Array.isArray(state.diceBoosts) ? state.diceBoosts : [0, 0, 0, 0])]
+  boosts[seat] = Math.max(0, (boosts[seat] ?? 0) - 1)
+  return boosts
+}
+
+/** La réserve après un bonus rendu à ce siège — le dé pipé. */
+function creditBoost(state: GameState, seat: Seat): number[] {
+  const boosts = [...(Array.isArray(state.diceBoosts) ? state.diceBoosts : [0, 0, 0, 0])]
+  boosts[seat] = (boosts[seat] ?? 0) + 1
+  return boosts
 }
 
 /** Une case du circuit est-elle protégée de la capture ? */
@@ -461,7 +495,7 @@ function applyRoll(
   // une faute du joueur : le lancer se fait simplement sans biais. Un boost
   // qu'on ne sait pas lire — il arrive par le réseau — est ignoré de même,
   // plutôt que d'aller chercher une table de poids qui n'existe pas.
-  const useBoost = (boost === 'low' || boost === 'high') && base.diceBoosts > 0
+  const useBoost = (boost === 'low' || boost === 'high') && boostsOf(base, base.turn) > 0
   const [rng, dice] = rollDie(base.rng, {
     bias: useBoost ? boost : undefined,
     exitFaces: base.variant.exitRolls,
@@ -480,7 +514,10 @@ function applyRoll(
     consecutiveSixes,
     voided,
     phase: 'moving',
-    diceBoosts: useBoost ? base.diceBoosts - 1 : base.diceBoosts,
+    // Le bonus se prend dans la réserve de qui secoue le dé — `base.turn`, pas
+    // `activeSeatFor` : en équipes, un joueur qui a fini lance pour l'écurie de
+    // son partenaire, et ce sont bien ses trois bonus à lui qu'il dépense.
+    diceBoosts: useBoost ? spendBoost(base, base.turn) : base.diceBoosts,
     seq: base.seq + 1,
   }
   next = countUp(next, base.turn, { rolls: 1, pips: dice, sixes: dice === 6 ? 1 : 0 })
@@ -788,7 +825,7 @@ function applyPower(state: GameState, pawnId: string | undefined, power: PowerId
       return setPawn({ shield: true })
 
     case 'des':
-      return { ...state, diceBoosts: state.diceBoosts + 1 }
+      return { ...state, diceBoosts: creditBoost(state, state.turn) }
 
     case 'rejeu':
       // Le rejeu se joue dans `endTurn` : il n'y a rien à changer dans l'état.

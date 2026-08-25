@@ -15,6 +15,9 @@ import type { Lobby } from './room.ts'
 const KEY = 'dada.save'
 const INVITE_KEY = 'dada.invite'
 /**
+ * 3 : les bonus de dé sont un budget par siège (`diceBoosts`, un tableau), et
+ * non plus une réserve commune à la table.
+ *
  * 2 : l'état porte le compteur de tours passés à l'écurie (`stuck`).
  *
  * Le numéro ne monte que quand le **moteur** change. Le salon a gagné depuis un
@@ -23,7 +26,7 @@ const INVITE_KEY = 'dada.invite'
  * le format pour eux aurait jeté toutes les parties locales en cours, sans rien
  * régler.
  */
-const VERSION = 2
+const VERSION = 3
 /**
  * Au-delà, la partie qu'on avait quittée est finie depuis longtemps : proposer
  * d'y revenir ne ferait que promettre une salle vide.

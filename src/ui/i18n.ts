@@ -250,7 +250,7 @@ const fr = {
   'rules.5.body': 'Le premier à rentrer ses 4 chevaux remporte la partie.',
   'rules.6.title': 'Bonus de dé',
   'rules.6.body':
-    'Trois fois par partie, avant de lancer, on peut favoriser un petit nombre (1 à 3) ou un grand nombre (4 à 6). Les bonus sont communs à toute la table.',
+    'Trois fois par partie, avant de lancer, on peut favoriser un petit nombre (1 à 3) ou un grand nombre (4 à 6). Chaque joueur a les siens.',
 
   'rules.7.title': 'Dix secondes',
   'rules.7.body':
@@ -650,7 +650,7 @@ const en: Partial<Record<Key, string>> = {
   'rules.5.body': 'First to bring all 4 horses home wins.',
   'rules.6.title': 'Dice bonus',
   'rules.6.body':
-    'Three times a game, before rolling, you can favour a low number (1 to 3) or a high one (4 to 6). The bonuses are shared by the whole table.',
+    'Three times a game, before rolling, you can favour a low number (1 to 3) or a high one (4 to 6). Each player has their own.',
 
   'rules.7.title': 'Ten seconds',
   'rules.7.body':
