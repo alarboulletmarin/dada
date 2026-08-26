@@ -12,6 +12,7 @@
 
 import { getRelaySockets, joinRoom, selfId } from 'trystero/nostr'
 import type { BoardShape } from '../game/board.ts'
+import type { BotLevel } from '../game/bot.ts'
 import type { Action, GameError, GameState, Seat } from '../game/types.ts'
 import { turnServers } from './turn.ts'
 
@@ -58,6 +59,25 @@ export type LobbyPlayer = {
    * alors sur le nom seul — ce qu'ils faisaient avant ce champ.
    */
   face?: number
+  /**
+   * Le niveau de ce bot (voir `game/bot.ts`).
+   *
+   * **Par siège, et non par table.** Une table de quatre où l'on est seul veut
+   * souvent un adversaire sérieux et deux qui laissent respirer ; un réglage
+   * unique l'interdit. Et un bot qui tient le siège d'un joueur parti
+   * (`botFill`) n'a rien choisi du tout : il ne peut pas hériter d'un niveau
+   * que l'absent n'a jamais demandé, et son champ reste vide.
+   *
+   * Il vit dans le salon plutôt que dans la variante, qui ne porte que des
+   * RÈGLES et voyage jusque dans la sauvegarde : le niveau d'un bot n'est pas
+   * une règle du jeu. Et comme le bot ne joue que chez l'hôte, ce champ n'a
+   * jamais besoin d'être exact ailleurs — il n'y sert qu'à être lu.
+   *
+   * Optionnel, pour la même raison que `face` : un pair resté sur une version
+   * d'avant envoie un salon qui ne le porte pas, et chaque lecture doit donc
+   * porter son repli (`?? DEFAULT_LEVEL`).
+   */
+  level?: BotLevel
 }
 
 export type Lobby = {

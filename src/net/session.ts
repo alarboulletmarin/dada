@@ -11,7 +11,7 @@
  */
 
 import { isBoardShape, type BoardShape } from '../game/board.ts'
-import { chooseMove, choosePower } from '../game/bot.ts'
+import { botTurn, BOT_DELAY, DEFAULT_LEVEL, isBotLevel, type BotLevel } from '../game/bot.ts'
 import { apply, createGame, forceSkipTurn, handOf, legalMoves, playablePowers, powerTargets } from '../game/engine.ts'
 import { seedFrom } from '../game/rng.ts'
 import type { Variant } from '../game/types.ts'
@@ -62,19 +62,6 @@ export function tableVariant(lobby: Lobby): Variant {
 }
 
 const MAX_SEATS = 4
-/**
- * Le temps qu'un bot prend avant chacun de ses gestes.
- *
- * Il ne réfléchit pas, et n'a aucune raison d'attendre : ce délai est pour ceux
- * qui regardent. Un bot joue une carte, lance, puis avance — trois actions
- * distinctes, et à sept dixièmes de seconde elles se confondaient en un seul
- * clignement. Une table de trois bots devenait un défilé qu'on subissait sans
- * jamais voir de qui venait quoi.
- *
- * Le tour d'un bot ne compte pas dans le temps de réflexion (voir
- * `armTurnClock`) : allonger ce délai ne coûte rien à personne.
- */
-const BOT_DELAY = 1150
 /**
  * Au-delà, on considère que l'invité ne trouvera personne. Mieux vaut le dire
  * que de le laisser devant un écran qui tourne : la mise en relation aboutit en
@@ -1329,6 +1316,37 @@ export class Session {
     this.listeners.onChange()
   }
 
+  /**
+   * Le niveau d'un bot, siège par siège.
+   *
+   * Réservé à l'hôte, comme les autres réglages de table : c'est chez lui que
+   * les bots jouent, et deux appareils qui régleraient chacun le leur ne
+   * seraient d'accord sur rien.
+   *
+   * Un siège humain n'a pas de niveau, même quand un bot le tient en l'absence
+   * de son joueur : ce bot-là n'a rien choisi, il dépanne, et il joue au niveau
+   * du jeu (voir `scheduleBot`).
+   */
+  setBotLevel(seat: Seat, level: BotLevel): void {
+    if (!this.isHost || this.lobby.started) return
+    const player = this.lobby.players.find((p) => p.seat === seat)
+    if (!player || player.kind !== 'bot') return
+    player.level = level
+    this.publishLobby()
+    this.listeners.onChange()
+  }
+
+  /**
+   * Le niveau auquel ce siège joue.
+   *
+   * Le repli n'est pas de la timidité : un pair resté sur une version d'avant
+   * renvoie un salon sans ce champ, et `adopt` écrase le nôtre en bloc.
+   */
+  botLevel(seat: Seat): BotLevel {
+    const level = this.lobby.players.find((p) => p.seat === seat)?.level
+    return isBotLevel(level) ? level : DEFAULT_LEVEL
+  }
+
   rename(seat: Seat, name: string): void {
     const player = this.lobby.players.find((p) => p.seat === seat)
     if (!player) return
@@ -1665,22 +1683,17 @@ export class Session {
     // Un bot à demeure, ou un bot qui tient le siège d'un absent : même arbitre.
     if (!player || !isBotSeat(player)) return
 
+    // Un bot de dépannage joue au niveau du jeu : le siège appartient à
+    // quelqu'un qui n'a rien choisi, et lui coller le niveau d'un autre siège
+    // serait décider à sa place de la difficulté de sa propre partie.
+    const level = player.kind === 'bot' ? this.botLevel(seat) : DEFAULT_LEVEL
+
     this.botTimer = setTimeout(() => {
       if (!this.game || this.game.turn !== seat) return
       // Une carte d'abord, s'il en a une qui vaut le coup : la jouer ne consomme
       // pas le tour, et `applyAsHost` rappellera `scheduleBot` pour la suite.
-      const card = choosePower(this.game)
-      if (card) {
-        this.applyAsHost(card, seat)
-        return
-      }
-      if (this.game.phase === 'rolling') {
-        this.applyAsHost({ type: 'roll' }, seat)
-        return
-      }
-      const move = chooseMove(this.game)
-      this.applyAsHost(move ? { type: 'move', pawnId: move.pawnId } : { type: 'pass' }, seat)
-    }, BOT_DELAY)
+      this.applyAsHost(botTurn(this.game, level), seat)
+    }, BOT_DELAY[level])
   }
 
   /** Tout ce qui suit un changement d'état : à qui de jouer, et jusqu'à quand. */

@@ -89,6 +89,16 @@ const ICONS = {
 
   /** Envoyer : l'avion de papier, plié en deux traits. */
   send: '<path d="M20.6 3.4 3.9 9.7a.6.6 0 0 0 0 1.1l6.7 2.6 2.6 6.7a.6.6 0 0 0 1.1 0Z"/><path d="M10.6 13.4 20.6 3.4"/>',
+
+  /* Le plateau qu'on grossit, et qu'on remontre en entier. Une loupe, parce
+     que c'est le seul dessin que tout le monde lit sans légende — et son
+     manche part vers le bas à droite, comme celle qu'on tient. */
+  /** Agrandir le plateau. */
+  magnify:
+    '<circle cx="10.6" cy="10.6" r="6.6"/><path d="M15.5 15.5 20.4 20.4"/><path d="M7.5 10.6h6.2M10.6 7.5v6.2"/>',
+  /** Remontrer le plateau en entier. */
+  shrink:
+    '<circle cx="10.6" cy="10.6" r="6.6"/><path d="M15.5 15.5 20.4 20.4"/><path d="M7.5 10.6h6.2"/>',
 } as const
 
 export type IconName = keyof typeof ICONS
@@ -118,6 +128,10 @@ const NUDGE: Partial<Record<IconName, readonly [number, number]>> = {
   moon: [1.2, -1.2],
   bolt: [0.5, 0],
   send: [-0.7, 0.7],
+  // Le disque de la loupe est en haut à gauche et le manche ne pèse rien :
+  // centrée sur sa boîte, elle se lit poussée vers le coin.
+  magnify: [0.5, 0.5],
+  shrink: [0.5, 0.5],
   // Le triangle du « reprendre » : toute sa masse est du côté de sa base, et
   // sa boîte se lit donc décalée à gauche dans un bouton rond.
   play: [0.9, 0],

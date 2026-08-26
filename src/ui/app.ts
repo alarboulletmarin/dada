@@ -7,6 +7,7 @@
  */
 
 import { BOARD_SHAPES, geometryFor, isBoardShape, type BoardShape } from '../game/board.ts'
+import { BOT_LEVELS, type BotLevel } from '../game/bot.ts'
 import {
   activeSeatFor,
   boostsOf,
@@ -43,7 +44,7 @@ import { clearInvite, clearSave, readInvite, readSave } from '../net/save.ts'
 import { REACT_LIFE_MS, Session, type Notice, type NoticeCode, type RoomFactory } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
 import { armedReady, keepArmed, needsPawn, type Armed } from './aim.ts'
-import { BoardView, SEAT_MARKS } from './board-view.ts'
+import { BoardView } from './board-view.ts'
 import { clearFlights, flyCard, type Flight, type FlightKind } from './cardfly.ts'
 import { fill, h, setKeepAwake } from './dom.ts'
 import { deviceStore, gestureOf, Guide, guideForDraw, type GuideId } from './guide.ts'
@@ -713,6 +714,7 @@ export class App {
     this.stopClock()
     this.session?.destroy()
     this.#session = null
+    this.board?.dispose()
     this.board = null
     this.mounts = null
     this.screen = null
@@ -772,12 +774,74 @@ export class App {
     return this.session?.lobby.players.find((p) => p.seat === seat)?.face ?? 0
   }
 
+  /**
+   * Le pion d'un siège, en petit.
+   *
+   * La marque du camp est dessinée par la feuille de style à partir de
+   * `data-seat`, et non écrite ici en caractère : les quatre glyphes
+   * géométriques d'avant ne sont dans aucune des fontes embarquées, et
+   * retombaient donc sur celle du système — un dessin par téléphone, pour la
+   * seule chose qui dise à qui est ce pion quand on ne distingue pas les
+   * couleurs.
+   */
   private token(seat: Seat | null, extra = ''): HTMLElement {
     return h('span', {
       class: `token${extra ? ` ${extra}` : ''}`,
-      text: seat === null ? '' : SEAT_MARKS[seat],
+      attrs: seat === null ? {} : { 'data-seat': String(seat) },
       style: seat === null ? {} : this.seatVars(seat),
     })
+  }
+
+  /**
+   * Le niveau d'un bot, en trois points.
+   *
+   * **Des points et non le mot.** « Redoutable » écrit dans la pastille prend
+   * soixante-dix pixels, et la rangée d'un siège n'en a pas soixante-dix à
+   * donner : sur un téléphone de 360 points, ils seraient venus du champ du
+   * nom, exactement comme l'aurait fait le sixième bouton que le commentaire
+   * de la rangée refuse. Trois points remplis sur trois se lisent d'un coup
+   * d'œil, dans toutes les langues, et tiennent dans la place que « Bot »
+   * occupait déjà.
+   *
+   * Le mot « Bot » disparaît sans manquer à personne : un siège qui porte une
+   * jauge de difficulté est un siège de bot, et aucun humain n'en a.
+   *
+   * C'est la pastille elle-même qui prend le geste, comme le portrait prend
+   * celui qui le relance et le pion celui qui échange les places. Un bouton
+   * posé à côté aurait été le sixième objet de la rangée.
+   */
+  private levelMeter(seat: Seat, name: string, level: BotLevel, editable: boolean): HTMLElement {
+    const rank = BOT_LEVELS.indexOf(level)
+    const dots = BOT_LEVELS.map((_, i) =>
+      h('i', { class: `tag__dot${i <= rank ? ' on' : ''}` }),
+    )
+    const label = t(`level.${level}` as Key)
+    if (!editable) {
+      return h(
+        'span',
+        {
+          class: `tag tag--level`,
+          attrs: { 'aria-label': t('lobby.bot.level.read', { name, level: label }), title: label },
+        },
+        ...dots,
+      )
+    }
+    // Un cycle, et non trois boutons : trois niveaux se parcourent plus vite
+    // qu'ils ne se choisissent, et trois cibles tactiles dans cette rangée
+    // n'existent pas.
+    const next = BOT_LEVELS[(rank + 1) % BOT_LEVELS.length]!
+    return h(
+      'button',
+      {
+        class: `tag tag--level`,
+        attrs: {
+          'aria-label': t('lobby.bot.level', { name, level: label }),
+          title: t(`level.${level}.desc` as Key),
+        },
+        on: { click: () => this.session?.setBotLevel(seat, next) },
+      },
+      ...dots,
+    )
   }
 
   /**
@@ -1519,10 +1583,16 @@ export class App {
               )
             : avatar(p.name, p.face ?? 0, 34),
           nameField,
-          h('span', {
-            class: 'tag',
-            text: tag || (isHostSeat ? t('lobby.host') : p.clientId === session.self ? t('common.you') : ''),
-          }),
+          // Un bot à demeure porte sa jauge de niveau à la place de son
+          // étiquette. Un bot de dépannage, lui, garde le mot « Bot » : le
+          // siège est celui d'un absent, il n'a pas de niveau à régler, et
+          // c'est bien « quelqu'un manque » qu'il faut lire.
+          p.kind === 'bot'
+            ? this.levelMeter(p.seat, p.name, session.botLevel(p.seat), session.isHost && !lobby.started)
+            : h('span', {
+                class: 'tag',
+                text: tag || (isHostSeat ? t('lobby.host') : p.clientId === session.self ? t('common.you') : ''),
+              }),
           session.isHost && !isHostSeat
             ? h(
                 'button',
@@ -1583,7 +1653,14 @@ export class App {
                 ? h('p', { class: 'hint', text: t('lobby.swap.hint') })
                 : teams
                   ? h('p', { class: 'hint', text: t('lobby.teams.hint') })
-                  : null,
+                  : // Une jauge de trois points ne dit pas d'elle-même qu'elle
+                    // se touche. La phrase ne paraît que là où le geste existe :
+                    // chez l'hôte, avant le lancement, et s'il y a un bot.
+                    session.isHost &&
+                      !lobby.started &&
+                      lobby.players.some((p) => p.kind === 'bot')
+                    ? h('p', { class: 'hint', text: t('lobby.bot.hint') })
+                    : null,
               canAdd
                 ? h(
                     'div',
@@ -2312,7 +2389,24 @@ export class App {
     // des cartes vit dans la même ligne, et ses changements se feraient lire à
     // voix haute à chaque passe d'affichage.
     const turnMain = h('div', { class: 'turnline__main', attrs: { 'aria-live': 'polite' } })
-    const turn = h('div', { class: 'turnline' }, turnMain)
+    // Le bouton du zoom, à gauche de la ligne de tour — en face de celui des
+    // cartes, et pour la même raison : la ligne a de la largeur à revendre, le
+    // plateau n'a pas un pixel de haut à donner.
+    //
+    // Il est là et pas sur le plateau, qui aurait été l'endroit évident : une
+    // pastille posée sur le plateau se pose forcément SUR une écurie ou sur le
+    // circuit, c'est-à-dire sur ce qu'on cherche justement à mieux voir. Et il
+    // est là plutôt que dans la barre du haut, où les cinq boutons d'une
+    // partie en ligne remplissent déjà un téléphone de 360 points.
+    //
+    // Le geste existe aussi sans lui — pincer, ou taper deux fois — mais un
+    // geste qu'aucun bouton n'annonce n'est trouvé que par ceux qui le
+    // cherchaient. Et au clavier, il n'y a pas de pincement du tout.
+    const zoomBtn = h('button', {
+      class: 'zoombtn',
+      on: { click: () => this.board?.toggleZoom() },
+    })
+    const turn = h('div', { class: 'turnline' }, zoomBtn, turnMain)
     const die = h('div', { class: 'face' })
     const dieBtn = h(
       'button',
@@ -2429,10 +2523,28 @@ export class App {
       ),
     )
 
+    // Le plateau d'avant part avec ses écouteurs : une manche de plus, un
+    // retour depuis les règles, et l'écran se rebâtit de zéro.
+    this.board?.dispose()
     this.board = new BoardView(boardHost, this.session!.game!.variant)
     // Le plateau vient chercher ici la carte qui doit se poser sur un cheval
     // pendant son arrêt sur la case marquée — voir `heldDraw`.
     this.board.onPowerHold((id) => this.playHeldDraw(id))
+    // Le bouton du zoom suit le plateau, et jamais l'inverse : on peut aussi
+    // pincer, et un bouton qui garderait son propre état mentirait dès le
+    // premier pincement.
+    const paintZoom = (): void => {
+      const on = this.board?.zoomedIn() === true
+      zoomBtn.classList.toggle('on', on)
+      zoomBtn.setAttribute('aria-label', t(on ? 'play.zoom.out' : 'play.zoom.in'))
+      zoomBtn.setAttribute('title', t(on ? 'play.zoom.out' : 'play.zoom.in'))
+      // Une bascule, et qui le dit : le bouton s'allume visuellement, et
+      // `aria-pressed` est ce qui rend cet allumage à qui ne le voit pas.
+      zoomBtn.setAttribute('aria-pressed', String(on))
+      fill(zoomBtn, icon(on ? 'shrink' : 'magnify', 19))
+    }
+    this.board.onZoom(paintZoom)
+    paintZoom()
     this.mounts = {
       players: [top, bottom],
       turn: turnMain,
