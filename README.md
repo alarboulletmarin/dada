@@ -188,6 +188,19 @@ un plateau lisible et l'on perdrait le bouton qui permet de jouer. Au repos, un
 doigt sur le plateau ne fait rien d'autre que ce qu'il faisait : il touche un
 cheval.
 
+Le bouton cadre **sur les chevaux jouables**, et non sur le milieu. Sur un
+plateau de petits chevaux, ce qu'on touche est aux quatre coins ou le long d'un
+bras ; grossir au centre — le réflexe naturel — les sortait tous du cadre, et
+l'écran demandait pendant ce temps de choisir un cheval cerclé. Au clavier, la
+tabulation recadre de même : le déplacement est un `transform` et non un
+défilement, donc rien n'y amènerait le focus tout seul.
+
+Le prix, et il faut le dire : sur la surface du plateau, le pincement du
+navigateur ne répond plus, ni pour agrandir la page ni pour la promener une
+fois agrandie. Il reste disponible partout ailleurs. C'est un échange, pas un
+oubli — sur cet écran, le zoom du navigateur donnait un plateau lisible et un
+dé hors de portée, là où celui-ci donne les deux.
+
 **Hors du téléphone.** L'écran de partie est une colonne de 480 pixels, ce qui
 est la bonne largeur pour une barre, deux cartes et un dé — mais le plateau y
 vivait aussi, et sur une tablette il restait à 480 pixels alors qu'il y avait
@@ -225,9 +238,12 @@ Trois corrections de lisibilité vont avec :
 - **Deux chevaux sur une case se voient tous les deux.** Ils étaient décalés de
   quatre pixels pour un disque de dix-huit, c'est-à-dire moins que l'épaisseur
   de leur propre trait : on voyait une tache. Ils se rangent maintenant en
-  ronde et rétrécissent pour se laisser voir — et la ronde compte jusqu'à
-  autant de chevaux qu'il y en a, là où l'ancien calcul reposait le cinquième
-  exactement sur le troisième.
+  ronde et rétrécissent d'autant plus qu'ils sont nombreux — une case abritée
+  de Ludo en porte jusqu'à huit — là où l'ancien calcul reposait le cinquième
+  exactement sur le troisième. Et sur une case partagée, c'est le **disque**
+  qui prend le doigt et non la case : deux boîtes de case écartées d'un quart
+  se recouvrent de moitié, et l'on jouait le cheval de droite en visant le
+  centre de celui de gauche.
 
 Et la cible du doigt déborde de la case : un cheval jouable se touche
 au-delà de son dessin. Une case de 23 pixels sur une croix, de 16 sur un rond,

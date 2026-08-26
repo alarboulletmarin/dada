@@ -1149,9 +1149,12 @@ input:disabled {
 /* ── Le niveau d'un bot, en trois points ───────────────────────────────────
 
    La difficulté se lit comme une jauge de réseau : un point, deux, trois. Elle
-   prend la place que le mot « Bot » occupait, ni plus ni moins — la rangée
-   d'un siège porte déjà le pion, le portrait, le nom et le bouton de retrait,
-   et le seul qui puisse rendre de la place est le nom, qu'on veut lire.
+   coûte une vingtaine de pixels de plus que le mot « Bot » qu'elle remplace —
+   45 contre 22 — et ces vingt pixels sont pris au champ du nom, le seul
+   élastique de la rangée, qui en garde 88 sur un téléphone de 360 points :
+   assez pour lire un prénom. C'est le prix d'un réglage qui n'ajoute aucun
+   objet à une rangée qui en porte déjà quatre ; le mot écrit en toutes
+   lettres, lui, en aurait coûté soixante-dix.
 
    Une pastille creuse, en encre pâle, jusqu'à ce qu'elle se remplisse : c'est
    la même grammaire que le pointillé d'un emplacement d'écurie — ce qui est
@@ -1164,16 +1167,29 @@ input:disabled {
   border: 2px solid var(--line);
   /* Un galet, et non une gélule : le salon porte déjà un interrupteur en
      gélule pour les cases pouvoir, et deux objets de même silhouette qui ne
-     font pas la même chose se lisent l'un pour l'autre. */
-  border-radius: 10px;
+     font pas la même chose se lisent l'un pour l'autre. Six et non dix : à dix
+     pour vingt et un pixels de haut, il ne restait qu'un pixel de côté droit —
+     c'était encore une gélule. */
+  border-radius: 6px;
   background: var(--card);
 }
 
 /* Réglable : elle se tape, donc elle a le relief de ce qui se tape. */
 button.tag--level {
+  position: relative;
   box-shadow: 0 2px 0 var(--shade);
   cursor: pointer;
   transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+/* Vingt et un pixels de haut, dans un écran qui s'impose 44 px partout
+   ailleurs. La cible déborde donc du dessin, comme celle du bouton du zoom et
+   celle d'un cheval jouable : la jauge doit rester courte pour laisser lire le
+   nom du siège, mais un doigt ne vise pas un trait de deux millimètres. */
+button.tag--level::after {
+  content: '';
+  position: absolute;
+  inset: -12px -2px;
 }
 
 button.tag--level:hover {
@@ -1244,10 +1260,6 @@ button.tag--level:active {
   border-radius: 50% 50% 44% 44%;
   background: var(--seat, var(--card));
   box-shadow: inset -4px -5px 0 var(--emboss);
-  color: var(--on, var(--ink));
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
 }
 
 /* ── la marque d'un siège ──────────────────────────────────────────────────
@@ -1946,7 +1958,6 @@ button.tag--level:active {
   width: clamp(24px, 3.4svh, 28px);
   height: clamp(24px, 3.4svh, 28px);
   border-width: 2.5px;
-  font-size: 13px;
 }
 
 /* Le portrait se règle sur le jeton d'à côté : quatre cartes de front sur un
@@ -2401,8 +2412,6 @@ button.tag--level:active {
   border-radius: 50% 50% 44% 44%;
   background: var(--seat);
   box-shadow: var(--sunk);
-  color: var(--mark);
-  font-style: normal;
   transition: transform 0.15s ease;
 }
 
@@ -2452,9 +2461,35 @@ button.tag--level:active {
    décalage seul ne suffit pas — à 78 % de case chacun, deux pions écartés
    restent superposés aux trois quarts, et leurs deux traits d'encre se
    rejoignent en une seule masse. */
+/* Et il rétrécit d'autant plus qu'ils sont nombreux. La ronde tient jusqu'à
+   quatre sans y penser ; au-delà — une case abritée de Ludo en porte jusqu'à
+   huit, et ce n'est pas une vue de l'esprit : mille occurrences sur vingt
+   parties simulées — l'écart entre deux voisins tombe à un cinquième de case,
+   et des disques de 62 % s'y cacheraient aux deux tiers. */
 .pawn.shared i {
-  width: 62%;
-  height: 62%;
+  width: calc(62% - (var(--share-n, 2) - 2) * 4%);
+  height: calc(62% - (var(--share-n, 2) - 2) * 4%);
+}
+
+/* Et là, c'est le DISQUE qui prend le doigt, pas la case.
+
+   Un cheval occupe la boîte entière de sa case, même serré dans un coin par un
+   voisin : deux boîtes écartées de 27 % se recouvrent donc de près de la
+   moitié d'une case, et c'est la dernière dans le document qui répond. Mesuré :
+   au CENTRE du disque de gauche, c'est le cheval de droite qui était joué. Un
+   coup joué ne se défait pas, et « je voulais l'autre » est la pire chose
+   qu'un plateau puisse faire dire.
+
+   La zone débordante disparaît avec, forcément — et c'est le bon prix : une
+   petite cible qui joue le cheval visé vaut mieux qu'une grande qui en joue un
+   autre. Le cheval seul, lui, garde tout ce que la règle ci-dessus lui donne. */
+.pawn.shared.playable {
+  pointer-events: none;
+}
+
+.pawn.shared.playable i {
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .pawn.playable:hover i {
@@ -2635,7 +2670,6 @@ button.tag--level:active {
   width: clamp(22px, 3.2svh, 26px);
   height: clamp(22px, 3.2svh, 26px);
   border-width: 2.5px;
-  font-size: 12px;
 }
 
 .turnline strong {
@@ -4476,6 +4510,16 @@ button.tag--level:active {
     width: calc(100svh - 32px);
     max-width: 52vw;
     margin-inline: -16px 0;
+  }
+
+  /* En paysage court, la ligne de tour tombe à 248 px et le bouton des cartes
+     en prend déjà 93 : la loupe y coûtait la moitié de ce qui restait au titre,
+     et « Tour de Bot 2 » n'y survivait pas. Elle se resserre au lieu de
+     disparaître — c'est là que le plateau est le plus petit (19 px la case
+     contre 26 en portrait), donc là que le zoom sert le plus. */
+  .zoombtn {
+    width: 27px;
+    height: 27px;
   }
 
   /* Les cartes restent côte à côte, comme en portrait. Empilées en colonne,

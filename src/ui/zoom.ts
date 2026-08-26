@@ -162,8 +162,26 @@ export const isDoubleTap = (
 export type BoardZoom = {
   /** Le grossissement courant — ce que le bouton affiche. */
   scale(): number
-  /** Le bouton : un cran de plus, ou le retour au plateau entier. */
-  toggle(): void
+  /**
+   * Le bouton : un cran de plus, ou le retour au plateau entier.
+   *
+   * `offset` est le point à garder sous les yeux, compté depuis le centre du
+   * cadre. Le centre est un mauvais défaut sur un plateau de petits chevaux :
+   * ce qu'on touche est aux QUATRE COINS, et grossir au milieu les sort tous
+   * du cadre. Ce fichier ne sait pas ce qu'est un cheval — c'est bien la
+   * frontière voulue — mais le plateau, lui, le sait, et il vise pour lui.
+   */
+  toggle(offset?: { x: number; y: number }): void
+  /**
+   * Ramène un point du cadre sous les yeux, sans changer le grossissement.
+   *
+   * Sert au clavier : la tabulation atteint un cheval jouable qui se trouve
+   * hors de la fenêtre, et rien ne recadre — le déplacement est un
+   * `transform`, pas un défilement, donc le navigateur ne peut rien faire de
+   * lui-même. Sans ça, un plateau grossi au bouton est un plateau où le jeu
+   * demande de choisir un cheval qu'on ne peut ni voir ni atteindre.
+   */
+  look(offset: { x: number; y: number }): void
   /** Le plateau entier, tout de suite — et le geste en cours oublié. */
   reset(): void
   /**
@@ -417,8 +435,12 @@ export function bindZoom({ frame, layer, onChange, ignore }: Options): BoardZoom
 
   return {
     scale: () => view.scale,
-    toggle: () =>
-      show(zoomed(view.scale) ? REST : zoomTo(view, size(), STEP_SCALE, { x: 0, y: 0 }), true),
+    toggle: (offset = { x: 0, y: 0 }) =>
+      show(zoomed(view.scale) ? REST : zoomTo(view, size(), STEP_SCALE, offset), true),
+    look: (offset) => {
+      if (!zoomed(view.scale)) return
+      show(zoomTo(view, size(), view.scale, offset), true)
+    },
     reset: () => {
       forget()
       show(REST, true)

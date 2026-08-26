@@ -837,6 +837,7 @@ export class App {
         attrs: {
           'aria-label': t('lobby.bot.level', { name, level: label }),
           title: t(`level.${level}.desc` as Key),
+          'data-seat': String(seat),
         },
         on: { click: () => this.session?.setBotLevel(seat, next) },
       },
@@ -1495,6 +1496,14 @@ export class App {
       ? { seat: focused.dataset.seat ?? '', value: focused.value, at: focused.selectionStart }
       : null
 
+    // La jauge de niveau est un cycle : trois pressions pour faire le tour. Or
+    // chaque pression redessine le salon et emporte le bouton avec le reste,
+    // si bien qu'au clavier il fallait retabuler entièrement entre deux crans —
+    // ce qui vide de son sens l'argument même du cycle. Le même remède que pour
+    // le champ du nom, et pour la même raison.
+    const cycling =
+      this.root.querySelector<HTMLElement>('.tag--level:focus')?.dataset.seat ?? null
+
     // Dans l'ordre des sièges, et non dans celui d'arrivée : c'est l'ordre des
     // sièges qui dit les camps (0 et 2 contre 1 et 3) et les couleurs du
     // plateau. Depuis qu'on peut échanger deux places, les deux ordres ne
@@ -1653,14 +1662,20 @@ export class App {
                 ? h('p', { class: 'hint', text: t('lobby.swap.hint') })
                 : teams
                   ? h('p', { class: 'hint', text: t('lobby.teams.hint') })
-                  : // Une jauge de trois points ne dit pas d'elle-même qu'elle
-                    // se touche. La phrase ne paraît que là où le geste existe :
-                    // chez l'hôte, avant le lancement, et s'il y a un bot.
-                    session.isHost &&
-                      !lobby.started &&
-                      lobby.players.some((p) => p.kind === 'bot')
-                    ? h('p', { class: 'hint', text: t('lobby.bot.hint') })
-                    : null,
+                  : null,
+              // Celle-ci s'AJOUTE au rappel des équipes au lieu de lui prendre
+              // sa place, contrairement à la phrase d'échange juste au-dessus.
+              // Les deux ne disent pas la même sorte de chose — l'une est une
+              // règle, l'autre annonce un geste — et rangée dans la même
+              // cascade, celle du geste ne paraissait jamais dans la table la
+              // plus courante pour essayer les équipes : soi et trois bots.
+              // Le salon défile, lui : une ligne de plus ne coûte rien.
+              this.swapping === null &&
+              session.isHost &&
+              !lobby.started &&
+              lobby.players.some((p) => p.kind === 'bot')
+                ? h('p', { class: 'hint', text: t('lobby.bot.hint') })
+                : null,
               canAdd
                 ? h(
                     'div',
@@ -1705,6 +1720,9 @@ export class App {
       ),
     )
     if (scrollTop) this.root.querySelector('.screen')!.scrollTop = scrollTop
+    if (cycling !== null) {
+      this.root.querySelector<HTMLElement>(`.tag--level[data-seat="${cycling}"]`)?.focus()
+    }
     if (!typing) return
     const again = this.root.querySelector<HTMLInputElement>(`.seat input[data-seat="${typing.seat}"]`)
     if (!again) return
@@ -2404,6 +2422,7 @@ export class App {
     // cherchaient. Et au clavier, il n'y a pas de pincement du tout.
     const zoomBtn = h('button', {
       class: 'zoombtn',
+      attrs: { 'aria-label': t('play.zoom.in') },
       on: { click: () => this.board?.toggleZoom() },
     })
     const turn = h('div', { class: 'turnline' }, zoomBtn, turnMain)
@@ -2536,11 +2555,18 @@ export class App {
     const paintZoom = (): void => {
       const on = this.board?.zoomedIn() === true
       zoomBtn.classList.toggle('on', on)
-      zoomBtn.setAttribute('aria-label', t(on ? 'play.zoom.out' : 'play.zoom.in'))
-      zoomBtn.setAttribute('title', t(on ? 'play.zoom.out' : 'play.zoom.in'))
       // Une bascule, et qui le dit : le bouton s'allume visuellement, et
       // `aria-pressed` est ce qui rend cet allumage à qui ne le voit pas.
+      //
+      // L'étiquette, elle, ne bouge PLUS : les deux conventions sont valides
+      // séparément — un libellé qui décrit l'action, ou un nom fixe plus un
+      // état — mais réunies elles se contredisent. Plateau grossi, un lecteur
+      // d'écran annonçait « Revoir tout le plateau, bouton bascule, enfoncé »,
+      // c'est-à-dire « on vous montre déjà tout, et c'est activé » : l'exact
+      // contraire de ce qui était à l'écran. Le nom dit ce qu'est le bouton,
+      // l'état dit où l'on en est.
       zoomBtn.setAttribute('aria-pressed', String(on))
+      zoomBtn.setAttribute('title', t(on ? 'play.zoom.out' : 'play.zoom.in'))
       fill(zoomBtn, icon(on ? 'shrink' : 'magnify', 19))
     }
     this.board.onZoom(paintZoom)

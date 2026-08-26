@@ -175,13 +175,17 @@ describe('le zoom du plateau', () => {
     const btn = ui.byLabel(t('play.zoom.in'))
     expect(btn.classList.contains('zoombtn')).toBe(true)
     expect(wrap.classList.contains('zoomed')).toBe(false)
+    expect(btn.getAttribute('aria-pressed')).toBe('false')
     expect(view.style.transform).toBe('')
 
     btn.click()
-    // L'étiquette suit le plateau : elle dit ce que la touche suivante fera,
-    // et un bouton qui garderait « Agrandir » une fois agrandi mentirait dès
-    // le premier pincement.
-    expect(btn.getAttribute('aria-label')).toBe(t('play.zoom.out'))
+    // C'est `aria-pressed` qui porte l'état, et le libellé qui reste fixe. Les
+    // deux conventions valent séparément — un libellé qui dit l'action à venir,
+    // ou un nom stable doublé d'un état — mais réunies elles se contredisent :
+    // « Revoir tout le plateau, bascule, enfoncé » s'entend comme « on vous
+    // montre déjà tout, et c'est activé », l'exact contraire de l'écran.
+    expect(btn.getAttribute('aria-pressed')).toBe('true')
+    expect(btn.getAttribute('aria-label')).toBe(t('play.zoom.in'))
     expect(wrap.classList.contains('zoomed')).toBe(true)
     // Et le plateau grossit pour de bon. La classe et l'étiquette se posent
     // sur d'autres éléments que la couche : les vérifier seules laisserait
@@ -189,9 +193,39 @@ describe('le zoom du plateau', () => {
     expect(view.style.transform).toMatch(/scale\((?!1\))/)
 
     btn.click()
-    expect(btn.getAttribute('aria-label')).toBe(t('play.zoom.in'))
+    expect(btn.getAttribute('aria-pressed')).toBe('false')
     expect(wrap.classList.contains('zoomed')).toBe(false)
     expect(view.style.transform).toBe('')
+  })
+
+  it('cadre sur les chevaux jouables, et non sur le milieu du plateau', () => {
+    const ui = play()
+    const wrap = ui.find('.board-wrap')!
+    const view = wrap.querySelector<HTMLElement>(':scope > .board-view')!
+
+    // jsdom ne met rien en page : les rectangles se posent à la main. Le cadre
+    // fait 300 px, et le seul cheval jouable est dans son coin haut-gauche —
+    // c'est-à-dire une écurie, l'endroit exact où l'on touche pour sortir.
+    const rect = (el: Element, x: number, y: number, size: number): void => {
+      el.getBoundingClientRect = () =>
+        ({ left: x, top: y, width: size, height: size, right: x + size, bottom: y + size, x, y }) as DOMRect
+    }
+    rect(wrap, 0, 0, 300)
+    Object.defineProperty(wrap, 'clientWidth', { value: 300, configurable: true })
+    const pawn = ui.all('.pawns .pawn')[0]!
+    pawn.classList.add('playable')
+    rect(pawn, 30, 30, 20)
+
+    ui.byLabel(t('play.zoom.in')).click()
+
+    // Grossir au milieu — le défaut naturel — sortait les quatre écuries du
+    // cadre : l'écran demandait de choisir un cheval cerclé et les cerclés
+    // n'étaient plus là. Le décalage doit donc pousser le coin haut-gauche vers
+    // le centre, donc être positif dans les deux sens.
+    const moved = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(view.style.transform)
+    expect(moved, view.style.transform).toBeTruthy()
+    expect(Number(moved![1])).toBeGreaterThan(0)
+    expect(Number(moved![2])).toBeGreaterThan(0)
   })
 
   it('marque chaque cheval du siège auquel il appartient', () => {

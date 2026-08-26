@@ -63,8 +63,15 @@ const headingBetween = (from: Cell, to: Cell): number =>
  *
  * Vingt-sept : c'est ce qui met deux chevaux à 54 % l'un de l'autre, pour des
  * disques rétrécis à 62 % — ils se touchent, ils ne se cachent pas. Au-delà,
- * la ronde déborde sur les cases voisines et l'on ne sait plus de quelle case
- * on parle.
+ * la ronde mordrait franchement sur les cases voisines et l'on ne saurait plus
+ * de quelle case on parle ; à vingt-sept, elle en dépasse déjà de deux
+ * pixels, ce que le trait d'encre des cases suffit à rattraper.
+ *
+ * Le rayon ne bouge pas avec le nombre — c'est le DISQUE qui rétrécit (voir
+ * `.pawn.shared` dans la feuille de style, alimenté par `--share-n`). Élargir
+ * la ronde à cinq ou huit chevaux l'aurait fait déborder d'autant ; la
+ * rétrécir aurait déplacé les deux chevaux du cas courant, qui est cent fois
+ * plus fréquent que tous les autres réunis.
  */
 const SHARE_RADIUS = 27
 
@@ -76,6 +83,12 @@ const SHARE_RADIUS = 27
  * horizontale sur un plateau dont les couloirs sont verticaux. Au-delà, une
  * ronde, la première place en haut.
  */
+/** Le décalage d'un cheval sur sa case, et combien ils y tiennent ensemble. */
+type Offset = { x: number; y: number; n: number }
+
+/** Un cheval seul sur sa case. */
+const ALONE: Offset = { x: 0, y: 0, n: 1 }
+
 export function sharedOffset(i: number, n: number): { x: number; y: number } {
   if (n <= 1) return { x: 0, y: 0 }
   if (n === 2) return { x: i === 0 ? -SHARE_RADIUS : SHARE_RADIUS, y: 0 }
@@ -295,8 +308,19 @@ export class BoardView {
     return el
   }
 
-  private place(el: HTMLElement, cell: Cell, offset: { x: number; y: number }): void {
+  /**
+   * Pose un cheval, et dit du même geste s'il partage sa case.
+   *
+   * La classe suit la POSITION DESSINÉE, et non l'état. Elle suivait l'état, et
+   * un cheval qui allait rejoindre un voisin rétrécissait dès le premier pas :
+   * il traversait le plateau centré et maigre pendant six dixièmes de seconde,
+   * et n'expliquait pourquoi qu'en arrivant. Un cheval qui marche est seul sur
+   * chaque case qu'il traverse — c'est vrai à l'écran, et ce doit l'être ici.
+   */
+  private place(el: HTMLElement, cell: Cell, offset: Offset): void {
     el.style.transform = `translate(${cell.col * 100 + offset.x}%, ${cell.row * 100 + offset.y}%)`
+    el.classList.toggle('shared', offset.n > 1)
+    el.style.setProperty('--share-n', String(offset.n))
   }
 
   /**
@@ -324,16 +348,16 @@ export class BoardView {
    * que soit `n`, et un rayon assez large pour que les disques — rétrécis par
    * la classe `shared`, voir la feuille de style — se distinguent.
    */
-  private offsets(state: GameState): Map<string, { x: number; y: number }> {
+  private offsets(state: GameState): Map<string, Offset> {
     const byCell = new Map<string, string[]>()
     for (const p of state.pawns) {
       const k = key(cellOf(this.geometry, p.owner, p.steps, pawnSlot(p.id)))
       byCell.set(k, [...(byCell.get(k) ?? []), p.id])
     }
 
-    const result = new Map<string, { x: number; y: number }>()
+    const result = new Map<string, Offset>()
     for (const ids of byCell.values()) {
-      ids.forEach((id, i) => result.set(id, sharedOffset(i, ids.length)))
+      ids.forEach((id, i) => result.set(id, { ...sharedOffset(i, ids.length), n: ids.length }))
     }
     return result
   }
@@ -423,14 +447,10 @@ export class BoardView {
       const el = this.pawnEl(p.id, p.owner)
       const move = playable.get(p.id)
 
-      const offset = offsets.get(p.id)!
+      const offset = offsets.get(p.id) ?? ALONE
       el.classList.toggle('playable', move !== undefined)
       el.classList.toggle('chosen', chosen === p.id)
       el.classList.toggle('shielded', p.shield === true)
-      // Un cheval qui partage sa case se serre pour laisser voir l'autre : le
-      // décalage seul ne suffit pas, deux disques de 78 % de case restent
-      // superposés aux trois quarts. Voir `offsets`.
-      el.classList.toggle('shared', offset.x !== 0 || offset.y !== 0)
       el.onclick = move ? () => onPick(p.id) : null
 
       // Un cheval jouable devient un vrai bouton : atteignable au clavier et
@@ -445,11 +465,18 @@ export class BoardView {
           ev.preventDefault()
           onPick(p.id)
         }
+        // La tabulation peut atteindre un cheval qui est hors de la fenêtre
+        // d'un plateau grossi, et rien ne l'y amènerait : le déplacement est un
+        // `transform`, pas un défilement, donc le navigateur ne sait pas
+        // recadrer tout seul. Le plateau vient donc le chercher — c'est ce qui
+        // rend un plateau grossi jouable sans doigts.
+        el.onfocus = () => this.lookAt(p.id)
       } else {
         el.removeAttribute('role')
         el.removeAttribute('tabindex')
         el.removeAttribute('aria-label')
         el.onkeydown = null
+        el.onfocus = null
       }
 
       if (animated?.id !== p.id && !held.has(p.id)) {
@@ -464,7 +491,7 @@ export class BoardView {
 
   private async walk(
     step: { id: string; seat: Seat; from: number; to: number; via?: number },
-    offsets: Map<string, { x: number; y: number }>,
+    offsets: Map<string, Offset>,
     struck: { id: string; seat: Seat }[] = [],
   ): Promise<void> {
     const el = this.pawns.get(step.id)
@@ -515,7 +542,7 @@ export class BoardView {
     step: { id: string; seat: Seat },
     from: number,
     to: number,
-    offsets: Map<string, { x: number; y: number }>,
+    offsets: Map<string, Offset>,
     last: boolean,
   ): Promise<void> {
     const slot = pawnSlot(step.id)
@@ -525,7 +552,7 @@ export class BoardView {
       this.place(
         el,
         cellOf(this.geometry, step.seat, s, slot),
-        settled ? (offsets.get(step.id) ?? { x: 0, y: 0 }) : { x: 0, y: 0 },
+        settled ? (offsets.get(step.id) ?? ALONE) : ALONE,
       )
       await new Promise((r) => setTimeout(r, STEP_MS))
     }
@@ -555,9 +582,48 @@ export class BoardView {
     return zoomed(this.zoom.scale())
   }
 
-  /** Le bouton du zoom : on grossit d'un cran, ou l'on remontre tout. */
+  /**
+   * Le bouton du zoom : on grossit d'un cran, ou l'on remontre tout.
+   *
+   * Et l'on grossit **là où l'on va jouer**. Sur un plateau de petits chevaux,
+   * ce qu'on touche est aux quatre coins — les écuries — ou le long d'un bras ;
+   * grossir sur le milieu, qui est le défaut naturel, les faisait tous sortir
+   * du cadre. Mesuré : après un appui sur le bouton, les quatre écuries avaient
+   * leur centre hors du cadre, et l'écran demandait pendant ce temps de choisir
+   * un cheval cerclé. Le bouton visait donc précisément l'endroit où il n'y a
+   * jamais rien à faire.
+   */
   toggleZoom(): void {
-    this.zoom.toggle()
+    this.zoom.toggle(this.aimOfPlayable())
+  }
+
+  /**
+   * Le milieu des chevaux jouables, en écart au centre du cadre.
+   *
+   * Rien à viser — c'est le tour d'un autre, ou le dé n'est pas lancé — et l'on
+   * s'en remet au centre : mieux vaut le milieu du plateau qu'un coin choisi au
+   * hasard.
+   */
+  private aimOfPlayable(): { x: number; y: number } {
+    const boxes = [...this.pawns.values()]
+      .filter((el) => el.classList.contains('playable'))
+      .map((el) => el.getBoundingClientRect())
+    if (boxes.length === 0) return { x: 0, y: 0 }
+    const frame = this.root.getBoundingClientRect()
+    const cx = boxes.reduce((n, b) => n + b.left + b.width / 2, 0) / boxes.length
+    const cy = boxes.reduce((n, b) => n + b.top + b.height / 2, 0) / boxes.length
+    return { x: cx - (frame.left + frame.width / 2), y: cy - (frame.top + frame.height / 2) }
+  }
+
+  /** Amène ce cheval sous les yeux, si le plateau est grossi. */
+  private lookAt(id: string): void {
+    const box = this.pawns.get(id)?.getBoundingClientRect()
+    if (!box) return
+    const frame = this.root.getBoundingClientRect()
+    this.zoom.look({
+      x: box.left + box.width / 2 - (frame.left + frame.width / 2),
+      y: box.top + box.height / 2 - (frame.top + frame.height / 2),
+    })
   }
 
   /** Ce qu'il faut repeindre quand le grossissement change — le bouton. */
@@ -646,7 +712,7 @@ export class BoardView {
    */
   private async sendHome(
     struck: { id: string; seat: Seat }[],
-    offsets: Map<string, { x: number; y: number }>,
+    offsets: Map<string, Offset>,
   ): Promise<void> {
     if (struck.length === 0) return
 
@@ -658,7 +724,7 @@ export class BoardView {
       if (!el) continue
       el.classList.remove('struck')
       const slot = pawnSlot(p.id)
-      this.place(el, cellOf(this.geometry, p.seat, STABLE, slot), offsets.get(p.id) ?? { x: 0, y: 0 })
+      this.place(el, cellOf(this.geometry, p.seat, STABLE, slot), offsets.get(p.id) ?? ALONE)
     }
   }
 
