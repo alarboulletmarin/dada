@@ -169,6 +169,87 @@ constante** et non à angle constant : sur une courbe qui ondule, l'angle
 constant les écarte sur les bosses et les entasse dans les creux, et le plateau
 se lit alors comme un défaut d'impression.
 
+## Le plateau, en grand
+
+Sur un téléphone tenu debout, le plateau occupe déjà toute la largeur de
+l'écran, et c'est **la largeur** qui le limite — pas la hauteur. Il reste
+cinquante à cent cinquante pixels de haut inutilisés au-dessus et au-dessous,
+parce qu'un carré ne peut pas être plus large que l'écran. Comprimer la barre
+du haut, les cartes des joueurs ou la ligne du dé n'agrandit donc pas le
+plateau d'un pixel : ça agrandit le vide. Trois choses le rendent réellement
+plus grand, et une quatrième le rend lisible.
+
+**Le zoom.** Pincer, taper deux fois, ou toucher la loupe à gauche de la ligne
+de tour : le plateau grossit jusqu'à deux fois et demie **dans son cadre**,
+pendant que le dé, les cartes et la barre du haut ne bougent pas. Une fois
+grossi, un doigt le promène. Le zoom du navigateur, lui, grossirait la page
+entière et pousserait le dé hors d'un écran qui ne défile jamais — on gagnerait
+un plateau lisible et l'on perdrait le bouton qui permet de jouer. Au repos, un
+doigt sur le plateau ne fait rien d'autre que ce qu'il faisait : il touche un
+cheval.
+
+Le bouton cadre **sur les chevaux jouables**, et non sur le milieu. Sur un
+plateau de petits chevaux, ce qu'on touche est aux quatre coins ou le long d'un
+bras ; grossir au centre — le réflexe naturel — les sortait tous du cadre, et
+l'écran demandait pendant ce temps de choisir un cheval cerclé. Au clavier, la
+tabulation recadre de même : le déplacement est un `transform` et non un
+défilement, donc rien n'y amènerait le focus tout seul.
+
+Le prix, et il faut le dire : sur la surface du plateau, le pincement du
+navigateur ne répond plus, ni pour agrandir la page ni pour la promener une
+fois agrandie. Il reste disponible partout ailleurs. C'est un échange, pas un
+oubli — sur cet écran, le zoom du navigateur donnait un plateau lisible et un
+dé hors de portée, là où celui-ci donne les deux.
+
+**Hors du téléphone.** L'écran de partie est une colonne de 480 pixels, ce qui
+est la bonne largeur pour une barre, deux cartes et un dé — mais le plateau y
+vivait aussi, et sur une tablette il restait à 480 pixels alors qu'il y avait
+la place pour neuf cents. Le plateau sort donc de la colonne : le reste garde
+ses 480 pixels et reste centré, lui prend ce qui existe. Sur un iPad Pro il
+passe de 480 à 943 pixels — la case double.
+
+**Sur un écran court**, où c'est la hauteur qui commande, quelques pixels ont
+été rendus là où ils ne servaient à rien : des interlignes de 1,5 hérités du
+corps de page sur des textes d'une seule ligne, et une pastille de code qui ne
+se réglait sur rien.
+
+**Et tout le dessin suit la taille de la case.** C'est le vrai changement. Les
+traits, les rayons, les anneaux et les chiffres étaient écrits en pixels fixes,
+calibrés sur la croix — la forme aux plus grandes cases. Sur un plateau rond,
+où la même largeur d'écran doit loger vingt et une cases au lieu de quinze, ces
+pixels-là mangeaient près d'un tiers de chaque case et l'anneau d'un cheval
+jouable débordait de sa case de plus d'une case entière. Tout est maintenant
+exprimé en fraction de case, avec un plancher et un plafond.
+
+Trois corrections de lisibilité vont avec :
+
+- **Les marques de siège sont des formes**, plus des caractères. `● ▲ ■ ◆`
+  n'appartiennent à aucune des fontes embarquées : ils retombaient sur celle du
+  système — un dessin par téléphone — et à dix pixels le losange et le triangle
+  se confondaient. C'est pourtant la seule chose qui dise à qui est un cheval
+  quand on ne distingue pas les couleurs, et les quatre couleurs de siège ont
+  presque la même luminance. Ce sont donc un disque, un triangle, un carré et
+  une croix, découpés en CSS.
+- **Ce qui est gravé sur une couleur de camp est sombre.** La crème d'avant
+  donnait 1,6 sur le jaune et 2,5 sur le vert ; l'étoile d'une case abritée
+  était de la teinte de son propre fond, et les chiffres d'un escalier
+  illisibles sur trois camps sur quatre — alors que la règle française réclame
+  précisément le chiffre exact de la marche visée.
+- **Deux chevaux sur une case se voient tous les deux.** Ils étaient décalés de
+  quatre pixels pour un disque de dix-huit, c'est-à-dire moins que l'épaisseur
+  de leur propre trait : on voyait une tache. Ils se rangent maintenant en
+  ronde et rétrécissent d'autant plus qu'ils sont nombreux — une case abritée
+  de Ludo en porte jusqu'à huit — là où l'ancien calcul reposait le cinquième
+  exactement sur le troisième. Et sur une case partagée, c'est le **disque**
+  qui prend le doigt et non la case : deux boîtes de case écartées d'un quart
+  se recouvrent de moitié, et l'on jouait le cheval de droite en visant le
+  centre de celui de gauche.
+
+Et la cible du doigt déborde de la case : un cheval jouable se touche
+au-delà de son dessin. Une case de 23 pixels sur une croix, de 16 sur un rond,
+c'était le seul endroit du jeu à ne pas respecter les 44 pixels que le reste de
+l'écran s'impose — et c'est là que se jouent tous les coups.
+
 ## Les cases pouvoir
 
 Optionnelles, activées dans le salon. Huit cases marquées sur le circuit ;
@@ -394,7 +475,59 @@ l'information, pas du décor.
 **Un bot prend son temps.** Il ne réfléchit pas, et le tour d'un bot ne compte
 pas dans le temps de réflexion : son délai n'existe que pour ceux qui regardent.
 À sept dixièmes de seconde, ses trois gestes se confondaient en un clignement et
-une table de bots devenait un défilé.
+une table de bots devenait un défilé. Le délai fait aussi partie du personnage :
+un bot redoutable répond du tac au tac, un bot tranquille prend son temps.
+
+### Le niveau d'un bot
+
+Trois niveaux — **tranquille**, **normal**, **redoutable** — réglés **siège par
+siège**, dans le salon : on touche les trois points posés sur la rangée du bot,
+et ils tournent. Par siège et non par table, parce qu'à quatre on veut souvent
+un adversaire sérieux et deux qui laissent respirer.
+
+La difficulté ne se règle pas en tirant au hasard dans les coups légaux. Un bot
+qui refuserait une capture gratuite ou ressortirait un cheval de son escalier ne
+serait pas facile, il serait cassé : on ne joue pas contre lui, on le regarde se
+tromper. Ce qui change d'un niveau à l'autre, c'est **ce qu'il voit**.
+
+| | tranquille | normal | redoutable |
+|---|---|---|---|
+| voit les chevaux qui peuvent le manger | non | oui | oui |
+| compte ce qu'une capture rapporte vraiment | non | non | oui |
+| sait qu'une case étoilée le met à l'abri | non | oui | oui, et la recherche |
+| sait que manger rend la main | non | non | oui |
+| bloque la sortie d'un adversaire | non | non | oui |
+| oublie une capture | un tour sur quatre | jamais | jamais |
+| joue son deuxième meilleur coup | un tour sur trois | jamais | jamais |
+| ses cartes | quand sa main déborde | protège et finit | protège, finit, et fuit |
+| dépense ses bonus de dé | non | non | oui, en en gardant un pour l'arrivée |
+| son délai | 1,45 s | 1,15 s | 0,85 s |
+
+Le résultat du niveau tranquille est reconnaissable : il avance, il se gare
+devant un adversaire, il se fait manger, il oublie une carte. C'est l'erreur
+humaine ordinaire — pas un coup absurde. Il ne joue jamais son **plus mauvais**
+coup : un bot qui le ferait ne rendrait pas la partie plus facile, il la
+rendrait interminable.
+
+Cent quatre-vingts duels simulés, sur trois jeux de règles et les deux sièges
+alternés, donnent la mesure : **redoutable** l'emporte sur **tranquille** dans
+78 % des parties, **normal** dans 76 %, et **redoutable** sur **normal** dans
+56 %. L'écart entre les deux niveaux hauts est modeste, et c'est normal — ils
+jouent le même jeu, l'un compte simplement mieux ; c'est l'écart avec le niveau
+bas qui devait se sentir, et il se sent.
+
+Ses hésitations se tirent de l'état de la partie, jamais de `Math.random` : une
+partie doit se rejouer à l'identique à graine égale, et consommer le générateur
+du jeu ferait changer le **dé** selon ce que le bot a pensé.
+
+Un bot qui prend le siège d'un joueur parti n'a rien choisi : il joue au niveau
+normal, celui du jeu, et son siège garde le mot « bot » plutôt qu'une jauge —
+c'est « quelqu'un manque » qu'il faut y lire, pas un réglage.
+
+Le niveau vit dans le **salon** et non dans les règles de la partie : ce n'est
+pas une règle du jeu, il ne voyage pas dans l'état et il n'entre pas dans la
+sauvegarde. Le bot ne joue que chez l'hôte, donc ce champ n'a jamais besoin
+d'être exact ailleurs — il n'y sert qu'à être lu.
 
 **Un coup sans choix se joue tout seul.** Un seul coup possible, ou aucun, et le
 tour part de lui-même après un temps de lecture. Une carte jouable en main
@@ -537,7 +670,7 @@ src/game/     moteur pur — (état, action) → état. Aucun DOM, aucun réseau
   engine.ts     règles, coups légaux, enchaînement des tours
   variants.ts   les jeux de règles
   powers.ts     le paquet de bonus et de malus
-  bot.ts        adversaire artificiel
+  bot.ts        adversaire artificiel, en trois niveaux
   rng.ts        aléatoire déterministe (mulberry32), mélange compris
 src/net/      transport pair-à-pair et orchestration de la partie
   room.ts       canaux WebRTC, code de partie, identité de l'appareil
@@ -546,6 +679,8 @@ src/net/      transport pair-à-pair et orchestration de la partie
   presence.ts   les délais : dix secondes pour jouer, quarante-cinq d'absence
                 avant qu'un bot n'entre, et le battement qui dit qui est là
 src/ui/       écrans, plateau, animations
+  board-view.ts le plateau : la grille posée une fois, les chevaux qui marchent
+  zoom.ts       pincer et promener le plateau dans son cadre
   rules-text.ts le règlement complet — un document, pas des libellés
   qr.ts         le carré du salon : un encodeur QR entier, sans dépendance
   avatar.ts     le portrait d'un joueur, tiré de son nom

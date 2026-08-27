@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { geometryFor, isOnTrack, trackIndexOf } from './board.ts'
-import { chooseMove, choosePower } from './bot.ts'
+import { botTurn } from './bot.ts'
 import { apply, createGame, handOf, sameTeam, teamOf } from './engine.ts'
 import { HAND_LIMIT } from './powers.ts'
 import { STABLE, type Action, type GameState, type Pawn, type Player, type Seat } from './types.ts'
@@ -157,15 +157,6 @@ function friendlyFire(state: GameState, seen: number, ctx: string): string | nul
   return null
 }
 
-/** Ce que le bot ferait maintenant : une carte s'il en a une qui vaut le coup, sinon le tour. */
-function nextAction(state: GameState): Action {
-  const power = choosePower(state)
-  if (power) return power
-  if (state.phase === 'rolling') return { type: 'roll' }
-  const move = chooseMove(state)
-  return move ? { type: 'move', pawnId: move.pawnId } : { type: 'pass' }
-}
-
 /** Le cheval que cette action déplace, s'il y en a un. */
 const actingPawn = (action: Action): string | undefined =>
   action.type === 'move' ? action.pawnId : action.type === 'power' ? action.pawnId : undefined
@@ -184,7 +175,7 @@ function playOut(variantId: string, powers: boolean, seed: number): GameState {
 
   let actions = 0
   while (fault === null && state.phase !== 'finished' && actions < MAX_ACTIONS) {
-    const action = nextAction(state)
+    const action = botTurn(state)
     const before = deepFreeze(state)
     const seen = before.logSeq ?? 0
 

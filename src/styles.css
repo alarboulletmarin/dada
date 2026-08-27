@@ -22,6 +22,17 @@
   /* Le creux gravé dans un pion : toujours sombre, comme les couleurs de siège
      qui ne changent pas d'un thème à l'autre. */
   --emboss: rgba(30, 20, 14, 0.18);
+  /* Ce qu'on grave PAR-DESSUS une couleur de siège : la marque d'un pion, la
+     flèche d'une case de départ. Sombre en toutes circonstances, et pour la
+     même raison que `--emboss` — le fond, lui, ne change pas d'un thème à
+     l'autre, donc l'encre posée dessus ne le doit pas non plus.
+
+     C'est aussi une question de lisibilité, et pas seulement de cohérence : la
+     crème de `--on-N` ne donne que 2,5 sur le vert, 3,0 sur le bleu et 1,6 sur
+     le jaune, là où ce brun donne 5,3, 4,4 et 8,3. Une marque de siège est le
+     seul repère de qui joue ce cheval quand on ne distingue pas les couleurs —
+     elle ne peut pas être ce qu'on voit le moins bien. */
+  --mark: rgba(28, 19, 13, 0.88);
   --dot: rgba(var(--ink-rgb), 0.1);
 
   --red: #e9564b;
@@ -38,6 +49,18 @@
   /* Sièges autour du plateau : 0 haut-gauche, puis sens horaire.
      `--on-N` est la couleur du texte lisible sur ce fond — le jaune est le
      seul à réclamer de l'encre plutôt que de la crème. */
+  /* La part de couleur d'une marche d'escalier.
+
+     Un jeton et non une valeur écrite dans la règle, parce que c'est la seule
+     façon de la faire varier avec le thème sans dupliquer la règle. Le rang de
+     la marche est imprimé dessus en encre, et l'encre change de bord d'un
+     thème à l'autre : sur papier, un mélange chargé reste clair et l'encre
+     sombre s'y lit ; sur fond de nuit, le même mélange chargé reste clair lui
+     aussi — c'est la couleur de siège qui domine — et l'encre, devenue claire,
+     n'y tient plus. Le jaune tombait ainsi à 2,5. Moins de couleur en sombre,
+     et le mélange redescend vers le papier de nuit, où l'encre claire se lit. */
+  --home-tint: 62%;
+
   --seat-0: var(--green);
   --seat-1: var(--yellow);
   --seat-2: var(--blue);
@@ -84,6 +107,7 @@
     --card: #2a211a;
     --shade: #0b0806;
     --dot: rgba(var(--ink-rgb), 0.07);
+    --home-tint: 40%;
     color-scheme: dark;
   }
 }
@@ -95,6 +119,7 @@
   --card: #2a211a;
   --shade: #0b0806;
   --dot: rgba(var(--ink-rgb), 0.07);
+  --home-tint: 40%;
   color-scheme: dark;
 }
 
@@ -1121,6 +1146,74 @@ input:disabled {
   color: var(--muted);
 }
 
+/* ── Le niveau d'un bot, en trois points ───────────────────────────────────
+
+   La difficulté se lit comme une jauge de réseau : un point, deux, trois. Elle
+   coûte une vingtaine de pixels de plus que le mot « Bot » qu'elle remplace —
+   45 contre 22 — et ces vingt pixels sont pris au champ du nom, le seul
+   élastique de la rangée, qui en garde 88 sur un téléphone de 360 points :
+   assez pour lire un prénom. C'est le prix d'un réglage qui n'ajoute aucun
+   objet à une rangée qui en porte déjà quatre ; le mot écrit en toutes
+   lettres, lui, en aurait coûté soixante-dix.
+
+   Une pastille creuse, en encre pâle, jusqu'à ce qu'elle se remplisse : c'est
+   la même grammaire que le pointillé d'un emplacement d'écurie — ce qui est
+   là, et ce qui pourrait l'être. */
+.seat .tag--level {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 7px;
+  border: 2px solid var(--line);
+  /* Un galet, et non une gélule : le salon porte déjà un interrupteur en
+     gélule pour les cases pouvoir, et deux objets de même silhouette qui ne
+     font pas la même chose se lisent l'un pour l'autre. Six et non dix : à dix
+     pour vingt et un pixels de haut, il ne restait qu'un pixel de côté droit —
+     c'était encore une gélule. */
+  border-radius: 6px;
+  background: var(--card);
+}
+
+/* Réglable : elle se tape, donc elle a le relief de ce qui se tape. */
+button.tag--level {
+  position: relative;
+  box-shadow: 0 2px 0 var(--shade);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+/* Vingt et un pixels de haut, dans un écran qui s'impose 44 px partout
+   ailleurs. La cible déborde donc du dessin, comme celle du bouton du zoom et
+   celle d'un cheval jouable : la jauge doit rester courte pour laisser lire le
+   nom du siège, mais un doigt ne vise pas un trait de deux millimètres. */
+button.tag--level::after {
+  content: '';
+  position: absolute;
+  inset: -12px -2px;
+}
+
+button.tag--level:hover {
+  border-color: var(--ink);
+}
+
+button.tag--level:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+.tag__dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+}
+
+.tag__dot.on {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
 /* En équipes, la place à table est une règle : 0 et 2 contre 1 et 3. L'étiquette
    passe devant le pion, là où l'œil descend la colonne des sièges, et les deux
    camps se distinguent au fond autant qu'au texte — le liseré de gauche est ce
@@ -1167,10 +1260,77 @@ input:disabled {
   border-radius: 50% 50% 44% 44%;
   background: var(--seat, var(--card));
   box-shadow: inset -4px -5px 0 var(--emboss);
-  color: var(--on, var(--ink));
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
+}
+
+/* ── la marque d'un siège ──────────────────────────────────────────────────
+   Une forme découpée, et non un caractère.
+
+   C'étaient quatre glyphes géométriques — `● ▲ ■ ◆`. Aucun n'appartient au
+   sous-ensemble latin des fontes embarquées avec l'app : tous les quatre
+   retombaient sur la police du système, donc sur un dessin qui change d'un
+   téléphone à l'autre, et à la taille d'un pion le losange et le triangle du
+   même système se confondaient déjà.
+
+   Ce n'est pas de la coquetterie. Les quatre couleurs de siège ont presque la
+   même luminance — en niveaux de gris, le vert, le bleu et le rouge sont
+   indiscernables — et cette marque est le seul moyen de savoir à qui est un
+   cheval quand on ne distingue pas les couleurs. Elle ne peut pas dépendre de
+   ce que le système a bien voulu installer.
+
+   Quatre silhouettes qui ne se ressemblent pas : le disque, le triangle, le
+   carré, la croix. Le losange a disparu au profit de la croix, précisément
+   parce qu'un losange EST un carré tourné, et qu'un petit losange est un
+   triangle pour l'œil pressé. */
+.token::after,
+.pawn i::after {
+  content: '';
+  display: block;
+  width: 44%;
+  height: 44%;
+  background: var(--mark);
+}
+
+/* Le siège vide n'a personne, donc pas de marque. */
+.token:not([data-seat])::after {
+  display: none;
+}
+
+.token[data-seat='0']::after,
+.pawn[data-seat='0'] i::after {
+  border-radius: 50%;
+}
+
+.token[data-seat='1']::after,
+.pawn[data-seat='1'] i::after {
+  /* Un triangle « lourd » : la même encre qu'un disque de même boîte, sans
+     quoi il paraîtrait deux fois plus petit que les autres marques. */
+  clip-path: polygon(50% 0%, 100% 92%, 0% 92%);
+  transform: scale(1.14);
+}
+
+.token[data-seat='2']::after,
+.pawn[data-seat='2'] i::after {
+  border-radius: 14%;
+  transform: scale(0.9);
+}
+
+.token[data-seat='3']::after,
+.pawn[data-seat='3'] i::after {
+  clip-path: polygon(
+    34% 0%,
+    66% 0%,
+    66% 34%,
+    100% 34%,
+    100% 66%,
+    66% 66%,
+    66% 100%,
+    34% 100%,
+    34% 66%,
+    0% 66%,
+    0% 34%,
+    34% 34%
+  );
+  transform: scale(1.1);
 }
 
 /* ─────────────────────────── portraits ───────────────────────────
@@ -1341,13 +1501,43 @@ input:disabled {
   /* Les écarts se compriment sur les écrans courts au lieu de rogner le
      plateau : c'est lui la pièce maîtresse, tout le reste est du décor. */
   gap: clamp(5px, 1.1svh, 16px);
-  width: min(100%, 480px);
+  /* Le plateau vit dans cette colonne, et il en héritait le plafond : sur un
+     iPad Pro il restait à 480 px — une case de 32 px — alors que la tablette
+     en offrait plus de neuf cents. Le jeu se jouait à la taille d'un téléphone
+     sur un écran quatre fois plus grand.
+
+     La colonne s'élargit donc jusqu'à ce que le plateau, qui est carré, n'ait
+     plus rien à en faire — au-delà de la hauteur disponible, la largeur gagnée
+     ne sert plus à rien. `max()` et pas une requête de média : une bascule à un
+     pixel près faisait sauter la barre du haut de quatre-vingts pixels pendant
+     que le plateau gagnait un pixel, ce qui se voit et ne se justifie pas.
+     Sous 480 px de large — c'est-à-dire sur tous les téléphones — `min(100%,…)`
+     retient déjà `100%` et rien ne change.
+
+     Ce qui s'élargit, c'est la colonne, pas ce qu'elle contient : les cartes
+     des joueurs, la ligne de tour et le dé gardent leurs 480 px (voir plus
+     bas). Seuls le plateau et la barre du haut prennent le reste. */
+  width: min(100%, max(480px, 88svh));
   margin: 0 auto;
   /* La réserve du bas n'est pas décorative : le dé penche de 7° et porte une
      ombre de 6 px, les deux débordent de sa boîte. Sans elle, `overflow: hidden`
      lui coupe les pieds. */
   padding: clamp(6px, 1.2svh, 12px) 16px clamp(12px, 1.8svh, 18px);
   overflow: hidden;
+}
+
+/* Seuls le plateau et la barre du haut profitent d'une colonne élargie. Une
+   carte de joueur de sept cents pixels de large pour un nom de six lettres, un
+   dé perdu au milieu d'une ligne vide : ce qui se lit bien à 480 px n'a rien à
+   gagner au-delà. La barre, elle, garde toute la largeur — le retour et les
+   règles sont des coins d'écran, et un bouton de retour qui flotte au milieu
+   du vide ne se trouve plus là où la main va le chercher. */
+.play > .linkbar,
+.play > .players,
+.play > .turnline,
+.play > .dice-row {
+  width: min(100%, 480px);
+  margin-inline: auto;
 }
 
 .play .topbar {
@@ -1370,11 +1560,18 @@ input:disabled {
    l'écran est plus étroit encore, elle rogne le code plutôt que de pousser un
    bouton dehors : un code à moitié lu se relit dans le salon, un bouton
    invisible ne se retrouve pas. */
+/* Et elle rend aussi de la hauteur. C'est le seul bloc de la barre du haut à
+   ne pas se régler sur l'écran : 17 px de texte et 7 px de marge, écrits en
+   dur, lui donnaient 45,5 px là où les boutons voisins en font 39. Six
+   pixels et demi de barre en trop, sur tous les écrans en ligne, pour une
+   pastille qu'on ne fait que lire. */
 .play .topbar .pill {
   flex: 0 1 auto;
   min-width: 0;
+  padding-block: 5px;
   padding-inline: 12px;
   overflow: hidden;
+  font-size: 16px;
 }
 
 .play .topbar .pill small {
@@ -1761,7 +1958,6 @@ input:disabled {
   width: clamp(24px, 3.4svh, 28px);
   height: clamp(24px, 3.4svh, 28px);
   border-width: 2.5px;
-  font-size: 13px;
 }
 
 /* Le portrait se règle sur le jeton d'à côté : quatre cartes de front sur un
@@ -1804,10 +2000,17 @@ input:disabled {
    plus qui rognait quelques pixels — et le plateau, qui se dimensionne sur la
    hauteur restante, reculait d'autant. Une carte de joueur doit avoir la même
    hauteur du début à la fin de la partie. */
+/* `line-height` explicite, et ce n'est pas de la coquetterie : sans lui, la
+   ligne héritait du 1,5 du corps de page, si bien qu'un texte de 11,5 px
+   occupait 17,25 px. Quatre pixels de trop par carte, huit pour les deux
+   rangées — huit pixels que le plateau récupère sur les écrans où c'est la
+   hauteur qui le limite, et rien de perdu en lisibilité : une ligne unique,
+   coupée à l'ellipse, n'a pas d'interligne à donner à quoi que ce soit. */
 .pcard .meta {
   overflow: hidden;
   font-size: clamp(10px, 1.5svh, 11.5px);
   font-weight: 700;
+  line-height: 1.2;
   color: var(--muted);
   opacity: 0.85;
   text-overflow: ellipsis;
@@ -1874,7 +2077,108 @@ input:disabled {
   aspect-ratio: 1;
   border-radius: clamp(12px, 3.5cqw, 22px);
   background: var(--card);
+  /* `clip` plutôt que `hidden` : un cadre en `hidden` qui contient une couche
+     grossie devient un conteneur DÉFILABLE, et le navigateur s'autorise alors
+     à le faire défiler tout seul pour amener à l'écran un cheval qu'on vient
+     d'atteindre au clavier. Ce défilement-là ne passe par aucun de nos
+     calculs : le plateau se retrouve décalé d'une quantité que ni le
+     pincement ni le bouton ne savent défaire. `hidden` reste écrit d'abord,
+     pour les navigateurs qui ne connaissent pas encore `clip` — sans lui, la
+     déclaration inconnue serait ignorée et le plateau déborderait de la page. */
   overflow: hidden;
+  overflow: clip;
+  /* Le cadre est lui-même une référence de mesure, et c'est de là que tout le
+     dessin ci-dessous tire son échelle (voir `--cell`). Sans cela, la seule
+     unité disponible à l'intérieur du plateau était `cqw` — la largeur du
+     CRÉNEAU, pas celle du plateau — qui surestime le plateau de toute la
+     hauteur manquante dès que c'est la hauteur qui contraint, c'est-à-dire le
+     cas normal sur un téléphone couché ou court. */
+  container-type: inline-size;
+  /* Le pincement du navigateur zoomerait la PAGE : un plateau plus gros dans
+     un écran qui ne défile pas — la coque fait `100svh` — et qu'il faut
+     ensuite promener à deux doigts pour retrouver le dé. Le geste est donc
+     pris ici et rendu au plateau lui-même (voir `ui/zoom.ts`), qui grossit
+     dans son cadre pendant que le dé et les cartes restent en place.
+
+     Le prix est réel et il faut le dire : sur la surface du plateau — qui est
+     la plus grande de l'écran — le pincement du navigateur ne répond plus, ni
+     pour agrandir la page ni pour la promener une fois agrandie. Il reste
+     disponible partout ailleurs : la barre du haut, les cartes des joueurs, la
+     ligne de tour, le dé. C'est un échange, pas un oubli : sur cet écran-là,
+     le zoom du navigateur donnait un plateau lisible et un dé hors de portée,
+     là où celui-ci donne les deux. */
+  touch-action: none;
+}
+
+/* La couche qui porte le zoom, et rien d'autre.
+
+   Le grossissement ne peut se poser ni sur `.board` ni sur `.pawns` — il
+   faudrait l'écrire deux fois et les tenir d'accord — ni sur `.pawn`, qui
+   dépense déjà son `transform` à se placer. Une couche par-dessus les deux,
+   c'est un seul `transform` à écrire et le compte des cases reste juste :
+   `--cell` mesure le plateau au repos, et l'agrandissement s'applique à tout
+   le dessin d'un coup, traits compris. */
+.board-view {
+  position: absolute;
+  inset: 0;
+  transform-origin: center;
+
+  /* ── L'échelle du plateau ──────────────────────────────────────────────
+     Une case, en pixels réels. Tout le trait du plateau en découle.
+
+     Rien de tout cela n'était indexé dessus : les bordures, les anneaux et les
+     glyphes étaient écrits en pixels fixes, calibrés à l'œil sur la croix — la
+     forme aux plus GRANDES cases. Sur un plateau rond, où la même largeur
+     d'écran doit loger 20,8 cases au lieu de 15, la case tombe à 16 px et ces
+     mêmes pixels fixes en mangeaient près d'un tiers : le circuit se lisait
+     comme un maillage d'encre, et l'anneau d'un cheval jouable débordait de sa
+     case de plus d'une case entière.
+
+     Les bornes ne sont pas décoratives : sous 1 px un trait disparaît sur un
+     écran non rétina, et au-delà du plafond un plateau de bureau se met à
+     porter des traits de crayon gras. */
+  --cell: calc(100cqi / var(--grid, 15));
+  --stroke: clamp(1px, calc(var(--cell) * 0.075), 2px);
+  --stroke-ink: clamp(1.4px, calc(var(--cell) * 0.11), 2.5px);
+  --stroke-block: clamp(2px, calc(var(--cell) * 0.14), 3.5px);
+  /* Les deux rayons de l'anneau d'un cheval : le jour, puis l'encre. */
+  --halo: clamp(2px, calc(var(--cell) * 0.085), 3.5px);
+  --halo-out: clamp(3.5px, calc(var(--cell) * 0.17), 7px);
+  --halo-far: clamp(4.5px, calc(var(--cell) * 0.22), 9px);
+  /* Le creux gravé dans un pion. Écrit une fois ici plutôt que recopié dans
+     les dix règles qui le portent — il l'était, et le faire suivre l'échelle
+     demandait dix corrections identiques. */
+  --sunk: inset calc(var(--cell) * -0.12) calc(var(--cell) * -0.16) 0 var(--emboss);
+}
+
+/* Le bouton et le double appui glissent ; le pincement, lui, colle au doigt.
+   Une transition pendant un pincement fait traîner le plateau derrière les
+   doigts, et l'on croit que le geste ne marche pas. */
+.board-view.gliding {
+  transition: transform 0.2s ease;
+}
+
+/* Le plateau grossi montre son bord : sans lui, un plateau qu'on a poussé
+   jusqu'au bout ressemble à un plateau bloqué plutôt qu'à une fenêtre qu'on
+   promène.
+
+   Une bordure posée PAR-DESSUS, et non une ombre intérieure : les cases sont
+   opaques et couvrent le fond du cadre, donc tout ce qui se peint sous elles
+   ne se voit pas. */
+.board-wrap.zoomed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: var(--bw) solid var(--ink);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-view.gliding {
+    transition-duration: 0.01ms;
+  }
 }
 
 /* Les cases sont posées en pourcentage, pas en cellules de grille : c'est ce
@@ -1884,7 +2188,6 @@ input:disabled {
 .board {
   position: absolute;
   inset: 0;
-  touch-action: manipulation;
 }
 
 .board > * {
@@ -1905,17 +2208,24 @@ input:disabled {
    3. autour d'un bloc (écurie, enclos, escalier, cœur) — de l'encre épaisse. */
 .cell {
   background: var(--card);
-  border: 1.5px solid var(--line);
+  border: var(--stroke) solid var(--line);
 }
 
 /* Case abritée : teintée du camp à qui elle sert de relais, avec une étoile
-   pleine — au milieu de la grille pâle, elle doit sauter aux yeux. */
+   pleine — au milieu de la grille pâle, elle doit sauter aux yeux.
+
+   L'étoile est d'encre et non de la couleur du camp. Elle l'était, et c'était
+   exactement le contraire de ce que la phrase ci-dessus annonce : une étoile
+   de la teinte de son propre fond, en plus saturé, donne 1,4 sur le jaune et
+   2,1 sur le vert en thème clair — on ne la voyait tout simplement pas. Le
+   camp, lui, est déjà dit par la teinte du fond ; l'étoile n'a qu'à dire
+   « ici, on ne se fait pas manger ». */
 .cell.safe {
   display: grid;
   place-items: center;
-  border: 2.5px solid var(--ink);
-  background: color-mix(in srgb, var(--seat, var(--ink)) 24%, var(--card));
-  color: var(--seat, var(--ink));
+  border: var(--stroke-ink) solid var(--ink);
+  background: color-mix(in srgb, var(--seat, var(--ink)) 26%, var(--card));
+  color: var(--ink);
 }
 
 /* L'étoile de la case sûre — découpée dans un carré plein plutôt qu'écrite :
@@ -1942,14 +2252,17 @@ input:disabled {
   display: grid;
   place-items: center;
   background: var(--seat);
-  border: 2.5px solid var(--ink);
+  border: var(--stroke-ink) solid var(--ink);
 }
 
-/* La flèche du départ, orientée dans le sens de la marche. */
+/* La flèche du départ, orientée dans le sens de la marche. Gravée dans la
+   couleur du camp (voir `--mark`), et non rendue en crème : sur le jaune, une
+   flèche crème donne 1,6 — un creux qu'on devine, pas une direction qu'on
+   lit. */
 .cell.start i {
   width: 46%;
   height: 46%;
-  background: var(--on);
+  background: var(--mark);
   clip-path: polygon(6% 4%, 100% 50%, 6% 96%, 26% 50%);
   transform: rotate(var(--rot));
 }
@@ -1961,16 +2274,28 @@ input:disabled {
 .cell.home {
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--seat) 62%, var(--card));
-  border: 2px solid var(--ink);
-  color: var(--on);
+  background: color-mix(in srgb, var(--seat) var(--home-tint), var(--card));
+  border: var(--stroke-ink) solid var(--ink);
+  color: var(--ink);
 }
 
+/* Le rang de la marche. Trois corrections, toutes de lisibilité :
+
+   la taille suit la case et non le créneau du plateau — `1.9cqw` mesurait la
+   largeur disponible, pas celle du plateau, et donnait le même chiffre de
+   7 px sur une case de 23 px et sur une case de 16 px ;
+
+   la couleur est l'encre et non la crème du camp — la marche est un mélange
+   pâle (62 % de couleur sur du papier), et de la crème dessus donnait 1,5 sur
+   le vert, le bleu et le rouge : trois escaliers sur quatre où le chiffre
+   exact que la règle réclame n'était pas lisible ;
+
+   et l'opacité disparaît, parce qu'elle coûtait à elle seule le quart de ce
+   qui restait de contraste, pour un chiffre qui est là pour être lu. */
 .cell.home b {
-  font-size: clamp(6px, 1.9cqw, 12px);
+  font-size: clamp(6px, calc(var(--cell) * 0.42), 14px);
   font-weight: 800;
   line-height: 1;
-  opacity: 0.75;
   transform: rotate(var(--rot, 0deg));
 }
 
@@ -1980,7 +2305,7 @@ input:disabled {
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--ink) 12%, var(--card));
-  border: 2.5px solid var(--ink);
+  border: var(--stroke-ink) solid var(--ink);
 }
 
 .cell.power i {
@@ -1997,20 +2322,27 @@ input:disabled {
   pointer-events: none;
 }
 
+/* L'écurie et son enclos. Le trait et le rayon suivent la case : une écurie de
+   plateau rond ne fait que la moitié de celle d'une croix, et 3 px de bord
+   avec 10 px de rayon y arrondissaient le bloc jusqu'à lui faire perdre sa
+   forme. */
 .deco.stable {
   background: var(--seat);
-  border: var(--bw) solid var(--ink);
-  border-radius: 10px;
+  border: var(--stroke-block) solid var(--ink);
+  border-radius: calc(var(--cell) * 0.44);
 }
 
 .deco.pen {
   background: var(--card);
-  border: var(--bw) solid var(--ink);
-  border-radius: 10px;
+  border: var(--stroke-block) solid var(--ink);
+  border-radius: calc(var(--cell) * 0.38);
 }
 
+/* L'emplacement au repos : un pointillé qui doit rester un pointillé. À 2 px
+   sur un cercle de 12 px, les tirets se referment en trait plein et
+   l'emplacement vide se lit comme un pion. */
 .deco.slot {
-  border: 2px dashed var(--seat);
+  border: var(--stroke) dashed var(--seat);
   border-radius: 50%;
   transform: scale(0.72);
 }
@@ -2018,8 +2350,8 @@ input:disabled {
 /* Le cœur : la case centrale, là où convergent les quatre escaliers. Une pointe
    par siège, du côté d'où arrive son couloir. */
 .deco.center {
-  border: 2.5px solid var(--ink);
-  border-radius: 5px;
+  border: var(--stroke-ink) solid var(--ink);
+  border-radius: calc(var(--cell) * 0.22);
   overflow: hidden;
 }
 
@@ -2060,7 +2392,13 @@ input:disabled {
   height: calc(100% / var(--grid, 15));
   display: grid;
   place-items: center;
-  transition: transform 0.14s linear;
+  /* Plus court que l'intervalle entre deux pas (`STEP_MS`, board-view.ts), et
+     c'est tout l'objet du calcul. La transition durait 140 ms pour un pas de
+     115 : chaque interpolation était coupée aux quatre cinquièmes par la
+     suivante, si bien que le cheval ne se posait jamais visiblement sur une
+     case — il glissait d'un bout à l'autre du déplacement. Or « compter le dé
+     des yeux » suppose de voir le cheval s'arrêter sur chaque case. */
+  transition: transform calc(var(--step, 115ms) * 0.7) linear;
   will-change: transform;
   pointer-events: none;
 }
@@ -2070,15 +2408,10 @@ input:disabled {
   place-items: center;
   width: 78%;
   height: 78%;
-  border: 2.5px solid var(--ink);
+  border: var(--stroke-ink) solid var(--ink);
   border-radius: 50% 50% 44% 44%;
   background: var(--seat);
-  box-shadow: inset -3px -4px 0 var(--emboss);
-  color: var(--on);
-  font-size: min(2.6vw, 13px);
-  font-style: normal;
-  font-weight: 800;
-  line-height: 1;
+  box-shadow: var(--sunk);
   transition: transform 0.15s ease;
 }
 
@@ -2088,10 +2421,75 @@ input:disabled {
   z-index: 2;
 }
 
+/* La cible du doigt déborde de la case.
+
+   Un pion occupe exactement une case, soit 22,7 px sur une croix et 16,3 px
+   sur un plateau rond — contre les 44 px que le jeu s'impose partout ailleurs
+   (`--tap`). Le plateau était le seul écran du jeu à ne pas tenir sa propre
+   règle, et c'est celui où se jouent tous les coups.
+
+   La zone s'étend donc au-delà du dessin, sans le grossir. Elle ne le fait que
+   pour les chevaux JOUABLES : eux seuls prennent le doigt.
+
+   **Un dixième de case, et pas un de plus.** Le disque occupe 78 % de la case,
+   donc il reste exactement 11 % de marge vide entre son bord et celui de la
+   case. Au-delà, la zone d'un cheval passe PAR-DESSUS le disque de son voisin
+   — et comme les chevaux jouables partagent le même plan, c'est le dernier
+   arrivé dans le document qui gagne, pas le plus proche du doigt : on visait
+   le bord d'un cheval, on en jouait un autre. Deux chevaux qui montent le même
+   escalier, c'est le cas de tous les jours. La zone s'arrête donc pile là où
+   commence le dessin d'à côté : elle ne prend que du vide.
+
+   Ce qu'elle rapporte est donc modeste et honnête : un cinquième de plus pour
+   un cheval seul — de 26 à 31 px sur une croix, de 19 à 23 sur un rond — et
+   rien du tout entre deux chevaux voisins, qui gardent chacun leur case. Le
+   gain va là où il sert, sans jamais prendre à côté. */
+.pawn.playable::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--cell) * -0.1);
+}
+
 /* Le pion jouable se cercle d'encre, comme entouré au crayon sur le plateau. */
 .pawn.playable i {
-  border-width: 3px;
+  border-width: var(--stroke-block);
   animation: circled 1.2s ease-in-out infinite;
+}
+
+/* Deux chevaux ou plus sur la même case : ils se serrent pour tenir côte à
+   côte (voir `offsets` dans `board-view.ts`). Le disque rétrécit parce que le
+   décalage seul ne suffit pas — à 78 % de case chacun, deux pions écartés
+   restent superposés aux trois quarts, et leurs deux traits d'encre se
+   rejoignent en une seule masse. */
+/* Et il rétrécit d'autant plus qu'ils sont nombreux. La ronde tient jusqu'à
+   quatre sans y penser ; au-delà — une case abritée de Ludo en porte jusqu'à
+   huit, et ce n'est pas une vue de l'esprit : mille occurrences sur vingt
+   parties simulées — l'écart entre deux voisins tombe à un cinquième de case,
+   et des disques de 62 % s'y cacheraient aux deux tiers. */
+.pawn.shared i {
+  width: calc(62% - (var(--share-n, 2) - 2) * 4%);
+  height: calc(62% - (var(--share-n, 2) - 2) * 4%);
+}
+
+/* Et là, c'est le DISQUE qui prend le doigt, pas la case.
+
+   Un cheval occupe la boîte entière de sa case, même serré dans un coin par un
+   voisin : deux boîtes écartées de 27 % se recouvrent donc de près de la
+   moitié d'une case, et c'est la dernière dans le document qui répond. Mesuré :
+   au CENTRE du disque de gauche, c'est le cheval de droite qui était joué. Un
+   coup joué ne se défait pas, et « je voulais l'autre » est la pire chose
+   qu'un plateau puisse faire dire.
+
+   La zone débordante disparaît avec, forcément — et c'est le bon prix : une
+   petite cible qui joue le cheval visé vaut mieux qu'une grande qui en joue un
+   autre. Le cheval seul, lui, garde tout ce que la règle ci-dessus lui donne. */
+.pawn.shared.playable {
+  pointer-events: none;
+}
+
+.pawn.shared.playable i {
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .pawn.playable:hover i {
@@ -2134,23 +2532,25 @@ input:disabled {
    lequel on a appuyé. */
 .pawn.chosen i {
   animation: none;
-  border-width: 3px;
-  box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
-    0 0 0 7px var(--green);
+  border-width: var(--stroke-block);
+  box-shadow: var(--sunk), 0 0 0 var(--halo) var(--card),
+    0 0 0 var(--halo-far) var(--green);
 }
 
 /* Le cheval au bouclier porte un anneau d'encre doublé de sa couleur. Ni icône
    ni emoji : à cette taille un pictogramme ne se lit pas, un anneau si — et il
    disparaît de lui-même le jour où le bouclier se brise. */
 .pawn.shielded i {
-  box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 2px var(--card),
-    0 0 0 4px var(--ink);
+  box-shadow: var(--sunk), 0 0 0 calc(var(--halo) * 0.7) var(--card),
+    0 0 0 calc(var(--halo-out) * 0.7) var(--ink);
 }
 
 .pawn.shielded.playable i {
   animation: none;
-  box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 2px var(--card),
-    0 0 0 4px var(--ink), 0 0 0 7px var(--card), 0 0 0 9px var(--ink);
+  box-shadow: var(--sunk), 0 0 0 calc(var(--halo) * 0.7) var(--card),
+    0 0 0 calc(var(--halo-out) * 0.7) var(--ink),
+    0 0 0 calc(var(--halo-out) * 1.1) var(--card),
+    0 0 0 var(--halo-far) var(--ink);
 }
 
 /* Le plateau en visée : on ne joue plus un coup, on désigne le cheval d'une
@@ -2164,24 +2564,24 @@ input:disabled {
 @keyframes aimed {
   0%,
   100% {
-    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
-      0 0 0 6px var(--green);
+    box-shadow: var(--sunk), 0 0 0 var(--halo) var(--card),
+      0 0 0 var(--halo-out) var(--green);
   }
   50% {
-    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 4px var(--card),
-      0 0 0 9px var(--green);
+    box-shadow: var(--sunk), 0 0 0 calc(var(--halo) * 1.2) var(--card),
+      0 0 0 var(--halo-far) var(--green);
   }
 }
 
 @keyframes circled {
   0%,
   100% {
-    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
-      0 0 0 6px var(--ink);
+    box-shadow: var(--sunk), 0 0 0 var(--halo) var(--card),
+      0 0 0 var(--halo-out) var(--ink);
   }
   50% {
-    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 4px var(--card),
-      0 0 0 8px var(--ink);
+    box-shadow: var(--sunk), 0 0 0 calc(var(--halo) * 1.2) var(--card),
+      0 0 0 var(--halo-far) var(--ink);
   }
 }
 
@@ -2192,13 +2592,13 @@ input:disabled {
   }
   .pawn.playable i {
     animation: none;
-    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
-      0 0 0 6px var(--ink);
+    box-shadow: var(--sunk), 0 0 0 var(--halo) var(--card),
+      0 0 0 var(--halo-out) var(--ink);
   }
   .board-wrap.aiming .pawn.playable i {
     animation: none;
-    box-shadow: inset -3px -4px 0 var(--emboss), 0 0 0 3px var(--card),
-      0 0 0 6px var(--green);
+    box-shadow: var(--sunk), 0 0 0 var(--halo) var(--card),
+      0 0 0 var(--halo-out) var(--green);
   }
   /* Le choc perd sa culbute, pas son temps : le délai reste, parce qu'il ne
      sert pas à animer mais à ne pas annoncer la capture d'avance. */
@@ -2222,10 +2622,12 @@ input:disabled {
    de la largeur à revendre et le plateau n'avait pas une ligne à donner — c'est
    ici que le bouton des cartes s'est installé, et non sur un rang à lui.
 
-   `justify-content: center` avec un bloc central élastique : le titre reste
-   centré dans ce qui reste, donc très légèrement à gauche du milieu vrai quand
-   le bouton est là. Réserver la même largeur de l'autre côté le centrerait
-   exactement, au prix de soixante-dix pixels de titre sur un petit écran — et
+   `justify-content: center` avec un bloc central élastique : le titre se centre
+   dans ce qui reste. Le bouton du zoom, à gauche, sert accessoirement de
+   contrepoids à celui des cartes — le titre est donc à peu près au milieu vrai
+   quand les deux sont là, et légèrement décalé quand il n'y en a qu'un. Le
+   centrer exactement demanderait de réserver la même largeur des deux côtés en
+   permanence, au prix de soixante-dix pixels de titre sur un petit écran, et
    « Tour de Bot 2 » ne survit pas à ça. */
 .turnline {
   display: flex;
@@ -2234,7 +2636,14 @@ input:disabled {
   gap: 10px;
   flex: none;
   width: 100%;
-  height: clamp(42px, 6.2svh, 54px);
+  /* Le contenu tenait mal dans cette boîte : le titre héritait lui aussi du
+     1,5 du corps de page, et les deux lignes réunies valaient 53 px pour une
+     boîte qui n'en réservait que 48 sur un téléphone de 780 — le débordement
+     était simplement rogné par le `overflow: hidden` de `.play`. Les
+     interlignes posés plus bas ramènent le contenu à 42 px, ce qui rend
+     quelques pixels au plateau et, surtout, remet la boîte d'accord avec ce
+     qu'elle contient. */
+  height: clamp(40px, 5.6svh, 50px);
   text-align: center;
 }
 
@@ -2261,7 +2670,6 @@ input:disabled {
   width: clamp(22px, 3.2svh, 26px);
   height: clamp(22px, 3.2svh, 26px);
   border-width: 2.5px;
-  font-size: 12px;
 }
 
 .turnline strong {
@@ -2273,18 +2681,20 @@ input:disabled {
   font-family: var(--title);
   font-weight: 700;
   font-size: clamp(16.5px, 2.5svh, 19px);
+  line-height: 1.2;
 }
 
 .turnline .detail {
   display: block;
   max-width: 100%;
-  min-height: clamp(17px, 2.5svh, 21px);
+  min-height: clamp(16px, 2.2svh, 19px);
   padding: 0 8px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: clamp(13px, 2svh, 15px);
   font-weight: 700;
+  line-height: 1.2;
   color: var(--muted);
 }
 
@@ -4015,6 +4425,7 @@ input:disabled {
   }
 }
 
+
 /* ─────────────────────────── partie en paysage ───────────────────────────
    Téléphone couché : la colonne ne tient plus. L'en-tête, les cartes, la ligne
    de tour et le dé mangent 330 px de haut — sur 390 disponibles, il restait
@@ -4099,6 +4510,16 @@ input:disabled {
     width: calc(100svh - 32px);
     max-width: 52vw;
     margin-inline: -16px 0;
+  }
+
+  /* En paysage court, la ligne de tour tombe à 248 px et le bouton des cartes
+     en prend déjà 93 : la loupe y coûtait la moitié de ce qui restait au titre,
+     et « Tour de Bot 2 » n'y survivait pas. Elle se resserre au lieu de
+     disparaître — c'est là que le plateau est le plus petit (19 px la case
+     contre 26 en portrait), donc là que le zoom sert le plus. */
+  .zoombtn {
+    width: 27px;
+    height: 27px;
   }
 
   /* Les cartes restent côte à côte, comme en portrait. Empilées en colonne,
@@ -4551,6 +4972,60 @@ input:disabled {
   display: none;
 }
 
+/* Le bouton du zoom : le pendant de celui des cartes, à l'autre bout de la
+   ligne de tour. Même galet, même encre — ils commandent deux choses
+   différentes mais ils occupent la même place dans la lecture de la ligne, et
+   deux formes différentes l'auraient fait croire l'un plus important que
+   l'autre.
+
+   Il ne bat jamais, lui : la main clignote parce qu'on peut oublier qu'on a
+   une carte à jouer, alors qu'un plateau trop petit se voit tout seul. */
+.zoombtn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 33px;
+  height: 33px;
+  border: 2.5px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 2px 0 var(--shade);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease,
+    transform 0.12s ease;
+}
+
+/* Le plateau est grossi : le bouton est plein, comme le bouton des cartes
+   quand une carte est armée. C'est ce qui dit qu'il reste quelque chose à
+   défaire — et qu'on ne voit pas tout le plateau. */
+.zoombtn.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  box-shadow: none;
+  /* Le papier, et non la crème. La crème est un blanc fixe : sur un fond
+     d'encre qui, lui, s'éclaircit en thème sombre, elle donne 1,16 — le galet
+     devient un jeton blanc vide, et c'est le seul bouton qui défait le zoom.
+     Le papier suit le thème, donc il reste toujours à l'opposé de l'encre. */
+  color: var(--paper);
+}
+
+.zoombtn:active {
+  transform: translateY(1px);
+}
+
+/* Le galet fait 33 px pour tenir dans la ligne de tour sans la faire grandir,
+   et 33 px, c'est sous les 44 que le jeu s'impose partout ailleurs (`--tap`).
+   La cible déborde donc du dessin — comme celle d'un cheval jouable sur le
+   plateau, et pour la même raison : ce qui compte est ce que le doigt peut
+   atteindre, pas ce que l'œil voit. */
+.zoombtn::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
 .handbtn__glyph {
   display: grid;
   flex: none;
@@ -4582,7 +5057,9 @@ input:disabled {
   border-color: var(--ink);
   background: var(--ink);
   box-shadow: none;
-  color: var(--cream);
+  /* Le papier plutôt que la crème, pour la raison écrite sur `.zoombtn.on` :
+     un blanc fixe sur une encre qui s'éclaircit ne se voit plus du tout. */
+  color: var(--paper);
   animation: none;
 }
 
