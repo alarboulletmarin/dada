@@ -66,7 +66,6 @@ const fr = {
   'quit.lobby': 'Les autres joueurs resteront dans le salon sans vous.',
 
   'pick.title': 'On joue à quoi ?',
-  'pick.hint': 'Les règles maison se règlent juste après, dans le salon.',
 
   'join.title': 'Rejoindre une partie',
   'join.hint': 'Tapez les {n} caractères que votre ami vous a envoyés.',
@@ -277,24 +276,21 @@ const fr = {
   'rules.9.body':
     "Si la table les a activées : huit cases marquées, deux par camp, aux mêmes distances de chaque départ. S'arrêter dessus fait piocher un bonus ou un malus dans un paquet commun. Un malus s'abat aussitôt ; un bonus reste dans votre main, secret, jusqu'à ce que vous l'armiez et lanciez le dé.",
   'variant.petits-chevaux.name': 'Petits chevaux',
-  'variant.petits-chevaux.desc':
-    'La règle française classique, sur le plateau de 56 cases. Un 6 pour sortir, on rejoue sur un 6.',
+  'variant.petits-chevaux.desc': 'Règle française, un 6 pour sortir.',
   'variant.petits-chevaux.tag': 'FR',
   'variant.petits-chevaux.meta': '56 cases · 4 chevaux · 20–30 min',
   'variant.ludo.name': 'Ludo',
-  'variant.ludo.desc':
-    'La règle internationale, sur le plateau de 52 cases. Étoiles protégées, primes de capture, rejeu à l’arrivée.',
+  'variant.ludo.desc': 'Règle internationale, étoiles sûres.',
   'variant.ludo.tag': 'INT',
   'variant.ludo.meta': '52 cases · 4 pions · 15–25 min',
   'variant.rapide.name': 'Rapide',
-  'variant.rapide.desc': 'Sortie sur 1 ou 6, arrivée sans compte exact. Pour une partie courte.',
+  'variant.rapide.desc': 'Sortie sur 1 ou 6, arrivée libre.',
   'variant.rapide.tag': 'EXPRESS',
-  'variant.rapide.meta': '40 cases · sortie facile · 10 min',
+  'variant.rapide.meta': '40 cases · 2 chevaux · 10 min',
   'variant.equipes.name': 'Équipes',
-  'variant.equipes.desc':
-    'Le Ludo à deux contre deux : les sièges face à face jouent ensemble, et qui a fini joue pour son partenaire.',
+  'variant.equipes.desc': 'Deux contre deux, à quatre.',
   'variant.equipes.tag': '2 CONTRE 2',
-  'variant.equipes.meta': '52 cases · 4 joueurs exactement · 20–30 min',
+  'variant.equipes.meta': '52 cases · 4 pions · 20–30 min',
 
   'chip.exit': '{rolls} pour sortir',
   'chip.six': '6 rejoue',
@@ -484,7 +480,6 @@ const en: Partial<Record<Key, string>> = {
   'quit.lobby': 'The other players will stay in the lobby without you.',
 
   'pick.title': 'What are we playing?',
-  'pick.hint': 'House rules come right after, in the lobby.',
 
   'join.title': 'Join a game',
   'join.hint': 'Type the {n} characters your friend sent you.',
@@ -691,24 +686,21 @@ const en: Partial<Record<Key, string>> = {
   'rules.9.body':
     'If the table turned them on: eight marked squares, two per colour, at the same distances from every start. Landing on one draws a bonus or a penalty from a shared deck. A penalty lands at once; a bonus stays in your hand, secret, until you arm it and roll the die.',
   'variant.petits-chevaux.name': 'Little horses',
-  'variant.petits-chevaux.desc':
-    'The classic French rules, on the 56-square board. A 6 to come out, roll again on a 6.',
+  'variant.petits-chevaux.desc': 'French rules, a 6 to come out.',
   'variant.petits-chevaux.tag': 'FR',
   'variant.petits-chevaux.meta': '56 squares · 4 horses · 20–30 min',
   'variant.ludo.name': 'Ludo',
-  'variant.ludo.desc':
-    'International rules, on the 52-square board. Safe star squares, capture bonus, replay on arrival.',
+  'variant.ludo.desc': 'International rules, safe stars.',
   'variant.ludo.tag': 'INT',
   'variant.ludo.meta': '52 squares · 4 pawns · 15–25 min',
   'variant.rapide.name': 'Quick',
-  'variant.rapide.desc': 'Come out on 1 or 6, arrive without an exact count. For a short game.',
+  'variant.rapide.desc': 'Out on 1 or 6, no exact count.',
   'variant.rapide.tag': 'EXPRESS',
-  'variant.rapide.meta': '40 squares · easy start · 10 min',
+  'variant.rapide.meta': '40 squares · 2 horses · 10 min',
   'variant.equipes.name': 'Teams',
-  'variant.equipes.desc':
-    'Ludo two against two: seats facing each other play together, and whoever is done plays for their partner.',
+  'variant.equipes.desc': 'Two against two, four players.',
   'variant.equipes.tag': '2 VS 2',
-  'variant.equipes.meta': '52 squares · exactly 4 players · 20–30 min',
+  'variant.equipes.meta': '52 squares · 4 pawns · 20–30 min',
 
   'chip.exit': '{rolls} to come out',
   'chip.six': '6 rolls again',

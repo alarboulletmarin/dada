@@ -1286,6 +1286,21 @@ export class App {
 
   // ─────────────────────────── 02 · choisir le jeu ───────────────────────────
 
+  /**
+   * Choisir le jeu — et rien d'autre.
+   *
+   * L'écran racontait chaque famille en quatre lignes de règles, si bien que
+   * la quatrième carte tombait sous la ligne de flottaison : on comparait de
+   * mémoire, en faisant défiler. Or on ne vient pas ici lire un règlement, on
+   * vient en désigner un. Chaque carte tient donc en trois lignes — le nom
+   * avec son étiquette, ce que le jeu change en une phrase, ses chiffres — et
+   * les quatre se voient d'un seul regard.
+   *
+   * Le détail n'est pas perdu pour autant : le salon, juste après, affiche la
+   * grille des règles cochées ou barrées pour le jeu retenu, et le
+   * règlement complet vit dans « Comment on joue ». Ces deux endroits le
+   * disent mieux qu'un paragraphe recopié sur une carte.
+   */
   private renderPick(): void {
     this.screen = 'pick'
     const back = () => (this.picking === 'change' ? this.renderLobby() : this.renderHome())
@@ -1293,12 +1308,13 @@ export class App {
     const cards = h(
       'div',
       { class: 'stack' },
-      ...VARIANTS.map((v) =>
-        h(
+      ...VARIANTS.map((v) => {
+        const chosen = v.id === this.variantId
+        return h(
           'button',
           {
             class: 'game-card',
-            attrs: { 'aria-pressed': String(v.id === this.variantId) },
+            attrs: { 'aria-pressed': String(chosen) },
             on: {
               click: () => {
                 this.variantId = v.id
@@ -1315,12 +1331,16 @@ export class App {
               { class: 'head' },
               h('strong', { text: variantName(v.id) }),
               h('span', { class: 'tag', text: t(`variant.${v.id}.tag` as Key) }),
+              // Le fond rouge disait déjà la carte retenue, mais il se lit
+              // aussi comme une mise en avant — « la nôtre », « la
+              // recommandée ». La coche, elle, ne veut dire qu'une chose.
+              chosen ? h('span', { class: 'game-card__check' }, icon('check', 16)) : null,
             ),
             h('p', { class: 'desc', text: t(`variant.${v.id}.desc` as Key) }),
-            h('span', { class: 'desc', text: t(`variant.${v.id}.meta` as Key) }),
+            h('span', { class: 'meta', text: t(`variant.${v.id}.meta` as Key) }),
           ),
-        ),
-      ),
+        )
+      }),
     )
 
     const confirm = () => {
@@ -1341,8 +1361,15 @@ export class App {
         { class: 'screen' },
         h('div', { class: 'topbar' }, this.backButton(back), h('h2', { text: t('pick.title') })),
         cards,
-        h('p', { class: 'hint center', text: t('pick.hint') }),
-        h('button', { class: 'btn red push', text: t('common.continue'), on: { click: confirm } }),
+        // Collé au bas de la fenêtre plutôt qu'à la fin de la liste : sur un
+        // petit écran, ou avec le texte système agrandi, « Continuer » partait
+        // sous la ligne de flottaison — on choisissait son jeu, puis on
+        // cherchait comment le valider.
+        h(
+          'div',
+          { class: 'screen__foot' },
+          h('button', { class: 'btn red', text: t('common.continue'), on: { click: confirm } }),
+        ),
       ),
     )
   }
@@ -1999,7 +2026,7 @@ export class App {
     else if (kind === 'pawn') badge.append(this.token(null))
     else if (kind === 'pair')
       badge.append(h('span', { class: 'badge__pair' }, this.token(0), this.token(1)))
-    else badge.append(icon('bolt', small ? 24 : 30))
+    else badge.append(icon('bolt', small ? 24 : 26))
     return badge
   }
 
