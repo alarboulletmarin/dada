@@ -437,6 +437,34 @@ input:disabled {
   margin-top: auto;
 }
 
+/* Le pied d'écran qui ne s'en va pas.
+
+   `.push` pose un bouton à la fin du contenu : dès que ce contenu dépasse la
+   hauteur disponible — petit téléphone, texte système agrandi — le bouton part
+   défiler avec lui, et il faut aller le rechercher une fois son choix fait.
+   Celui-ci reste au bas de la fenêtre pendant le défilement, et retombe
+   naturellement dans le flux quand tout tient.
+
+   Les marges négatives lui rendent les bords que `.screen` s'était réservés en
+   marge intérieure : sans elles, le contenu défilerait dans les vingt pixels
+   laissés libres de chaque côté, à découvert. Le dégradé fait le reste — le
+   papier reprend le dessus juste au-dessus du bouton, sans la coupure franche
+   d'un aplat. La couleur est celle du fond, si bien qu'il n'y a rien à voir
+   quand rien ne défile : le voile ne mange que les pois. */
+.screen__foot {
+  position: sticky;
+  /* `bottom` reprend exactement la marge négative du bas. Une marge négative
+     descend la boîte de marge sous la boîte de bordure, et c'est la boîte de
+     MARGE que le collage épingle : à `bottom: 0` le bouton s'arrêtait donc
+     vingt-six pixels trop haut, et le contenu défilait à découvert dans la
+     bande laissée dessous. Le décalage négatif rend ces pixels au bloc. */
+  bottom: calc((var(--screen-pad) + 4px) * -1);
+  z-index: 1;
+  margin: auto -20px calc((var(--screen-pad) + 4px) * -1);
+  padding: 18px 20px calc(var(--screen-pad) + 4px);
+  background: linear-gradient(to bottom, transparent, var(--paper) 18px);
+}
+
 .hint {
   font-size: clamp(14px, 2svh, 16px);
   font-weight: 600;
@@ -721,16 +749,21 @@ input:disabled {
 .settings {
   display: flex;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   flex: none;
 }
 
+/* Trois pastilles sur une ligne, et leurs libellés ne se cassent pas : « À
+   propos » passait sur deux lignes et faisait grandir la rangée entière, ce
+   qui suffisait à faire déborder l'accueil d'un iPhone SE. La marge intérieure
+   se resserre plutôt que le mot. */
 .settings button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   min-height: clamp(38px, 5.5svh, 46px);
-  padding: 0 clamp(11px, 2svh, 16px);
+  padding: 0 clamp(10px, 1.6svh, 13px);
+  white-space: nowrap;
   border: 2.5px solid var(--line);
   border-radius: 999px;
   background: none;
@@ -747,11 +780,20 @@ input:disabled {
 
 /* ─────────────────────────── choix du jeu ─────────────────────────── */
 
+/* Quatre cartes, et les quatre dans l'écran : c'est la seule mesure qui compte
+   ici. On ne compare pas quatre jeux en faisant défiler — on les compare du
+   regard, ou on ne les compare pas. Chaque carte tient donc en trois lignes
+   serrées autour de sa pastille, et la marge intérieure se resserre avec la
+   hauteur disponible comme le fait le reste de l'écran.
+
+   `align-items: center` plutôt que le haut : trois lignes courtes à côté d'une
+   pastille carrée s'alignent sur leur milieu, sinon la pastille flotte. */
 .game-card {
   display: flex;
-  gap: 14px;
+  align-items: center;
+  gap: 13px;
   width: 100%;
-  padding: clamp(9px, 1.9svh, 15px) 16px;
+  padding: clamp(8px, 1.5svh, 12px) 14px;
   border: var(--bw-thick) solid var(--ink);
   border-radius: var(--radius);
   background: var(--card);
@@ -775,10 +817,10 @@ input:disabled {
   display: grid;
   place-items: center;
   flex: none;
-  width: clamp(42px, 6.4svh, 54px);
-  height: clamp(42px, 6.4svh, 54px);
+  width: clamp(40px, 5.6svh, 48px);
+  height: clamp(40px, 5.6svh, 48px);
   border: var(--bw) solid var(--ink);
-  border-radius: 16px;
+  border-radius: 15px;
   background: var(--card);
   font-family: var(--title);
   font-weight: 800;
@@ -815,8 +857,8 @@ input:disabled {
 }
 
 .badge__pair .token {
-  width: 22px;
-  height: 24px;
+  width: 20px;
+  height: 22px;
 }
 
 .badge__pair .token:first-child {
@@ -824,7 +866,7 @@ input:disabled {
 }
 
 .badge__pair .token:last-child {
-  margin-left: -7px;
+  margin-left: -6px;
   transform: rotate(11deg);
 }
 
@@ -844,47 +886,95 @@ input:disabled {
 .game-card .body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
   flex: 1;
   min-width: 0;
 }
 
+/* Une seule ligne : le nom, sa famille, et la coche s'il y a lieu.
+
+   Rien n'y est rogné. Une ellipse aurait été plus propre à l'œil dans le cas
+   extrême — un écran très étroit ET très haut, où la police suit la hauteur —
+   mais `overflow: hidden` coupe aussi par le haut et par le bas : l'accent de
+   « Équipes » et le jambage de son « q » débordent de cinq pixels une ligne à
+   1,15 em, et se seraient fait raboter sur TOUS les téléphones pour parer un
+   cas qui n'arrive sur aucun. Le nom se replie donc sur deux lignes plutôt que
+   de se faire couper, et l'étiquette, elle, ne rétrécit jamais. */
 .game-card .head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .game-card .head strong {
+  min-width: 0;
   font-family: var(--title);
   font-weight: 800;
-  font-size: clamp(19px, 2.8svh, 23px);
-  line-height: 1.1;
+  font-size: clamp(18px, 2.6svh, 22px);
+  line-height: 1.15;
 }
 
+/* L'étiquette de famille était une seconde pastille : même encre épaisse, même
+   fond, autant de poids que le nom qu'elle qualifie. Elle redevient ce qu'elle
+   est — une mention en petit — et la pastille colorée reste le seul repère
+   fort de la carte. */
 .game-card .tag {
   display: inline-flex;
   align-items: center;
-  padding: 3px 10px;
-  border: 2.5px solid var(--ink);
+  flex: none;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: var(--card);
-  color: var(--ink);
-  font-size: 13px;
+  background: rgba(var(--ink-rgb), 0.09);
+  color: var(--muted-strong);
+  font-size: clamp(10.5px, 1.4svh, 12px);
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+}
+
+/* La coche de la carte retenue, poussée au bout de la ligne du nom. */
+.game-card__check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--cream);
+  color: var(--red);
 }
 
 .game-card .desc {
-  font-size: clamp(13.5px, 1.9svh, 15.5px);
+  font-size: clamp(13px, 1.8svh, 15px);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.3;
   color: var(--muted-strong);
 }
 
-.game-card[aria-pressed='true'] .desc {
+/* La ligne des chiffres. Elle se distingue de la phrase au-dessus par le corps
+   et non par la pâleur : `--muted` ne donne que 4,1 de contraste sur la carte,
+   et ces trois nombres-là — le plateau, les pions, la durée — sont justement
+   ce qu'on vient comparer d'une carte à l'autre. */
+.game-card .meta {
+  font-size: clamp(11.5px, 1.6svh, 13px);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--muted-strong);
+}
+
+.game-card[aria-pressed='true'] .desc,
+.game-card[aria-pressed='true'] .meta {
   color: var(--cream);
+}
+
+/* Sur le fond rouge, l'étiquette redevient un aplat plein : un voile de crème
+   à 22 % ne donnait que 2,6 de contraste pour trois lettres déjà petites.
+   Et son encre est `--mark`, la seule qui reste sombre dans les deux thèmes —
+   `--ink` s'éclaircit la nuit et se serait perdue dans la crème. */
+.game-card[aria-pressed='true'] .tag {
+  background: var(--cream);
+  color: var(--mark);
 }
 
 /* ─────────────────────────── code de partie ─────────────────────────── */
@@ -1652,10 +1742,10 @@ button.tag--level:active {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: clamp(5px, 0.85svh, 8px) 12px;
+  padding: clamp(5px, 0.85svh, 8px) 10px;
   border: var(--bw) solid var(--ink);
   border-radius: 20px;
   background: var(--card);
@@ -2006,15 +2096,37 @@ button.tag--level:active {
    rangées — huit pixels que le plateau récupère sur les écrans où c'est la
    hauteur qui le limite, et rien de perdu en lisibilité : une ligne unique,
    coupée à l'ellipse, n'a pas d'interligne à donner à quoi que ce soit. */
+/* « vous · tenu par un bot · 2 en piste », en deux nœuds plutôt qu'un.
+   L'état des chevaux ne rétrécit jamais ; l'étiquette qui le précède, si. La
+   carte fait cent soixante-quatorze pixels de large sur un téléphone courant,
+   et la ligne entière en demandait six de plus : tronquée d'un bloc, elle
+   coupait par la fin — donc par la seule moitié qui change de tour en tour. */
 .pcard .meta {
+  display: flex;
+  min-width: 0;
   overflow: hidden;
   font-size: clamp(10px, 1.5svh, 11.5px);
   font-weight: 700;
   line-height: 1.2;
   color: var(--muted);
   opacity: 0.85;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pcard .meta__who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pcard .meta__state {
+  flex: none;
+}
+
+/* Le point médian appartient à l'état, et non à l'étiquette : posé en fin
+   d'étiquette, il partait avec elle et laissait « vous à l'écurie ». */
+.pcard .meta__who + .meta__state::before {
+  content: '\00a0·\00a0';
 }
 
 /* Une rangée sans joueur ne doit pas voler d'espace au plateau. */
