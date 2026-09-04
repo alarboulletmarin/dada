@@ -38,8 +38,7 @@ const fr = {
   'home.join.hint': 'Un ami a déjà créé la partie',
   'home.local': 'Un seul téléphone',
   'home.local.hint': 'Un seul appareil qu’on se passe, aucun réseau',
-  'home.welcome':
-    'Dada, c’est les petits chevaux entre amis. Pour essayer seul : Un seul téléphone, contre des ordinateurs.',
+  'home.welcome': 'Pour essayer seul : « Un seul téléphone », contre des ordinateurs.',
   'home.rules': 'Comment on joue',
   'home.name': 'Vous êtes',
   'home.name.placeholder': 'Votre prénom',
@@ -92,7 +91,6 @@ const fr = {
   'lobby.title': 'Salon',
   'lobby.code': 'Code à partager',
   'lobby.code.pill': 'code',
-  'lobby.code.hint': 'Vos amis scannent, tapent ce code, ou ouvrent le lien. Rien à installer.',
   'lobby.code.copy': 'Copier le lien de la partie',
   'lobby.code.aria': 'Code de partie {code} — copier le lien',
   'lobby.share': 'Partager',
@@ -317,8 +315,7 @@ const fr = {
   'table.powers': 'Cases pouvoir',
   'table.powers.on': 'Activées',
   'table.powers.off': 'Désactivées',
-  'table.powers.hint':
-    'Huit cases marquées sur le circuit — deux par camp, aux mêmes distances de chaque départ. S’arrêter dessus fait piocher.',
+  'table.powers.hint': 'Huit cases marquées : s’arrêter dessus fait piocher.',
   'table.powers.first':
     'Première table ? Une manche sans pouvoirs, puis activez-les à la revanche.',
   'table.powers.see': 'Voir les {n} pouvoirs',
@@ -452,8 +449,7 @@ const en: Partial<Record<Key, string>> = {
   'home.join.hint': 'A friend has already created the game',
   'home.local': 'One phone only',
   'home.local.hint': 'One device passed around, no network at all',
-  'home.welcome':
-    'Dada is little horses among friends. To try it alone: One phone only, against computers.',
+  'home.welcome': 'To try it alone: “One phone”, against computers.',
   'home.rules': 'How to play',
   'home.name': 'You are',
   'home.name.placeholder': 'Your first name',
@@ -506,7 +502,6 @@ const en: Partial<Record<Key, string>> = {
   'lobby.title': 'Lobby',
   'lobby.code': 'Code to share',
   'lobby.code.pill': 'code',
-  'lobby.code.hint': 'Your friends scan it, type this code, or open the link. Nothing to install.',
   'lobby.code.copy': 'Copy the game link',
   'lobby.code.aria': 'Game code {code} — copy the link',
   'lobby.share': 'Share',
@@ -727,8 +722,7 @@ const en: Partial<Record<Key, string>> = {
   'table.powers': 'Power squares',
   'table.powers.on': 'On',
   'table.powers.off': 'Off',
-  'table.powers.hint':
-    'Eight marked squares on the track — two per colour, at the same distances from every start. Landing on one draws a card.',
+  'table.powers.hint': 'Eight marked squares: landing on one draws a card.',
   'table.powers.first': 'First table? Play a round without powers, then switch them on for the rematch.',
   'table.powers.see': 'See the {n} powers',
   'table.powers.fair':

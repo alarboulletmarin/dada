@@ -1729,9 +1729,14 @@ export class App {
         this.rulesCard(session, variant),
         this.tableCard(session),
 
+        // Le salon fait deux écrans de haut — quatre joueurs, un code, deux
+        // cartes de réglages — et « Lancer la partie » vivait tout en bas du
+        // second. L'hôte le cherchait en faisant défiler pendant que trois
+        // personnes le regardaient chercher. Il reste maintenant au bas de la
+        // fenêtre, comme sur l'écran de choix.
         h(
           'div',
-          { class: 'stack push' },
+          { class: 'screen__foot stack' },
           session.isHost
             ? h('button', {
                 class: 'btn red',
@@ -1903,6 +1908,11 @@ export class App {
    * Le carré ne s'affiche pas tout seul, pas plus que le code ne se copie
    * tout seul : il prend un écran entier, et un salon qui l'ouvrirait de
    * lui-même cacherait la table à celui qui la tient.
+   *
+   * Aucune phrase ne les commente. « Vos amis scannent, tapent ce code, ou
+   * ouvrent le lien » redisait les trois boutons juste au-dessus, et ces deux
+   * lignes coûtaient un siège de la table dans le premier écran du salon —
+   * le seul endroit où l'on regarde qui est déjà arrivé.
    */
   private codeCard(code: string): HTMLElement {
     // Un lien d'invitation ne dépasse jamais la version 9 du standard ; si
@@ -1943,7 +1953,6 @@ export class App {
           on: { click: () => void this.copy(code) },
         }),
       ),
-      h('p', { class: 'hint', text: t('lobby.code.hint') }),
     )
   }
 
@@ -3424,10 +3433,16 @@ export class App {
 
       // « vous · tenu par un bot · 2 en piste » : ce qu'on est, ce qui joue à
       // notre place, et où en sont les chevaux.
-      const line = [
+      //
+      // Les deux premiers sont dans un nœud à part, et c'est tout l'objet de la
+      // séparation : la carte est trop étroite pour la phrase entière — sur un
+      // téléphone courant, « vous · à l'écurie » demande six pixels de plus
+      // qu'il n'y en a — et une troncature d'un seul bloc coupait par la fin,
+      // c'est-à-dire l'état des chevaux, la seule moitié qui change. Elle
+      // rogne maintenant l'étiquette, qui ne dit rien qu'on ne sache déjà.
+      const qualifiers = [
         session.mine(seat) ? t('common.you') : '',
         held ? t('play.bot') : offline ? t('lobby.offline') : '',
-        meta,
       ].filter(Boolean)
 
       const bubble = this.chatBubbles.get(seat)
@@ -3503,7 +3518,14 @@ export class App {
           'div',
           { class: 'body' },
           h('span', { class: 'who', text: p.name }),
-          h('span', { class: 'meta', text: line.join(' · ') }),
+          h(
+            'span',
+            { class: 'meta' },
+            qualifiers.length > 0
+              ? h('span', { class: 'meta__who', text: qualifiers.join(' · ') })
+              : null,
+            h('span', { class: 'meta__state', text: meta }),
+          ),
         ),
         marks,
         // Le bot n'a pris le siège que faute de mieux : un appui le rend.

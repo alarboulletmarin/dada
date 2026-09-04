@@ -453,7 +453,12 @@ input:disabled {
    quand rien ne défile : le voile ne mange que les pois. */
 .screen__foot {
   position: sticky;
-  bottom: 0;
+  /* `bottom` reprend exactement la marge négative du bas. Une marge négative
+     descend la boîte de marge sous la boîte de bordure, et c'est la boîte de
+     MARGE que le collage épingle : à `bottom: 0` le bouton s'arrêtait donc
+     vingt-six pixels trop haut, et le contenu défilait à découvert dans la
+     bande laissée dessous. Le décalage négatif rend ces pixels au bloc. */
+  bottom: calc((var(--screen-pad) + 4px) * -1);
   z-index: 1;
   margin: auto -20px calc((var(--screen-pad) + 4px) * -1);
   padding: 18px 20px calc(var(--screen-pad) + 4px);
@@ -744,16 +749,21 @@ input:disabled {
 .settings {
   display: flex;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   flex: none;
 }
 
+/* Trois pastilles sur une ligne, et leurs libellés ne se cassent pas : « À
+   propos » passait sur deux lignes et faisait grandir la rangée entière, ce
+   qui suffisait à faire déborder l'accueil d'un iPhone SE. La marge intérieure
+   se resserre plutôt que le mot. */
 .settings button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   min-height: clamp(38px, 5.5svh, 46px);
-  padding: 0 clamp(11px, 2svh, 16px);
+  padding: 0 clamp(10px, 1.6svh, 13px);
+  white-space: nowrap;
   border: 2.5px solid var(--line);
   border-radius: 999px;
   background: none;
@@ -1732,10 +1742,10 @@ button.tag--level:active {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: clamp(5px, 0.85svh, 8px) 12px;
+  padding: clamp(5px, 0.85svh, 8px) 10px;
   border: var(--bw) solid var(--ink);
   border-radius: 20px;
   background: var(--card);
@@ -2086,15 +2096,37 @@ button.tag--level:active {
    rangées — huit pixels que le plateau récupère sur les écrans où c'est la
    hauteur qui le limite, et rien de perdu en lisibilité : une ligne unique,
    coupée à l'ellipse, n'a pas d'interligne à donner à quoi que ce soit. */
+/* « vous · tenu par un bot · 2 en piste », en deux nœuds plutôt qu'un.
+   L'état des chevaux ne rétrécit jamais ; l'étiquette qui le précède, si. La
+   carte fait cent soixante-quatorze pixels de large sur un téléphone courant,
+   et la ligne entière en demandait six de plus : tronquée d'un bloc, elle
+   coupait par la fin — donc par la seule moitié qui change de tour en tour. */
 .pcard .meta {
+  display: flex;
+  min-width: 0;
   overflow: hidden;
   font-size: clamp(10px, 1.5svh, 11.5px);
   font-weight: 700;
   line-height: 1.2;
   color: var(--muted);
   opacity: 0.85;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pcard .meta__who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pcard .meta__state {
+  flex: none;
+}
+
+/* Le point médian appartient à l'état, et non à l'étiquette : posé en fin
+   d'étiquette, il partait avec elle et laissait « vous à l'écurie ». */
+.pcard .meta__who + .meta__state::before {
+  content: '\00a0·\00a0';
 }
 
 /* Une rangée sans joueur ne doit pas voler d'espace au plateau. */
