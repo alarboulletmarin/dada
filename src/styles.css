@@ -5556,6 +5556,196 @@ button.tag--level:active {
 }
 
 
+/* ─────────────────────────── le palmarès ───────────────────────────
+   Ce que les soirées d'avant ont laissé.
+
+   Aucune couleur de siège ici, et c'est délibéré : on n'est pas le vert toute
+   sa vie, un même prénom a tenu les quatre coins du plateau, et un classement
+   peint aux quatre couleurs se lirait comme une partie en cours. Ce qui reste
+   d'un soir à l'autre, c'est le portrait — il ne tient qu'au prénom — et c'est
+   lui qui porte la reconnaissance. */
+.standings {
+  gap: 0;
+}
+
+.standing {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 2px solid var(--line);
+}
+
+/* La première ligne suit son intertitre : un trait entre les deux ferait un
+   cadre dans le cadre. */
+.standings .label + .standing {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.standing__n {
+  flex: none;
+  width: 20px;
+  color: var(--muted);
+  font-family: var(--title);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.standing--first .standing__n {
+  color: var(--ink);
+}
+
+.standing__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.standing__who {
+  overflow: hidden;
+  font-family: var(--title);
+  font-size: 17px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standing__meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le seul nombre qu'on vient chercher : il est à droite, là où l'œil finit sa
+   ligne, et le premier du classement l'a en plus gros. */
+.standing__wins {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  color: var(--muted-strong);
+  line-height: 1.1;
+  text-align: right;
+}
+
+.standing__wins b {
+  font-family: var(--title);
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.standing__wins span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.standing--first .standing__wins {
+  color: var(--ink);
+}
+
+.standing--first .standing__wins b {
+  font-size: 24px;
+}
+
+/* Une soirée, et non un joueur : ni rang ni portrait, seulement qui a gagné
+   quoi et quand. C'est ce qui fait dire « ah oui, mardi ». */
+.standing--game .standing__who {
+  font-size: 15px;
+}
+
+/* Le palmarès en calque, ouvert depuis la feuille de match.
+
+   Un cadre dans un cadre coûte quarante-huit points de large sur un téléphone
+   de 390 : les mêmes deux lignes de gris qui tenaient sur l'écran plein se
+   coupaient ici en quatre. La feuille et ses cartes se resserrent donc jusqu'à
+   rendre au texte la largeur qu'il avait — le calque n'a pas à être une
+   version rognée de l'écran. */
+.overlay.standings-sheet {
+  padding: 14px;
+}
+
+.standings-sheet .sheet {
+  gap: 14px;
+  padding: 18px 14px 20px;
+}
+
+.standings-sheet .card {
+  padding-right: 14px;
+  padding-left: 14px;
+}
+
+/* La ligne du palmarès posée sous la feuille de match.
+
+   Un bouton qui n'a pas l'air d'un bouton : c'est une information d'abord — la
+   réponse à la question qu'on allait poser — et un raccourci ensuite. Trois
+   prénoms, trois nombres, et le reste du palmarès à un doigt. */
+.tally-strip {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 14px;
+  border: var(--bw) solid var(--ink);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 4px 0 var(--shade);
+  text-align: left;
+}
+
+.tally-strip__label {
+  flex: none;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Les comptes se rangent à droite, et passent à la ligne plutôt que de sortir
+   du cadre. Rogner aurait mangé le premier du classement — c'est par la gauche
+   qu'une file alignée à droite déborde — soit exactement le nom qu'on venait
+   lire. Quatre prénoms courts tiennent sur une ligne ; quatre longs en
+   prennent deux, et le bandeau grandit d'un demi-doigt. */
+.tally-strip__list {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.tally-strip__one {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.tally-strip__one b {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.tally-strip__one span {
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
 /* ─────────────────────────── qui frappe à la porte ───────────────────────────
    Le code de partie amène jusqu'ici ; il n'ouvre plus. Cette carte est le
    verrou : un code deviné ne donne plus une place, seulement une demande que

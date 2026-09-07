@@ -41,6 +41,7 @@ import {
   type Room,
   type StateMessage,
 } from './room.ts'
+import { addMatches, matchIdOf, matchOf, readLedger, type Match } from './ledger.ts'
 import { clearInvite, clearSave, writeInvite, writeSave, type Save } from './save.ts'
 
 /**
@@ -254,6 +255,26 @@ export class Session {
   private closed = false
   /** Retenu pour pouvoir refaire une tentative sans repasser par l'accueil. */
   private myName = ''
+  /**
+   * Pairs à qui l'on a déjà offert son palmarès, cette connexion-ci.
+   *
+   * Le registre entier part **une fois** par voisin, à la seconde où il
+   * s'assoit ; les parties suivantes ne voyagent plus que l'une après l'autre.
+   * Sans cette mémoire, chaque salon publié — et il en part à chaque siège pris,
+   * chaque renommage, chaque départ — aurait renvoyé les deux cents parties à
+   * toute la table.
+   */
+  private ledgerSent = new Set<string>()
+  /**
+   * L'identifiant de la dernière partie rangée au palmarès.
+   *
+   * Une partie terminée est vue plusieurs fois : chaque battement de l'hôte, et
+   * chez l'invité chaque état reçu, repassent par `onGameChanged`. Le registre
+   * saurait l'écarter — il déduplique par identifiant — mais il faudrait le
+   * relire depuis `localStorage` à chaque fois, et le parcourir. Ce champ évite
+   * ce va-et-vient ; il n'est pas ce qui garantit l'unicité.
+   */
+  private recorded: string | null = null
 
   private constructor(mode: SessionMode, lobby: Lobby, listeners: SessionListeners) {
     this.mode = mode
@@ -429,6 +450,9 @@ export class Session {
     this.join = join
     const room = join(code, (error) => this.reportLinkError(error))
     this.room = room
+    // Un nouveau canal, de nouveaux identifiants de pairs : ce que l'ancien
+    // avait déjà offert ne dit plus rien de celui-ci.
+    this.ledgerSent.clear()
     this.myName = name
     this.lastHostAt = Date.now()
 
@@ -583,6 +607,21 @@ export class Session {
       this.listeners.onChat(message)
     })
 
+    room.on('ledger', (message, peer) => {
+      if (!current()) return
+      // **D'un joueur assis à cette table, et de lui seul.** Le palmarès de la
+      // bande dit avec qui l'on joue et depuis combien de temps : il n'a pas à
+      // s'ouvrir à qui frappe à la porte sans que l'hôte l'ait accepté, ni à
+      // s'enrichir de soirées inventées par un curieux qui a deviné le code.
+      const player = this.lobby.players.find((p) => p.peerId === peer)
+      if (!player) return
+      this.noteAlive(player.clientId, peer)
+      // Rien de neuf : ni écriture, ni redessin. C'est le cas ordinaire quand
+      // deux amis qui ont joué ensemble hier soir se retrouvent.
+      if (addMatches(message.matches) === null) return
+      this.listeners.onChange()
+    })
+
     room.onPeerJoin((peer) => {
       if (!current()) return
       this.link = 'linked'
@@ -610,6 +649,9 @@ export class Session {
         this.listeners.onChange()
       }
       if (this.hostPeerId === peer) this.hostPeerId = null
+      // Qui revient revient avec un autre identifiant de pair, mais un pair
+      // parti n'a plus à occuper cette mémoire-là.
+      this.ledgerSent.delete(peer)
       const player = this.lobby.players.find((p) => p.peerId === peer)
       // Le transport n'a qu'un avis, et c'est le battement qui tranche — mais un
       // départ franc n'a aucune raison d'attendre huit secondes de silence.
@@ -790,6 +832,9 @@ export class Session {
     // Un bot vient peut-être de prendre le siège dont c'est le tour : il n'y
     // a plus personne à décompter. Le tour en cours, lui, garde son échéance.
     this.armTurnClock()
+    // Le salon est ce qui dit qui est assis : un siège de plus, c'est un voisin
+    // de plus à qui offrir le palmarès.
+    this.offerLedger()
     this.listeners.onChange()
   }
 
@@ -1120,6 +1165,79 @@ export class Session {
 
   private publishLobby(): void {
     if (this.isHost) this.room?.send('lobby', this.lobby)
+    this.offerLedger()
+  }
+
+  // ───────────────────────────── le palmarès ─────────────────────────────
+
+  /**
+   * Les pairs assis à cette table, et joignables.
+   *
+   * Le palmarès ne s'adresse qu'à eux : c'est l'hôte qui décide qui entre (voir
+   * `admission.ts`), et un curieux qui a deviné le code n'a pas plus à lire les
+   * soirées de la bande qu'à s'asseoir. On croise donc le salon — qui dit qui
+   * est accepté — et les pairs réellement connectés — qui dit à qui l'on peut
+   * parler.
+   */
+  private seatedPeers(): string[] {
+    const reachable = new Set(this.room?.peers() ?? [])
+    const peers: string[] = []
+    for (const player of this.lobby.players) {
+      if (player.clientId === this.self || player.peerId === null) continue
+      if (reachable.has(player.peerId)) peers.push(player.peerId)
+    }
+    return peers
+  }
+
+  /**
+   * Le registre entier, offert une fois à chaque voisin.
+   *
+   * C'est tout le mécanisme de partage : pas de synchronisation, pas de
+   * réconciliation, pas d'arbitre. Chacun donne ce qu'il a en arrivant, chacun
+   * réunit ce qu'il reçoit, et une bande qui joue tous les soirs converge sans
+   * jamais avoir eu à désigner qui tient les comptes. Un ami qui installe le jeu
+   * ce soir repart avec les six mois d'avant.
+   */
+  private offerLedger(): void {
+    if (this.mode !== 'online' || !this.room) return
+    const fresh = this.seatedPeers().filter((peer) => !this.ledgerSent.has(peer))
+    if (fresh.length === 0) return
+
+    const matches = readLedger()
+    for (const peer of fresh) {
+      // Marqué servi même quand on n'a rien à donner : sans cela, chaque salon
+      // publié — et il en part à chaque siège pris — relirait `localStorage`
+      // pour n'envoyer rien du tout.
+      this.ledgerSent.add(peer)
+      if (matches.length > 0) this.room.send('ledger', { matches }, peer)
+    }
+  }
+
+  /**
+   * La partie qui vient de se terminer entre au registre, et s'annonce.
+   *
+   * Les quatre téléphones rangent le même enregistrement, calculé du même état
+   * — et pourtant on l'annonce quand même. Celui dont le lien a lâché au dernier
+   * coup, celui dont l'écran s'est verrouillé, celui qui est parti au dessert :
+   * ils n'ont pas vu la fin, et ce message est ce qui la leur rend. Recevoir une
+   * partie qu'on a déjà est le cas ordinaire, et ne coûte rien.
+   */
+  private recordFinished(): void {
+    const game = this.game
+    if (!game || game.phase !== 'finished') return
+
+    const id = matchIdOf(this.lobby.code, this.lobby.round, game)
+    if (this.recorded === id) return
+    this.recorded = id
+
+    const match = matchOf(this.lobby.code, this.lobby.round, game)
+    if (!match || addMatches([match]) === null) return
+    this.shareMatches([match])
+  }
+
+  private shareMatches(matches: Match[]): void {
+    if (this.mode !== 'online' || !this.room) return
+    for (const peer of this.seatedPeers()) this.room.send('ledger', { matches }, peer)
   }
 
   // ───────────────────────────── lectures ─────────────────────────────
@@ -1698,6 +1816,11 @@ export class Session {
 
   /** Tout ce qui suit un changement d'état : à qui de jouer, et jusqu'à quand. */
   private onGameChanged(): void {
+    // Une partie finie est une partie à ranger — et c'est ici que passent tous
+    // les états, celui que l'arbitre vient d'appliquer comme celui qu'un invité
+    // vient de recevoir. Chacun compte donc sa propre soirée, sans dépendre de
+    // qui tenait la couronne à la fin.
+    this.recordFinished()
     this.checkTurnHolder()
     this.scheduleBot()
     this.armTurnClock()

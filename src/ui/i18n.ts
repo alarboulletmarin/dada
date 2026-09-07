@@ -245,6 +245,32 @@ const fr = {
   'win.hostRematch': "L'hôte peut relancer une manche.",
   'win.nobody': 'Personne',
 
+  // Le palmarès : ce que les soirées d'avant ont laissé. Voir `net/ledger.ts`.
+  'standings.title': 'Palmarès',
+  'standings.open': 'Palmarès',
+  'standings.empty':
+    'Rien encore. Chaque partie terminée vient s’y ranger toute seule — jouez-en une, revenez.',
+  'standings.rank': 'Classement',
+  'standings.wins.one': '1 victoire',
+  'standings.wins': '{n} victoires',
+  'standings.unit.one': 'victoire',
+  'standings.unit': 'victoires',
+  'standings.meta.one': '1 partie · dé moy. {avg}',
+  'standings.meta': '{n} parties · dé moy. {avg}',
+  'standings.detail': '{captures} mangés · {losses} perdus',
+  'standings.recent': 'Dernières parties',
+  'standings.when': '{variant} · {when}',
+  'standings.won': '{name} gagne',
+  'standings.won.team': '{a} et {b} gagnent',
+  'standings.share':
+    'Le palmarès vit sur cet appareil, et sur celui de chacun. En ligne, les vôtres se rejoignent : personne ne tient les comptes pour les autres, et rien ne se perd quand un téléphone s’en va.',
+  'standings.clear': 'tout effacer',
+  'standings.clear.label': 'Effacer le palmarès de cet appareil',
+  'standings.clear.title': 'Effacer le palmarès ?',
+  'standings.clear.body':
+    'Les {n} parties gardées ici seront oubliées. Vos amis gardent les leurs : la prochaine partie en ligne vous en rendra une bonne part.',
+  'standings.clear.confirm': 'Effacer',
+
   'rules.title': 'Comment on joue',
   'rules.full': 'Le règlement complet',
   'rules.footer': 'Dix secondes pour jouer · trois 6 de suite, tour perdu',
@@ -651,6 +677,31 @@ const en: Partial<Record<Key, string>> = {
   'win.home': 'Home',
   'win.hostRematch': 'The host can start another round.',
   'win.nobody': 'Nobody',
+
+  'standings.title': 'Standings',
+  'standings.open': 'Standings',
+  'standings.empty':
+    'Nothing yet. Every finished game files itself here — play one, come back.',
+  'standings.rank': 'Ranking',
+  'standings.wins.one': '1 win',
+  'standings.wins': '{n} wins',
+  'standings.unit.one': 'win',
+  'standings.unit': 'wins',
+  'standings.meta.one': '1 game · avg. die {avg}',
+  'standings.meta': '{n} games · avg. die {avg}',
+  'standings.detail': '{captures} eaten · {losses} lost',
+  'standings.recent': 'Recent games',
+  'standings.when': '{variant} · {when}',
+  'standings.won': '{name} wins',
+  'standings.won.team': '{a} and {b} win',
+  'standings.share':
+    'The standings live on this device, and on everyone else’s. Online, yours merge together: nobody keeps the books for the others, and nothing is lost when a phone goes away.',
+  'standings.clear': 'clear all',
+  'standings.clear.label': 'Clear the standings on this device',
+  'standings.clear.title': 'Clear the standings?',
+  'standings.clear.body':
+    'The {n} games kept here will be forgotten. Your friends keep theirs: the next online game will hand most of them back.',
+  'standings.clear.confirm': 'Clear',
 
   'rules.title': 'How to play',
   'rules.full': 'The full rulebook',

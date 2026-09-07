@@ -15,7 +15,7 @@
 
 /** Date de dernière révision des textes. Écrite ici, et nulle part ailleurs :
  *  une page datée du jour de la visite ne dirait rien de ce qu'on lit. */
-export const UPDATED = '2026-08-25'
+export const UPDATED = '2026-09-07'
 
 export interface Section {
   title: string
@@ -58,13 +58,14 @@ const fr: AboutText = {
     {
       title: 'En une phrase',
       body: [
-        "Dada n'a ni compte, ni traceur, ni mesure d'audience, ni publicité. Personne ne sait que vous jouez, et aucune partie n'est enregistrée ailleurs que sur les téléphones qui y participent.",
+        "Dada n'a ni compte, ni traceur, ni mesure d'audience, ni publicité. Personne ne sait que vous jouez, et aucune partie n'est enregistrée ailleurs que sur les téléphones de ceux qui jouent avec vous.",
       ],
     },
     {
       title: 'Ce qui reste sur votre appareil',
       body: [
-        "Votre prénom, la langue, le thème et la partie en cours sont écrits dans le stockage local de votre navigateur. Ce ne sont pas des cookies, rien n'en est transmis, et effacer les données du site les supprime définitivement.",
+        "Votre prénom, la langue, le thème et la partie en cours sont écrits dans le stockage local de votre navigateur. Ce ne sont pas des cookies, et effacer les données du site les supprime définitivement.",
+        "S'y ajoute le palmarès : les deux cents dernières parties terminées, avec leur date, leur jeu de règles, le classement et les compteurs de fin de partie. Les prénoms qu'il porte sont ceux affichés autour de la table, pas des identités. Le bouton « tout effacer » de l'écran Palmarès l'oublie d'un coup.",
       ],
     },
     {
@@ -73,12 +74,14 @@ const fr: AboutText = {
         "Le jeu n'a pas de serveur : les téléphones se parlent directement, par un lien WebRTC chiffré de bout en bout. Le contenu de la partie ne transite par aucun tiers.",
         "Pour se trouver, deux navigateurs doivent d'abord échanger quelques messages de mise en relation. Ils passent par des relais publics du réseau Nostr, qui voient le code de salon — éphémère, jeté à la fin de la partie — et les adresses réseau candidates de votre appareil. Ils ne voient ni votre prénom, ni les coups joués.",
         "Quand le lien direct échoue — cas fréquent en 4G/5G derrière un NAT symétrique —, un relais TURN tiers achemine le flux. Il le relaie chiffré : il voit passer des octets et les adresses des deux bouts, pas la partie.",
+        "Votre palmarès circule lui aussi, mais seulement vers les joueurs que l'hôte a acceptés à sa table, et seulement par ce même lien direct : chacun offre le sien en s'asseyant, chacun garde la réunion des deux. Les prénoms et les scores de vos soirées passées sont donc visibles de vos partenaires de jeu — c'est ce à quoi sert un palmarès — et de personne d'autre.",
       ],
     },
     {
       title: 'Le mode « sur cet appareil »',
       body: [
         "Un seul téléphone qu'on se passe : aucune requête réseau, rien ne sort de l'appareil. Le jeu fonctionne entièrement hors ligne une fois installé.",
+        "Une réserve, et une seule : la partie ainsi jouée entre au palmarès comme les autres, et le palmarès, lui, se partage à la table lors de votre prochaine partie en ligne. Les effacer avant celle-ci les garde ici pour de bon.",
       ],
     },
     {
@@ -162,13 +165,14 @@ const en: AboutText = {
     {
       title: 'In one sentence',
       body: [
-        'Dada has no account, no tracker, no analytics and no advertising. Nobody knows you are playing, and no game is stored anywhere but on the phones taking part in it.',
+        'Dada has no account, no tracker, no analytics and no advertising. Nobody knows you are playing, and no game is stored anywhere but on the phones of the people you play with.',
       ],
     },
     {
       title: 'What stays on your device',
       body: [
-        'Your first name, the language, the theme and the game in progress are written to your browser local storage. These are not cookies, nothing is transmitted, and clearing the site data deletes them for good.',
+        'Your first name, the language, the theme and the game in progress are written to your browser local storage. These are not cookies, and clearing the site data deletes them for good.',
+        'So are the standings: the last two hundred finished games, with their date, rule set, ranking and end-of-game counters. The names they carry are the ones shown around the table, not identities. The “clear all” button on the Standings screen forgets the lot at once.',
       ],
     },
     {
@@ -177,12 +181,14 @@ const en: AboutText = {
         'The game has no server: phones talk to each other directly, over an end-to-end encrypted WebRTC link. Game content passes through no third party.',
         'To find each other, two browsers must first exchange a few matchmaking messages. Those go through public relays on the Nostr network, which see the room code — ephemeral, discarded when the game ends — and your device candidate network addresses. They see neither your name nor the moves played.',
         'When the direct link fails — common on mobile networks behind a symmetric NAT — a third-party TURN relay carries the stream. It relays it encrypted: it sees bytes and the addresses of both ends, not the game.',
+        'Your standings travel too, but only to the players the host has admitted to the table, and only over that same direct link: everyone offers theirs on sitting down, everyone keeps the union of the two. The names and scores of your past evenings are therefore visible to the people you play with — that is what standings are for — and to nobody else.',
       ],
     },
     {
       title: 'The “on this device” mode',
       body: [
         'One phone passed around: no network request, nothing leaves the device. Once installed, the game works entirely offline.',
+        'One caveat, and only one: a game played that way enters the standings like any other, and the standings are shared around the table at your next online game. Clearing them before that keeps them here for good.',
       ],
     },
     {

@@ -14,6 +14,7 @@ import { getRelaySockets, joinRoom, selfId } from 'trystero/nostr'
 import type { BoardShape } from '../game/board.ts'
 import type { BotLevel } from '../game/bot.ts'
 import type { Action, GameError, GameState, Seat } from '../game/types.ts'
+import type { Match } from './ledger.ts'
 import { turnServers } from './turn.ts'
 
 /**
@@ -195,6 +196,19 @@ export type ChatMessage = {
   kind?: 'reaction'
 }
 
+/**
+ * Un morceau de palmarès, offert à la table.
+ *
+ * Le registre des parties terminées vit sur chaque appareil et nulle part
+ * ailleurs (voir `ledger.ts`) : ce message est le seul moyen qu'ont deux
+ * téléphones de se raconter les soirées que l'autre a vues. Un lot de parties,
+ * les plus récentes en tête, et rien de plus — ni demande, ni accusé de
+ * réception. Une partie terminée est un fait immuable portant un identifiant
+ * que tout le monde calcule pareil : recevoir deux fois la même n'est pas un
+ * problème à résoudre, c'est le cas ordinaire.
+ */
+export type LedgerMessage = { matches: Match[] }
+
 type Messages = {
   hello: Hello
   join: JoinVerdict
@@ -205,6 +219,7 @@ type Messages = {
   tick: Tick
   pong: Pong
   chat: ChatMessage
+  ledger: LedgerMessage
 }
 
 export type Room = {
@@ -290,6 +305,7 @@ export function joinGameRoom(code: string, onError?: (message: string) => void):
     tick: room.makeAction<Tick>('tick') as unknown as AnyChannel,
     pong: room.makeAction<Pong>('pong') as unknown as AnyChannel,
     chat: room.makeAction<ChatMessage>('chat') as unknown as AnyChannel,
+    ledger: room.makeAction<LedgerMessage>('ledger') as unknown as AnyChannel,
   }
 
   return {

@@ -8,15 +8,16 @@ et pas de serveur à payer : les téléphones se parlent directement.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 617 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR, portraits
+npm test         # 770 tests : géométrie des 12 plateaux, règles, pouvoirs, dé, présence, pause, QR, portraits, palmarès
 npm run build    # vérification de types puis build de production
 ```
 
 `npm test` lance deux environnements d'un coup. Le gros de la suite tourne sous
 `node`, sans DOM ; les **écrans** ont leurs propres tests, sous `jsdom`, dans les
 fichiers `src/ui/*.dom.test.ts` — ils montent la vraie `App` dans un `document`
-et suivent le parcours au doigt : accueil → salon → plateau, podium, feuille de
-guidage, bandeau de lien. Le montage commun vit dans `src/ui/test-dom.ts`.
+et suivent le parcours au doigt : accueil → salon → plateau, podium, palmarès,
+feuille de guidage, bandeau de lien. Le montage commun vit dans
+`src/ui/test-dom.ts`.
 
 ## Comment jouer
 
@@ -634,6 +635,67 @@ n'apprend rien à cette table-là ne s'affiche pas : celle des cartes sur une
 partie sans pouvoirs serait une colonne de zéros, et une colonne de zéros se lit
 comme une panne.
 
+## Le palmarès
+
+La feuille de match dit qui a gagné *cette* partie, et s'en va avec elle. Or on
+ne joue pas une partie : on joue tous les soirs, et la question qui revient en
+rangeant les téléphones est « il en est à combien, lui ? ».
+
+Chaque partie terminée entre donc au **registre** de l'appareil (`net/ledger.ts`) :
+la date, le jeu de règles, le classement, et les compteurs de la feuille de
+match. L'accueil en tire un « Palmarès » — victoires, parties jouées, moyenne au
+dé, chevaux mangés et perdus, et les dix dernières soirées — et la feuille de
+match en pose la ligne courte, « Léa 12 · Sami 9 · Max 4 », qu'on touche pour
+voir le reste. Le bouton n'apparaît qu'une fois qu'il y a quelque chose dedans.
+
+### Chacun tient le sien
+
+L'idée naturelle est que l'hôte garde les comptes et les distribue. Elle ne tient
+pas ici : l'hôte n'est pas une institution, c'est le téléphone qui a créé le
+salon ce soir-là. Il change d'un soir à l'autre, il change au milieu d'une partie
+quand la couronne passe (`epoch`), et le jour où il désinstalle le jeu, tout le
+palmarès de la bande part avec lui.
+
+Chaque appareil garde donc **le sien**, entier, et les registres se rejoignent
+quand les téléphones se parlent :
+
+- une partie terminée est rangée **par chacun**, au moment où l'état final
+  arrive — l'arbitre comme les autres ;
+- elle porte un identifiant que tout le monde calcule pareil : code du salon,
+  numéro de manche, et état du générateur aléatoire, trois valeurs identiques
+  sur les quatre téléphones à la seconde où la partie s'achève ;
+- fusionner deux registres n'est donc qu'une **réunion d'ensembles**. Pas
+  d'arbitre, pas d'ordre à respecter, pas de conflit possible ;
+- le registre entier est offert **une fois** à chaque voisin qui s'assoit. Un ami
+  qui installe le jeu ce soir repart avec les six mois d'avant, et effacer le
+  sien n'efface rien chez les autres — la prochaine partie en ligne lui en rend
+  une bonne part.
+
+Le palmarès ne va qu'aux joueurs **assis** : c'est l'hôte qui décide qui entre
+(voir « Qui entre dans le salon »), et un code deviné ne donne pas plus accès aux
+soirées de la bande qu'à un siège. Ce qui arrive d'un voisin est taillé à la
+forme attendue avant d'entrer — un lot borné, des compteurs remis d'aplomb, ce
+qui n'a pas la forme d'une partie écarté plutôt que corrigé.
+
+### On s'y reconnaît au prénom
+
+Un joueur y est identifié par son **prénom**, et non par l'identifiant de son
+appareil : sur un seul téléphone qu'on se passe, les quatre joueurs partagent le
+même appareil, et un palmarès par appareil n'y aurait qu'une seule ligne. Le
+prénom, lui, désigne la même personne qu'elle joue sur son téléphone, sur celui
+de son frère, ou autour de la table du salon. Accents et majuscules ne comptent
+pas : « Léa », « lea » et « LEA  » ne font qu'une ligne. Le prix est assumé —
+deux Camille dans la même bande n'en feront qu'une, et c'est déjà comme cela
+qu'on compte les points à voix haute.
+
+Les bots ne sont pas classés. Un ordinateur n'est pas la même personne d'un soir
+à l'autre, il n'en garde rien, et le voir premier ne dirait rien à personne — il
+reste en revanche dans les parties elles-mêmes, la soirée où le bot a gagné ayant
+bien eu lieu.
+
+Deux cents parties sont gardées, soit près d'une année à une partie par soir ;
+au-delà, les plus anciennes s'effacent. Un palmarès n'est pas une archive.
+
 ## Deux écrans de règles, et pourquoi deux
 
 `rules.*` dans `i18n.ts` sert l'écran **« Comment on joue »** : neuf étapes pour
@@ -676,6 +738,7 @@ src/net/      transport pair-à-pair et orchestration de la partie
   room.ts       canaux WebRTC, code de partie, identité de l'appareil
   admission.ts  qui entre dans le salon, et à quelles conditions
   session.ts    salon, arbitrage, battement de cœur, minuterie, relève des absents
+  ledger.ts     le palmarès : les parties terminées, gardées et mises en commun
   presence.ts   les délais : dix secondes pour jouer, quarante-cinq d'absence
                 avant qu'un bot n'entre, et le battement qui dit qui est là
 src/ui/       écrans, plateau, animations
