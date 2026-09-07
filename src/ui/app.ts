@@ -40,6 +40,7 @@ import {
 } from '../game/types.ts'
 import { VARIANTS } from '../game/variants.ts'
 import { joinGameRoom, makeCode, type ChatMessage } from '../net/room.ts'
+import { clearLedger, nameKey, readLedger, tallies, type Match, type Tally } from '../net/ledger.ts'
 import { clearInvite, clearSave, readInvite, readSave } from '../net/save.ts'
 import { REACT_LIFE_MS, Session, type Notice, type NoticeCode, type RoomFactory } from '../net/session.ts'
 import { aboutLabel, renderAbout } from './about.ts'
@@ -392,7 +393,7 @@ const turnOf = (name: string): string =>
         : name,
   })
 
-type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'rulebook' | 'about'
+type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'rulebook' | 'about' | 'standings'
 
 /**
  * Les écrans qui se consultent *pendant* une partie sans y toucher : le
@@ -400,7 +401,7 @@ type Screen = 'home' | 'pick' | 'join' | 'lobby' | 'play' | 'rules' | 'rulebook'
  * justifie de les redessiner quand cet état change — et tout justifie de ne pas
  * les fermer sous les yeux de qui les lit.
  */
-const DETOURS = new Set<Screen | null>(['rules', 'rulebook', 'about'])
+const DETOURS = new Set<Screen | null>(['rules', 'rulebook', 'about', 'standings'])
 
 /** Une carte qui vient d'être tirée, telle que le journal la raconte. */
 type Draw = {
@@ -1101,17 +1102,7 @@ export class App {
           }),
           homeButton('home.local', '', () => go('local')),
         ),
-        // Le même bouton que le lien de l'encart de bienvenue : tant que
-        // celui-ci est là, il ne se dit qu'une fois. Deux « Comment on joue »
-        // sur un écran de six blocs, c'est un doute là où il n'y en avait pas —
-        // et sur un téléphone de 360 points, deux fois la place.
-        this.guide.seen('welcome')
-          ? h('button', {
-              class: 'btn small',
-              text: t('home.rules'),
-              on: { click: () => this.renderRules(() => this.renderHome()) },
-            })
-          : null,
+        this.homeExtras(),
         h(
           'div',
           { class: 'settings' },
@@ -1166,6 +1157,46 @@ export class App {
         }),
       ),
     )
+  }
+
+  /**
+   * Les deux petits boutons du bas : le règlement, et le palmarès.
+   *
+   * Chacun n'apparaît qu'à son heure, et le plus souvent il n'y en a qu'un.
+   *
+   * « Comment on joue » se tait tant que l'encart de bienvenue porte le même
+   * lien : deux fois la même phrase sur un écran de six blocs, c'est un doute
+   * là où il n'y en avait pas — et sur un téléphone de 360 points, deux fois la
+   * place. « Palmarès » attend d'avoir quelque chose à montrer : un classement
+   * vide n'apprend rien, et l'accueil d'un premier soir n'a pas à grandir pour
+   * lui. Il arrive donc tout seul, au retour de la première partie.
+   */
+  private homeExtras(): HTMLElement | null {
+    const buttons: HTMLElement[] = []
+    if (this.guide.seen('welcome')) {
+      buttons.push(
+        h('button', {
+          class: 'btn small',
+          text: t('home.rules'),
+          on: { click: () => this.renderRules(() => this.renderHome()) },
+        }),
+      )
+    }
+    if (readLedger().length > 0) {
+      buttons.push(
+        h('button', {
+          class: 'btn small',
+          text: t('standings.open'),
+          on: { click: () => this.renderStandings(() => this.renderHome()) },
+        }),
+      )
+    }
+    if (buttons.length === 0) return null
+    // L'un sous l'autre, et non côte à côte : à mi-largeur d'un téléphone de
+    // 360 points, « Comment on joue » se fendait en « Comment on / joue », et
+    // une étiquette coupée au milieu d'un bouton se lit comme une panne de mise
+    // en page. Tout le reste de l'accueil est pleine largeur, de toute façon.
+    return buttons.length === 1 ? buttons[0]! : h('div', { class: 'stack' }, ...buttons)
   }
 
   /**
@@ -4437,6 +4468,7 @@ export class App {
         ),
         this.podiumBoard(state, order, done),
         this.statsCard(state, order),
+        this.tallyStrip(state),
         session.isHost
           ? h('button', {
               class: 'btn red',
@@ -4467,6 +4499,279 @@ export class App {
       ),
     )
     document.body.append(overlay)
+  }
+
+  // ─────────────────────────── 08b · le palmarès ───────────────────────────
+
+  /**
+   * Ce que les soirées d'avant ont laissé.
+   *
+   * La feuille de match dit qui a gagné *cette* partie, et s'en va avec elle.
+   * Or on ne joue pas une partie : on joue tous les soirs, et la question posée
+   * en rangeant les téléphones est « il en est à combien, lui ? ». Le registre
+   * (voir `net/ledger.ts`) garde de quoi y répondre ; cet écran-ci ne fait que
+   * la lire.
+   *
+   * Les couleurs de siège n'y sont pas. Elles ne veulent rien dire d'un soir à
+   * l'autre — on n'est pas le vert toute sa vie — et un classement peint aux
+   * quatre couleurs se lirait comme une partie en cours. Le portrait, lui,
+   * reste : il ne tient qu'au prénom, et c'est justement au prénom qu'on se
+   * reconnaît ici.
+   */
+  private standingsCards(): (HTMLElement | null)[] {
+    const matches = readLedger()
+    if (matches.length === 0) {
+      return [h('div', { class: 'card' }, h('p', { class: 'hint center', text: t('standings.empty') }))]
+    }
+
+    const table = tallies(matches)
+    return [
+      table.length > 0 ? this.standingsBoard(table) : null,
+      this.recentCard(matches),
+      h('p', { class: 'hint center', text: t('standings.share') }),
+      // Effacer est sans retour, mais pas sans filet : les amis gardent le
+      // leur, et la prochaine partie en ligne en rend une bonne part. C'est ce
+      // que dit la question — un bouton de plus ne l'aurait pas dit.
+      h(
+        'div',
+        { class: 'resume-foot' },
+        h('button', {
+          class: 'link',
+          text: t('standings.clear'),
+          attrs: { 'aria-label': t('standings.clear.label') },
+          on: {
+            click: () =>
+              this.ask({
+                title: t('standings.clear.title'),
+                body: t('standings.clear.body', { n: matches.length }),
+                confirm: t('standings.clear.confirm'),
+                onConfirm: () => {
+                  clearLedger()
+                  this.refreshStandings()
+                },
+              }),
+          },
+        }),
+      ),
+    ]
+  }
+
+  /**
+   * Le classement, une ligne par joueur.
+   *
+   * Les victoires en gros, à droite : c'est le seul nombre qu'on vient
+   * chercher. Le reste — parties jouées, moyenne au dé, chevaux mangés — tient
+   * en deux lignes de gris sous le prénom, pour la deuxième question, celle
+   * qu'on pose en riant après la première.
+   */
+  private standingsBoard(table: Tally[]): HTMLElement {
+    const wins = (n: number) => (n === 1 ? t('standings.wins.one') : t('standings.wins', { n }))
+    const meta = (tally: Tally) => {
+      const { rolls, pips } = tally.stats
+      const avg = rolls === 0 ? '—' : (pips / rolls).toFixed(1)
+      const key = tally.games === 1 ? 'standings.meta.one' : 'standings.meta'
+      return t(key, { n: tally.games, avg })
+    }
+
+    return h(
+      'div',
+      { class: 'card standings' },
+      h('span', { class: 'label', text: t('standings.rank') }),
+      ...table.map((tally, i) =>
+        h(
+          'div',
+          { class: `standing${i === 0 ? ' standing--first' : ''}` },
+          h('span', { class: 'standing__n', text: String(i + 1) }),
+          avatar(tally.name, 0, 34),
+          h(
+            'div',
+            { class: 'standing__body' },
+            h('span', { class: 'standing__who', text: tally.name }),
+            h('span', { class: 'standing__meta', text: meta(tally) }),
+            h('span', {
+              class: 'standing__meta',
+              text: t('standings.detail', {
+                captures: tally.stats.captures,
+                losses: tally.stats.losses,
+              }),
+            }),
+          ),
+          // Le nombre en gros, son mot en petit dessous : une colonne étroite
+          // laisse aux deux lignes de gris la largeur qui leur manquait, et un
+          // tableau des scores se lit comme ça. La phrase entière reste, pour
+          // qui écoute l'écran plutôt que de le regarder — « 11 » suivi de
+          // « victoires » se lit « onze victoires » là où deux éléments collés
+          // se lisent « onzevictoires ».
+          h(
+            'span',
+            { class: 'standing__wins', attrs: { 'aria-label': wins(tally.wins) } },
+            h('b', { text: String(tally.wins) }),
+            h('span', { text: tally.wins === 1 ? t('standings.unit.one') : t('standings.unit') }),
+          ),
+        ),
+      ),
+    )
+  }
+
+  /**
+   * Les dernières soirées, dans l'ordre où elles ont eu lieu.
+   *
+   * Un classement seul est une abstraction : dix lignes de « qui a gagné quoi,
+   * et quand » sont ce qui fait dire « ah oui, mardi ». Dix, et pas deux cents —
+   * au-delà, on ne se souvient plus, et c'est le classement qui répond.
+   */
+  private recentCard(matches: Match[]): HTMLElement {
+    const won = (match: Match): string => {
+      const winners = match.players.filter((p) => p.won)
+      if (winners.length === 0) return t('win.nobody')
+      if (match.teams && winners.length === 2) {
+        return t('standings.won.team', { a: winners[0]!.name, b: winners[1]!.name })
+      }
+      return t('standings.won', { name: winners[0]!.name })
+    }
+
+    return h(
+      'div',
+      { class: 'card standings' },
+      h('span', { class: 'label', text: t('standings.recent') }),
+      ...matches.slice(0, 10).map((match) =>
+        h(
+          'div',
+          { class: 'standing standing--game' },
+          h(
+            'div',
+            { class: 'standing__body' },
+            h('span', { class: 'standing__who', text: won(match) }),
+            h('span', {
+              class: 'standing__meta',
+              text: t('standings.when', {
+                variant: variantName(match.variantId),
+                when: since(match.at),
+              }),
+            }),
+          ),
+        ),
+      ),
+    )
+  }
+
+  /** L'écran plein, depuis l'accueil. */
+  private renderStandings(back: () => void): void {
+    this.screen = 'standings'
+    fill(
+      this.root,
+      h(
+        'div',
+        { class: 'screen' },
+        h('div', { class: 'topbar' }, this.backButton(back), h('h2', { text: t('standings.title') })),
+        h('div', { class: 'stack' }, ...this.standingsCards()),
+      ),
+    )
+  }
+
+  /**
+   * Le même palmarès, en calque — depuis la feuille de match.
+   *
+   * C'est là qu'on le veut : la partie vient de finir, quelqu'un a gagné, et la
+   * question qui suit immédiatement est de savoir ce que ça change au général.
+   * Un calque et non un écran, parce qu'on ne quitte pas la feuille de match
+   * pour ça : on la retrouve en refermant.
+   */
+  private showStandings(): void {
+    if (document.querySelector('.overlay.standings-sheet')) return
+
+    const close = (): void => {
+      removeEventListener('keydown', onKey)
+      overlay.remove()
+      // La partie a pu se terminer pendant qu'on lisait le palmarès — ou l'on
+      // vient justement de sa feuille de match : elle doit se retrouver là.
+      this.showPodiumIfOver()
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') close()
+    }
+
+    const overlay = h(
+      'div',
+      {
+        class: 'overlay standings-sheet',
+        attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('standings.title') },
+        on: {
+          click: (ev) => {
+            if (ev.target === overlay) close()
+          },
+        },
+      },
+      h(
+        'div',
+        { class: 'sheet' },
+        h('h2', { style: { textAlign: 'center' }, text: t('standings.title') }),
+        ...this.standingsCards(),
+        h('button', { class: 'btn', text: t('common.close'), on: { click: () => close() } }),
+      ),
+    )
+    addEventListener('keydown', onKey)
+    document.body.append(overlay)
+  }
+
+  /** Redessine le palmarès là où il est ouvert — écran ou calque. */
+  private refreshStandings(): void {
+    const overlay = document.querySelector('.overlay.standings-sheet')
+    if (overlay) {
+      overlay.remove()
+      this.showStandings()
+      return
+    }
+    if (this.screen === 'standings') this.renderStandings(() => this.renderHome())
+  }
+
+  /**
+   * La ligne du palmarès posée sous la feuille de match.
+   *
+   * Trois prénoms et trois nombres : « Léa 12 · Sami 9 · Max 4 ». C'est la
+   * réponse à la question qu'on pose de toute façon en refermant le téléphone,
+   * et elle est là avant qu'on l'ait posée. Toucher ouvre le palmarès entier.
+   *
+   * Elle ne s'affiche qu'à partir de la deuxième partie rangée : sur la
+   * première, elle ne ferait que redire, en plus petit, le podium juste
+   * au-dessus.
+   */
+  private tallyStrip(state: GameState): HTMLElement | null {
+    const matches = readLedger()
+    if (matches.length < 2) return null
+
+    // Ceux de cette table d'abord : un palmarès de douze personnes ne tient pas
+    // sur une ligne, et ce sont ces trois-là qui viennent de jouer.
+    const here = new Set(state.players.filter((p) => p.kind !== 'bot').map((p) => nameKey(p.name)))
+    const table = tallies(matches).filter((tally) => here.has(tally.key))
+    if (table.length === 0) return null
+
+    return h(
+      'button',
+      {
+        class: 'tally-strip',
+        attrs: { 'aria-label': t('standings.title') },
+        on: {
+          click: () => {
+            document.querySelector('.overlay.podium')?.remove()
+            this.showStandings()
+          },
+        },
+      },
+      h('span', { class: 'tally-strip__label', text: t('standings.title') }),
+      h(
+        'span',
+        { class: 'tally-strip__list' },
+        ...table.map((tally) =>
+          h(
+            'span',
+            { class: 'tally-strip__one' },
+            h('b', { text: String(tally.wins) }),
+            h('span', { text: tally.name }),
+          ),
+        ),
+      ),
+    )
   }
 
   // ─────────────────────────── réactions ───────────────────────────
